@@ -1219,30 +1219,30 @@ export default function AttestationCyclesPage() {
                             <table className="min-w-full divide-y divide-gray-200">
                                 <thead className="bg-gray-50">
                                     <tr>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cycle</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Period</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Due Date</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Progress</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Cycle</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Period</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Due Date</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Progress</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody className="bg-white divide-y divide-gray-200">
                                     {cycles.map((cycle) => (
                                         <tr key={cycle.cycle_id} className="hover:bg-gray-50">
-                                            <td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900">
+                                            <td className="px-4 py-2 whitespace-nowrap font-medium text-gray-900">
                                                 {cycle.cycle_name}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                            <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
                                                 {formatDate(cycle.period_start_date)} to {formatDate(cycle.period_end_date)}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                            <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
                                                 {formatDate(cycle.submission_due_date)}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
+                                            <td className="px-4 py-2 whitespace-nowrap">
                                                 {getStatusBadge(cycle.status)}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
+                                            <td className="px-4 py-2 whitespace-nowrap">
                                                 <div className="flex items-center">
                                                     <div className="w-24 bg-gray-200 rounded-full h-2 mr-2">
                                                         <div
@@ -1258,7 +1258,7 @@ export default function AttestationCyclesPage() {
                                                     {cycle.accepted_count}/{cycle.total_records} completed
                                                 </div>
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
+                                            <td className="px-4 py-2 whitespace-nowrap">
                                                 {cycle.status === 'PENDING' && (
                                                     <button
                                                         onClick={() => handleOpenCycle(cycle.cycle_id)}
@@ -1630,28 +1630,28 @@ export default function AttestationCyclesPage() {
                             <table className="min-w-full divide-y divide-gray-200">
                                 <thead className="bg-gray-50">
                                     <tr>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase w-56">Rule Name</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Frequency</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Priority</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Criteria</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date Window</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase w-56">Rule Name</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Frequency</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Priority</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Criteria</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Date Window</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody className="bg-white divide-y divide-gray-200">
                                     {rules.map((rule) => (
                                         <tr key={rule.rule_id} className="hover:bg-gray-50">
-                                            <td className="px-6 py-4 font-medium">
+                                            <td className="px-4 py-2 font-medium">
                                                 <div className="max-w-[220px] truncate" title={rule.rule_name}>
                                                     {rule.rule_name}
                                                 </div>
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                            <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
                                                 {rule.rule_type.replace(/_/g, ' ')}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
+                                            <td className="px-4 py-2 whitespace-nowrap">
                                                 <span className={`px-2 py-1 text-xs font-medium rounded-full ${
                                                     rule.frequency === 'QUARTERLY'
                                                         ? 'bg-purple-100 text-purple-800'
@@ -1660,10 +1660,10 @@ export default function AttestationCyclesPage() {
                                                     {rule.frequency}
                                                 </span>
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                            <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
                                                 {rule.priority}
                                             </td>
-                                            <td className="px-6 py-4 text-sm text-gray-500">
+                                            <td className="px-4 py-2 text-sm text-gray-500">
                                                 {rule.rule_type === 'MODEL_OVERRIDE' && rule.model && (
                                                     <span>Model: {rule.model.model_name}</span>
                                                 )}
@@ -1684,11 +1684,11 @@ export default function AttestationCyclesPage() {
                                                     <span className="text-gray-400">All owners</span>
                                                 )}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                            <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
                                                 {formatDate(rule.effective_date)}
                                                 {rule.end_date ? ` to ${formatDate(rule.end_date)}` : ' (no expiry)'}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
+                                            <td className="px-4 py-2 whitespace-nowrap">
                                                 <span className={`px-2 py-1 text-xs font-medium rounded-full ${
                                                     rule.is_active
                                                         ? 'bg-green-100 text-green-800'
@@ -1697,7 +1697,7 @@ export default function AttestationCyclesPage() {
                                                     {rule.is_active ? 'Active' : 'Inactive'}
                                                 </span>
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
+                                            <td className="px-4 py-2 whitespace-nowrap">
                                                 <button
                                                     onClick={() => handleOpenRuleForm(rule)}
                                                     className="text-blue-600 hover:text-blue-800 text-sm font-medium mr-3"
@@ -1738,20 +1738,20 @@ export default function AttestationCyclesPage() {
                             <table className="min-w-full divide-y divide-gray-200">
                                 <thead className="bg-gray-50">
                                     <tr>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Risk Tier</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Target %</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Blocking</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Effective Date</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Risk Tier</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Target %</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Blocking</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Effective Date</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody className="bg-white divide-y divide-gray-200">
                                     {targets.map((target) => (
                                         <tr key={target.target_id} className="hover:bg-gray-50">
-                                            <td className="px-6 py-4 whitespace-nowrap font-medium">
+                                            <td className="px-4 py-2 whitespace-nowrap font-medium">
                                                 {target.risk_tier.label}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
+                                            <td className="px-4 py-2 whitespace-nowrap">
                                                 {editingTarget?.target_id === target.target_id ? (
                                                     <input
                                                         type="number"
@@ -1768,7 +1768,7 @@ export default function AttestationCyclesPage() {
                                                     </span>
                                                 )}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
+                                            <td className="px-4 py-2 whitespace-nowrap">
                                                 {editingTarget?.target_id === target.target_id ? (
                                                     <input
                                                         type="checkbox"
@@ -1786,10 +1786,10 @@ export default function AttestationCyclesPage() {
                                                     </span>
                                                 )}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                            <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
                                                 {formatDate(target.effective_date)}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
+                                            <td className="px-4 py-2 whitespace-nowrap">
                                                 {editingTarget?.target_id === target.target_id ? (
                                                     <div className="flex space-x-2">
                                                         <button
@@ -1898,19 +1898,19 @@ export default function AttestationCyclesPage() {
                             <table className="min-w-full divide-y divide-gray-200">
                                 <thead className="bg-gray-50">
                                     <tr>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Model</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Risk Tier</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Attesting User</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cycle</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Submitted</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Decision</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Model</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Risk Tier</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Attesting User</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Cycle</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Submitted</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Decision</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody className="bg-white divide-y divide-gray-200">
                                     {filteredReviewRecords.map((record) => (
                                         <tr key={record.attestation_id} className="hover:bg-gray-50">
-                                            <td className="px-6 py-4 whitespace-nowrap">
+                                            <td className="px-4 py-2 whitespace-nowrap">
                                                 <Link
                                                     to={`/models/${record.model_id}`}
                                                     className="text-blue-600 hover:text-blue-800 font-medium"
@@ -1918,22 +1918,22 @@ export default function AttestationCyclesPage() {
                                                     {record.model_name}
                                                 </Link>
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
+                                            <td className="px-4 py-2 whitespace-nowrap">
                                                 {getRiskTierBadge(record.risk_tier_code)}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                            <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
                                                 {record.attesting_user_name}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                            <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
                                                 {record.cycle_name}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                            <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
                                                 {formatDate(record.attested_at)}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
+                                            <td className="px-4 py-2 whitespace-nowrap">
                                                 {getDecisionBadge(record.decision)}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
+                                            <td className="px-4 py-2 whitespace-nowrap">
                                                 <Link
                                                     to={`/attestations/${record.attestation_id}`}
                                                     className="btn-primary text-sm py-1 px-3"
@@ -1988,7 +1988,7 @@ export default function AttestationCyclesPage() {
 
                     {/* Current High Fluctuation Owners */}
                     <div className="bg-white rounded-lg shadow mb-6">
-                        <div className="px-6 py-4 border-b border-gray-200">
+                        <div className="px-4 py-2 border-b border-gray-200">
                             <h3 className="text-md font-semibold text-gray-900">
                                 Current High Fluctuation Owners ({highFluctuationOwners.length})
                             </h3>
@@ -2003,16 +2003,16 @@ export default function AttestationCyclesPage() {
                             <table className="min-w-full divide-y divide-gray-200">
                                 <thead className="bg-gray-50">
                                     <tr>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Role</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Role</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody className="bg-white divide-y divide-gray-200">
                                     {highFluctuationOwners.map((owner) => (
                                         <tr key={owner.user_id} className="hover:bg-gray-50">
-                                            <td className="px-6 py-4 whitespace-nowrap">
+                                            <td className="px-4 py-2 whitespace-nowrap">
                                                 <Link
                                                     to={`/users/${owner.user_id}`}
                                                     className="text-blue-600 hover:text-blue-800 font-medium"
@@ -2020,13 +2020,13 @@ export default function AttestationCyclesPage() {
                                                     {owner.full_name}
                                                 </Link>
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                            <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
                                                 {owner.email}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                            <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
                                                 {owner.role}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
+                                            <td className="px-4 py-2 whitespace-nowrap">
                                                 <button
                                                     onClick={() => handleToggleHighFluctuation(owner.user_id, true)}
                                                     className="text-red-600 hover:text-red-800 text-sm font-medium"
@@ -2043,7 +2043,7 @@ export default function AttestationCyclesPage() {
 
                     {/* Add New High Fluctuation Owner */}
                     <div className="bg-white rounded-lg shadow">
-                        <div className="px-6 py-4 border-b border-gray-200">
+                        <div className="px-4 py-2 border-b border-gray-200">
                             <h3 className="text-md font-semibold text-gray-900">Add Owner to High Fluctuation List</h3>
                         </div>
                         <div className="p-4">
@@ -2238,7 +2238,7 @@ export default function AttestationCyclesPage() {
                                     {/* Owner Header - Collapsible */}
                                     <button
                                         onClick={() => toggleOwnerExpanded(group.owner_name)}
-                                        className="w-full px-6 py-4 flex items-center justify-between bg-gray-50 hover:bg-gray-100 transition-colors"
+                                        className="w-full px-4 py-2 flex items-center justify-between bg-gray-50 hover:bg-gray-100 transition-colors"
                                     >
                                         <div className="flex items-center gap-4">
                                             <span className="text-lg font-medium text-gray-900">
@@ -2281,20 +2281,20 @@ export default function AttestationCyclesPage() {
                                         <table className="min-w-full divide-y divide-gray-200">
                                             <thead className="bg-gray-50">
                                                 <tr>
-                                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Model</th>
-                                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Risk Tier</th>
-                                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cycle</th>
-                                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Due Date</th>
-                                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Decision</th>
-                                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Attested At</th>
-                                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Model</th>
+                                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Risk Tier</th>
+                                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Cycle</th>
+                                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Due Date</th>
+                                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Decision</th>
+                                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Attested At</th>
+                                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                                                 </tr>
                                             </thead>
                                             <tbody className="bg-white divide-y divide-gray-200">
                                                 {group.records.map((record) => (
                                                     <tr key={record.attestation_id} className={`hover:bg-gray-50 ${record.is_overdue ? 'bg-red-50' : ''}`}>
-                                                        <td className="px-6 py-4 whitespace-nowrap">
+                                                        <td className="px-4 py-2 whitespace-nowrap">
                                                             <Link
                                                                 to={`/models/${record.model_id}`}
                                                                 className="text-blue-600 hover:text-blue-800 font-medium"
@@ -2302,13 +2302,13 @@ export default function AttestationCyclesPage() {
                                                                 {record.model_name}
                                                             </Link>
                                                         </td>
-                                                        <td className="px-6 py-4 whitespace-nowrap">
+                                                        <td className="px-4 py-2 whitespace-nowrap">
                                                             {getRiskTierBadge(record.risk_tier_code)}
                                                         </td>
-                                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                        <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
                                                             {record.cycle_name}
                                                         </td>
-                                                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                                        <td className="px-4 py-2 whitespace-nowrap text-sm">
                                                             <span className={record.is_overdue ? 'text-red-600 font-medium' : 'text-gray-500'}>
                                                                 {formatDate(record.due_date)}
                                                             </span>
@@ -2318,7 +2318,7 @@ export default function AttestationCyclesPage() {
                                                                 </span>
                                                             )}
                                                         </td>
-                                                        <td className="px-6 py-4 whitespace-nowrap">
+                                                        <td className="px-4 py-2 whitespace-nowrap">
                                                             <span className={`px-2 py-1 text-xs font-medium rounded-full ${
                                                                 record.status === 'ACCEPTED' ? 'bg-green-100 text-green-800' :
                                                                 record.status === 'SUBMITTED' ? 'bg-blue-100 text-blue-800' :
@@ -2328,13 +2328,13 @@ export default function AttestationCyclesPage() {
                                                                 {record.status}
                                                             </span>
                                                         </td>
-                                                        <td className="px-6 py-4 whitespace-nowrap">
+                                                        <td className="px-4 py-2 whitespace-nowrap">
                                                             {getDecisionBadge(record.decision)}
                                                         </td>
-                                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                        <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
                                                             {formatDate(record.attested_at)}
                                                         </td>
-                                                        <td className="px-6 py-4 whitespace-nowrap">
+                                                        <td className="px-4 py-2 whitespace-nowrap">
                                                             <Link
                                                                 to={`/attestations/${record.attestation_id}`}
                                                                 className="text-blue-600 hover:text-blue-800 text-sm font-medium"
@@ -2460,25 +2460,25 @@ export default function AttestationCyclesPage() {
                             <table className="min-w-full divide-y divide-gray-200">
                                 <thead className="bg-gray-50">
                                     <tr>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             Order
                                         </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             Code
                                         </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ maxWidth: '400px' }}>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ maxWidth: '400px' }}>
                                             Question Text
                                         </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             Frequency
                                         </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             Comment Required
                                         </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             Status
                                         </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             Actions
                                         </th>
                                     </tr>
@@ -2486,20 +2486,20 @@ export default function AttestationCyclesPage() {
                                 <tbody className="bg-white divide-y divide-gray-200">
                                     {questions.length === 0 ? (
                                         <tr>
-                                            <td colSpan={7} className="px-6 py-4 text-center text-gray-500">
+                                            <td colSpan={7} className="px-4 py-2 text-center text-gray-500">
                                                 No attestation questions found.
                                             </td>
                                         </tr>
                                     ) : (
                                         questions.map((q) => (
                                             <tr key={q.value_id} className={!q.is_active ? 'bg-gray-50' : ''}>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">
                                                     {q.sort_order}
                                                 </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                                <td className="px-4 py-2 whitespace-nowrap text-sm font-medium text-gray-900">
                                                     {q.code}
                                                 </td>
-                                                <td className="px-6 py-4 text-sm text-gray-900" style={{ maxWidth: '400px' }}>
+                                                <td className="px-4 py-2 text-sm text-gray-900" style={{ maxWidth: '400px' }}>
                                                     <div className="truncate" title={q.label}>
                                                         {q.label}
                                                     </div>
@@ -2509,7 +2509,7 @@ export default function AttestationCyclesPage() {
                                                         </div>
                                                     )}
                                                 </td>
-                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                <td className="px-4 py-2 whitespace-nowrap">
                                                     <span className={`px-2 py-1 text-xs font-medium rounded ${
                                                         q.frequency_scope === 'BOTH' ? 'bg-purple-100 text-purple-800' :
                                                         q.frequency_scope === 'ANNUAL' ? 'bg-blue-100 text-blue-800' :
@@ -2518,21 +2518,21 @@ export default function AttestationCyclesPage() {
                                                         {q.frequency_scope}
                                                     </span>
                                                 </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
                                                     {q.requires_comment_if_no ? (
                                                         <span className="text-orange-600 font-medium">Yes</span>
                                                     ) : (
                                                         <span className="text-gray-400">No</span>
                                                     )}
                                                 </td>
-                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                <td className="px-4 py-2 whitespace-nowrap">
                                                     <span className={`px-2 py-1 text-xs font-medium rounded ${
                                                         q.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
                                                     }`}>
                                                         {q.is_active ? 'Active' : 'Inactive'}
                                                     </span>
                                                 </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                                <td className="px-4 py-2 whitespace-nowrap text-sm">
                                                     <button
                                                         onClick={() => handleEditQuestion(q)}
                                                         className="text-blue-600 hover:text-blue-800 font-medium"
@@ -2671,20 +2671,20 @@ export default function AttestationCyclesPage() {
                             <table className="min-w-full divide-y divide-gray-200">
                                 <thead className="bg-gray-50">
                                     <tr>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Change Type</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Attestation Model</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Owner</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cycle</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Target/Details</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Created</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Change Type</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Attestation Model</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Owner</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Cycle</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Target/Details</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Created</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody className="bg-white divide-y divide-gray-200">
                                     {filteredLinkedChanges.map((link) => (
                                         <tr key={link.link_id}>
-                                            <td className="px-6 py-4 whitespace-nowrap">
+                                            <td className="px-4 py-2 whitespace-nowrap">
                                                 <span className={`px-2 py-1 text-xs font-medium rounded ${
                                                     link.change_type === 'MODEL_EDIT' ? 'bg-blue-100 text-blue-800' :
                                                     link.change_type === 'NEW_MODEL' ? 'bg-green-100 text-green-800' :
@@ -2695,7 +2695,7 @@ export default function AttestationCyclesPage() {
                                                      'Decommission'}
                                                 </span>
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                            <td className="px-4 py-2 whitespace-nowrap text-sm">
                                                 {link.attestation?.model && (
                                                     <Link
                                                         to={`/attestations/${link.attestation_id}`}
@@ -2705,13 +2705,13 @@ export default function AttestationCyclesPage() {
                                                     </Link>
                                                 )}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                            <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">
                                                 {link.attestation?.owner?.full_name || '-'}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                            <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
                                                 {link.attestation?.cycle?.cycle_name || '-'}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                            <td className="px-4 py-2 whitespace-nowrap text-sm">
                                                 {link.change_type === 'NEW_MODEL' && link.model && (
                                                     <Link
                                                         to={`/models/${link.model.model_id}`}
@@ -2745,7 +2745,7 @@ export default function AttestationCyclesPage() {
                                                     </Link>
                                                 )}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
+                                            <td className="px-4 py-2 whitespace-nowrap">
                                                 {link.pending_edit?.status && (
                                                     <span className={`px-2 py-1 text-xs font-medium rounded ${
                                                         link.pending_edit.status === 'APPROVED' ? 'bg-green-100 text-green-800' :
@@ -2770,10 +2770,10 @@ export default function AttestationCyclesPage() {
                                                     </span>
                                                 )}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                            <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
                                                 {link.created_at ? link.created_at.split('T')[0] : '-'}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                            <td className="px-4 py-2 whitespace-nowrap text-sm">
                                                 <Link
                                                     to={`/attestations/${link.attestation_id}`}
                                                     className="text-blue-600 hover:text-blue-800 font-medium"

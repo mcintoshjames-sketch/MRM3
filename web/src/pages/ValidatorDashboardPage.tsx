@@ -530,22 +530,22 @@ export default function ValidatorDashboardPage() {
                         <table className="min-w-full divide-y divide-gray-200">
                             <thead className="bg-gray-50">
                                 <tr>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Model</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Priority</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Target Date</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Model</th>
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Priority</th>
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Target Date</th>
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                                 </tr>
                             </thead>
                             <tbody className="bg-white divide-y divide-gray-200">
                                 {activeAssignments.map((req) => (
                                     <tr key={req.request_id} className="hover:bg-gray-50">
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-mono">
+                                        <td className="px-4 py-2 whitespace-nowrap text-sm font-mono">
                                             #{req.request_id}
                                         </td>
-                                        <td className="px-6 py-4">
+                                        <td className="px-4 py-2">
                                             {req.model_ids.length === 1 ? (
                                                 <Link
                                                     to={`/models/${req.model_ids[0]}`}
@@ -568,23 +568,23 @@ export default function ValidatorDashboardPage() {
                                                 </div>
                                             )}
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                        <td className="px-4 py-2 whitespace-nowrap text-sm">
                                             {req.validation_type}
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
+                                        <td className="px-4 py-2 whitespace-nowrap">
                                             <span className={`px-2 py-1 text-xs rounded ${getPriorityColor(req.priority)}`}>
                                                 {req.priority}
                                             </span>
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
+                                        <td className="px-4 py-2 whitespace-nowrap">
                                             <span className={`px-2 py-1 text-xs rounded ${getStatusColor(req.current_status)}`}>
                                                 {req.current_status}
                                             </span>
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                        <td className="px-4 py-2 whitespace-nowrap text-sm">
                                             {req.target_completion_date}
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
+                                        <td className="px-4 py-2 whitespace-nowrap">
                                             <Link
                                                 to={`/validation-workflow/${req.request_id}`}
                                                 className={`px-3 py-1 rounded text-sm ${req.current_status === 'Intake' || req.current_status === 'Planning'
@@ -620,14 +620,14 @@ export default function ValidatorDashboardPage() {
                         <table className="min-w-full divide-y divide-gray-200">
                             <thead className="bg-gray-50">
                                 <tr>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Model</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Priority</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Primary Validator</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">SLA Time Remaining</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Target Date</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Model</th>
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Priority</th>
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Primary Validator</th>
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">SLA Time Remaining</th>
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Target Date</th>
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                                 </tr>
                             </thead>
                             <tbody className="bg-white divide-y divide-gray-200">
@@ -635,10 +635,10 @@ export default function ValidatorDashboardPage() {
                                     const slaInfo = calculateSLARemaining(req);
                                     return (
                                         <tr key={req.request_id} className="hover:bg-gray-50">
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-mono">
+                                            <td className="px-4 py-2 whitespace-nowrap text-sm font-mono">
                                                 #{req.request_id}
                                             </td>
-                                            <td className="px-6 py-4">
+                                            <td className="px-4 py-2">
                                                 {req.model_ids.length === 1 ? (
                                                     <Link
                                                         to={`/models/${req.model_ids[0]}`}
@@ -661,26 +661,26 @@ export default function ValidatorDashboardPage() {
                                                     </div>
                                                 )}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                            <td className="px-4 py-2 whitespace-nowrap text-sm">
                                                 {req.validation_type}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
+                                            <td className="px-4 py-2 whitespace-nowrap">
                                                 <span className={`px-2 py-1 text-xs rounded ${getPriorityColor(req.priority)}`}>
                                                     {req.priority}
                                                 </span>
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                            <td className="px-4 py-2 whitespace-nowrap text-sm">
                                                 {req.primary_validator}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
+                                            <td className="px-4 py-2 whitespace-nowrap">
                                                 <span className={`px-2 py-1 text-xs font-semibold rounded ${getSLABadge(slaInfo.severity)}`}>
                                                     {slaInfo.displayText}
                                                 </span>
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                            <td className="px-4 py-2 whitespace-nowrap text-sm">
                                                 {req.target_completion_date}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
+                                            <td className="px-4 py-2 whitespace-nowrap">
                                                 <button
                                                     onClick={() => openReviewModal(req)}
                                                     className="bg-purple-600 text-white px-3 py-1 rounded text-sm hover:bg-purple-700"
@@ -712,24 +712,24 @@ export default function ValidatorDashboardPage() {
                         <table className="min-w-full divide-y divide-gray-200">
                             <thead className="bg-gray-50">
                                 <tr>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Model</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Requestor</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Priority</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Assigned To</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Request Date</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Model</th>
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Requestor</th>
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Priority</th>
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Assigned To</th>
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Request Date</th>
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                                 </tr>
                             </thead>
                             <tbody className="bg-white divide-y divide-gray-200">
                                 {pendingRequests.map((req) => (
                                     <tr key={req.request_id} className="hover:bg-gray-50">
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-mono">
+                                        <td className="px-4 py-2 whitespace-nowrap text-sm font-mono">
                                             #{req.request_id}
                                         </td>
-                                        <td className="px-6 py-4">
+                                        <td className="px-4 py-2">
                                             {req.model_ids.length === 1 ? (
                                                 <Link
                                                     to={`/models/${req.model_ids[0]}`}
@@ -752,31 +752,31 @@ export default function ValidatorDashboardPage() {
                                                 </div>
                                             )}
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                        <td className="px-4 py-2 whitespace-nowrap text-sm">
                                             {req.requestor_name}
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                        <td className="px-4 py-2 whitespace-nowrap text-sm">
                                             {req.validation_type}
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
+                                        <td className="px-4 py-2 whitespace-nowrap">
                                             <span className={`px-2 py-1 text-xs rounded ${getPriorityColor(req.priority)}`}>
                                                 {req.priority}
                                             </span>
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
+                                        <td className="px-4 py-2 whitespace-nowrap">
                                             <span className={`px-2 py-1 text-xs rounded ${getStatusColor(req.current_status)}`}>
                                                 {req.current_status}
                                             </span>
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                        <td className="px-4 py-2 whitespace-nowrap text-sm">
                                             {req.primary_validator || (
                                                 <span className="text-orange-600 font-medium">Unassigned</span>
                                             )}
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                        <td className="px-4 py-2 whitespace-nowrap text-sm">
                                             {req.request_date}
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
+                                        <td className="px-4 py-2 whitespace-nowrap">
                                             <div className="flex gap-2">
                                                 <button
                                                     onClick={() => claimRequest(req.request_id)}

@@ -107,25 +107,25 @@ export default function PendingDecommissioningPage() {
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Model
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Reason
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Last Production Date
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Requested By
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Requested On
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Status
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Actions
                   </th>
                 </tr>
@@ -133,7 +133,7 @@ export default function PendingDecommissioningPage() {
               <tbody className="bg-white divide-y divide-gray-200">
                 {requests.map((request) => (
                   <tr key={request.request_id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="px-4 py-2 whitespace-nowrap">
                       <Link
                         to={`/models/${request.model_id}`}
                         className="text-blue-600 hover:text-blue-800 font-medium"
@@ -141,27 +141,27 @@ export default function PendingDecommissioningPage() {
                         {request.model_name}
                       </Link>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">
                       {request.reason}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                    <td className="px-4 py-2 whitespace-nowrap text-sm">
                       <div className="flex items-center gap-2">
                         <span className="text-gray-900">{request.last_production_date}</span>
                         {getUrgencyBadge(request.last_production_date)}
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
                       {request.created_by_name}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
                       {request.created_at.split('T')[0]}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="px-4 py-2 whitespace-nowrap">
                       <span className="px-2 py-1 text-xs font-medium rounded-full bg-orange-100 text-orange-800">
                         {request.status}
                       </span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                    <td className="px-4 py-2 whitespace-nowrap text-sm">
                       <Link
                         to={`/models/${request.model_id}/decommission`}
                         className="text-blue-600 hover:text-blue-800 font-medium"

@@ -308,13 +308,13 @@ export default function IRPDetailPage() {
                                 <table className="min-w-full divide-y divide-gray-200">
                                     <thead className="bg-gray-50">
                                         <tr>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                                 MRSA Name
                                             </th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                                 Risk Level
                                             </th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                                 Owner
                                             </th>
                                         </tr>
@@ -322,7 +322,7 @@ export default function IRPDetailPage() {
                                     <tbody className="bg-white divide-y divide-gray-200">
                                         {irp.covered_mrsas.map((mrsa) => (
                                             <tr key={mrsa.model_id} className="hover:bg-gray-50">
-                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                <td className="px-4 py-2 whitespace-nowrap">
                                                     <Link
                                                         to={`/models/${mrsa.model_id}`}
                                                         className="text-blue-600 hover:underline font-medium"
@@ -330,7 +330,7 @@ export default function IRPDetailPage() {
                                                         {mrsa.model_name}
                                                     </Link>
                                                 </td>
-                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                <td className="px-4 py-2 whitespace-nowrap">
                                                     {mrsa.mrsa_risk_level_label ? (
                                                         <span className={`px-2 py-1 text-xs rounded font-medium ${
                                                             mrsa.mrsa_risk_level_label === 'High-Risk'
@@ -343,7 +343,7 @@ export default function IRPDetailPage() {
                                                         <span className="text-gray-400">-</span>
                                                     )}
                                                 </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
                                                     {mrsa.owner_name || '-'}
                                                 </td>
                                             </tr>
@@ -452,16 +452,16 @@ export default function IRPDetailPage() {
                                 <table className="min-w-full divide-y divide-gray-200">
                                     <thead className="bg-gray-50">
                                         <tr>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                                 Date
                                             </th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                                 Outcome
                                             </th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                                 Reviewed By
                                             </th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                                 Notes
                                             </th>
                                         </tr>
@@ -471,10 +471,10 @@ export default function IRPDetailPage() {
                                             .sort((a, b) => new Date(b.review_date).getTime() - new Date(a.review_date).getTime())
                                             .map((review) => (
                                                 <tr key={review.review_id} className="hover:bg-gray-50">
-                                                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                                    <td className="px-4 py-2 whitespace-nowrap text-sm">
                                                         {review.review_date}
                                                     </td>
-                                                    <td className="px-6 py-4 whitespace-nowrap">
+                                                    <td className="px-4 py-2 whitespace-nowrap">
                                                         {review.outcome && (
                                                             <span className={`px-2 py-1 text-xs rounded font-medium ${
                                                                 getOutcomeColor(review.outcome.code)
@@ -483,10 +483,10 @@ export default function IRPDetailPage() {
                                                             </span>
                                                         )}
                                                     </td>
-                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                    <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
                                                         {review.reviewed_by?.full_name || '-'}
                                                     </td>
-                                                    <td className="px-6 py-4 text-sm text-gray-500 max-w-xs truncate">
+                                                    <td className="px-4 py-2 text-sm text-gray-500 max-w-xs truncate">
                                                         {review.notes || '-'}
                                                     </td>
                                                 </tr>
@@ -575,13 +575,13 @@ export default function IRPDetailPage() {
                                 <table className="min-w-full divide-y divide-gray-200">
                                     <thead className="bg-gray-50">
                                         <tr>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                                 Date
                                             </th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                                 Certified By
                                             </th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                                 Conclusion Summary
                                             </th>
                                         </tr>
@@ -591,13 +591,13 @@ export default function IRPDetailPage() {
                                             .sort((a, b) => new Date(b.certification_date).getTime() - new Date(a.certification_date).getTime())
                                             .map((cert) => (
                                                 <tr key={cert.certification_id} className="hover:bg-gray-50">
-                                                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                                    <td className="px-4 py-2 whitespace-nowrap text-sm">
                                                         {cert.certification_date}
                                                     </td>
-                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                    <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
                                                         {cert.certified_by?.full_name || '-'}
                                                     </td>
-                                                    <td className="px-6 py-4 text-sm text-gray-500">
+                                                    <td className="px-4 py-2 text-sm text-gray-500">
                                                         {cert.conclusion_summary}
                                                     </td>
                                                 </tr>

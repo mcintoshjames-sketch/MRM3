@@ -321,12 +321,12 @@ export default function MyAttestationsPage() {
                     <table className="min-w-full divide-y divide-gray-200">
                         <thead className="bg-gray-50">
                             <tr>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Model</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Risk Tier</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cycle</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Due Date</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Model</th>
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Risk Tier</th>
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Cycle</th>
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Due Date</th>
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                             </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
@@ -337,7 +337,7 @@ export default function MyAttestationsPage() {
                                         att.status === 'PENDING' && att.is_excluded ? 'bg-orange-50' : ''
                                     }`}
                                 >
-                                    <td className="px-6 py-4 whitespace-nowrap">
+                                    <td className="px-4 py-2 whitespace-nowrap">
                                         <Link
                                             to={`/models/${att.model_id}`}
                                             className="text-blue-600 hover:text-blue-800 font-medium"
@@ -345,19 +345,19 @@ export default function MyAttestationsPage() {
                                             {att.model_name}
                                         </Link>
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                    <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
                                         {att.model_risk_tier || att.risk_tier_code || '-'}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                    <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
                                         {att.cycle_name}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                    <td className="px-4 py-2 whitespace-nowrap text-sm">
                                         <span className={att.days_until_due < 0 && att.status === 'PENDING' ? 'text-red-600 font-medium' : 'text-gray-500'}>
                                             {formatDate(att.due_date)}
                                         </span>
                                         {getUrgencyBadge(att.days_until_due, att.status)}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
+                                    <td className="px-4 py-2 whitespace-nowrap">
                                         {getStatusBadge(att.status, att.is_excluded)}
                                         {att.status === 'REJECTED' && att.rejection_reason && (
                                             <div className="text-xs text-red-600 mt-1 max-w-xs truncate" title={att.rejection_reason}>
@@ -365,7 +365,7 @@ export default function MyAttestationsPage() {
                                             </div>
                                         )}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
+                                    <td className="px-4 py-2 whitespace-nowrap">
                                         {att.status === 'PENDING' && (
                                             <Link
                                                 to={`/attestations/${att.attestation_id}`}

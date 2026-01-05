@@ -225,38 +225,38 @@ export default function RegionsPage() {
                 <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50">
                         <tr>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Code</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Approval Required</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Validation Plan Required</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Standalone Rating</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Created</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Code</th>
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Approval Required</th>
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Validation Plan Required</th>
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Standalone Rating</th>
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Created</th>
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                         </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
                         {regions.length === 0 ? (
                             <tr>
-                                <td colSpan={8} className="px-6 py-4 text-center text-gray-500">
+                                <td colSpan={8} className="px-4 py-2 text-center text-gray-500">
                                     No regions yet. Click "Add Region" to create one.
                                 </td>
                             </tr>
                         ) : (
                             regions.map((region) => (
                                 <tr key={region.region_id}>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                    <td className="px-4 py-2 whitespace-nowrap text-sm">
                                         {region.region_id}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
+                                    <td className="px-4 py-2 whitespace-nowrap">
                                         <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs font-semibold rounded">
                                             {region.code}
                                         </span>
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap font-medium">
+                                    <td className="px-4 py-2 whitespace-nowrap font-medium">
                                         {region.name}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
+                                    <td className="px-4 py-2 whitespace-nowrap">
                                         {region.requires_regional_approval ? (
                                             <span className="px-2 py-1 bg-green-100 text-green-800 text-xs font-semibold rounded">
                                                 Yes
@@ -267,7 +267,7 @@ export default function RegionsPage() {
                                             </span>
                                         )}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
+                                    <td className="px-4 py-2 whitespace-nowrap">
                                         {region.enforce_validation_plan ? (
                                             <span className="px-2 py-1 bg-green-100 text-green-800 text-xs font-semibold rounded">
                                                 Yes
@@ -278,7 +278,7 @@ export default function RegionsPage() {
                                             </span>
                                         )}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
+                                    <td className="px-4 py-2 whitespace-nowrap">
                                         {region.requires_standalone_rating ? (
                                             <span className="px-2 py-1 bg-purple-100 text-purple-800 text-xs font-semibold rounded">
                                                 Yes
@@ -289,10 +289,10 @@ export default function RegionsPage() {
                                             </span>
                                         )}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                    <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
                                         {region.created_at.split('T')[0]}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
+                                    <td className="px-4 py-2 whitespace-nowrap">
                                         <button
                                             onClick={() => handleEdit(region)}
                                             className="text-blue-600 hover:text-blue-800 text-sm mr-3"

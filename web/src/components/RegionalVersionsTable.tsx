@@ -115,19 +115,19 @@ const RegionalVersionsTable: React.FC<RegionalVersionsTableProps> = ({ modelId, 
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Region
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Current Version
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Deployed At
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Deployment Type
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Notes
                 </th>
               </tr>
@@ -135,23 +135,23 @@ const RegionalVersionsTable: React.FC<RegionalVersionsTableProps> = ({ modelId, 
             <tbody className="bg-white divide-y divide-gray-200">
               {regional_versions.map((rv) => (
                 <tr key={rv.region_id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="px-4 py-2 whitespace-nowrap">
                     <div>
                       <div className="font-medium text-gray-900">{rv.region_name}</div>
                       <div className="text-sm text-gray-500">{rv.region_code}</div>
                     </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="px-4 py-2 whitespace-nowrap">
                     {rv.version_number ? (
                       <span className="font-medium text-gray-900">{rv.version_number}</span>
                     ) : (
                       <span className="text-gray-400 italic">None</span>
                     )}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
                     {rv.deployed_at ? rv.deployed_at.split('T')[0] : '—'}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="px-4 py-2 whitespace-nowrap">
                     {rv.is_regional_override ? (
                       <span className="px-2 py-1 text-xs font-medium rounded-full bg-orange-100 text-orange-800">
                         Regional Override
@@ -166,7 +166,7 @@ const RegionalVersionsTable: React.FC<RegionalVersionsTableProps> = ({ modelId, 
                       </span>
                     )}
                   </td>
-                  <td className="px-6 py-4 text-sm text-gray-500 max-w-xs truncate">
+                  <td className="px-4 py-2 text-sm text-gray-500 max-w-xs truncate">
                     {rv.deployment_notes || '—'}
                   </td>
                 </tr>

@@ -227,7 +227,7 @@ export default function MRSAReviewPoliciesPage() {
                     <thead className="bg-gray-50">
                         <tr>
                             <th
-                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
                                 onClick={() => requestSort('mrsa_risk_level.label')}
                             >
                                 <div className="flex items-center gap-2">
@@ -236,7 +236,7 @@ export default function MRSAReviewPoliciesPage() {
                                 </div>
                             </th>
                             <th
-                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
                                 onClick={() => requestSort('frequency_months')}
                             >
                                 <div className="flex items-center gap-2">
@@ -245,7 +245,7 @@ export default function MRSAReviewPoliciesPage() {
                                 </div>
                             </th>
                             <th
-                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
                                 onClick={() => requestSort('initial_review_months')}
                             >
                                 <div className="flex items-center gap-2">
@@ -254,7 +254,7 @@ export default function MRSAReviewPoliciesPage() {
                                 </div>
                             </th>
                             <th
-                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
                                 onClick={() => requestSort('warning_days')}
                             >
                                 <div className="flex items-center gap-2">
@@ -262,10 +262,10 @@ export default function MRSAReviewPoliciesPage() {
                                     {getSortIcon('warning_days')}
                                 </div>
                             </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                 Status
                             </th>
-                            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                            <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">
                                 Actions
                             </th>
                         </tr>
@@ -273,7 +273,7 @@ export default function MRSAReviewPoliciesPage() {
                     <tbody className="bg-white divide-y divide-gray-200">
                         {sortedData.length === 0 ? (
                             <tr>
-                                <td colSpan={6} className="px-6 py-4 text-center text-gray-500">
+                                <td colSpan={6} className="px-4 py-2 text-center text-gray-500">
                                     No MRSA review policies configured.
                                 </td>
                             </tr>
@@ -282,7 +282,7 @@ export default function MRSAReviewPoliciesPage() {
                                 <tr key={policy.policy_id}>
                                     {editingPolicy === policy.policy_id ? (
                                         <>
-                                            <td className="px-6 py-4">
+                                            <td className="px-4 py-2">
                                                 <div className="font-medium text-gray-900">
                                                     {policy.mrsa_risk_level?.label || 'Unknown'}
                                                 </div>
@@ -292,7 +292,7 @@ export default function MRSAReviewPoliciesPage() {
                                                     </div>
                                                 )}
                                             </td>
-                                            <td className="px-6 py-4">
+                                            <td className="px-4 py-2">
                                                 <div className="flex items-center gap-2">
                                                     <input
                                                         type="number"
@@ -308,7 +308,7 @@ export default function MRSAReviewPoliciesPage() {
                                                     <span className="text-sm text-gray-600">months</span>
                                                 </div>
                                             </td>
-                                            <td className="px-6 py-4">
+                                            <td className="px-4 py-2">
                                                 <div className="flex items-center gap-2">
                                                     <input
                                                         type="number"
@@ -324,7 +324,7 @@ export default function MRSAReviewPoliciesPage() {
                                                     <span className="text-sm text-gray-600">months</span>
                                                 </div>
                                             </td>
-                                            <td className="px-6 py-4">
+                                            <td className="px-4 py-2">
                                                 <div className="flex items-center gap-2">
                                                     <input
                                                         type="number"
@@ -340,7 +340,7 @@ export default function MRSAReviewPoliciesPage() {
                                                     <span className="text-sm text-gray-600">days</span>
                                                 </div>
                                             </td>
-                                            <td className="px-6 py-4">
+                                            <td className="px-4 py-2">
                                                 <label className="inline-flex items-center gap-2 text-sm text-gray-700">
                                                     <input
                                                         type="checkbox"
@@ -354,7 +354,7 @@ export default function MRSAReviewPoliciesPage() {
                                                     Active
                                                 </label>
                                             </td>
-                                            <td className="px-6 py-4 text-right">
+                                            <td className="px-4 py-2 text-right">
                                                 <button
                                                     onClick={() => handleUpdate(policy.policy_id)}
                                                     className="text-green-600 hover:text-green-800 mr-3"
@@ -371,7 +371,7 @@ export default function MRSAReviewPoliciesPage() {
                                         </>
                                     ) : (
                                         <>
-                                            <td className="px-6 py-4">
+                                            <td className="px-4 py-2">
                                                 <div className="font-medium text-gray-900">
                                                     {policy.mrsa_risk_level?.label || 'Unknown'}
                                                 </div>
@@ -381,26 +381,26 @@ export default function MRSAReviewPoliciesPage() {
                                                     </div>
                                                 )}
                                             </td>
-                                            <td className="px-6 py-4">
+                                            <td className="px-4 py-2">
                                                 <span className="font-medium">{policy.frequency_months}</span>
                                                 <span className="text-sm text-gray-600 ml-1">months</span>
                                             </td>
-                                            <td className="px-6 py-4">
+                                            <td className="px-4 py-2">
                                                 <span className="font-medium">{policy.initial_review_months}</span>
                                                 <span className="text-sm text-gray-600 ml-1">months</span>
                                             </td>
-                                            <td className="px-6 py-4">
+                                            <td className="px-4 py-2">
                                                 <span className="font-medium">{policy.warning_days}</span>
                                                 <span className="text-sm text-gray-600 ml-1">days</span>
                                             </td>
-                                            <td className="px-6 py-4">
+                                            <td className="px-4 py-2">
                                                 <span className={`px-2 py-0.5 text-xs font-medium rounded ${
                                                     policy.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
                                                 }`}>
                                                     {policy.is_active ? 'Active' : 'Inactive'}
                                                 </span>
                                             </td>
-                                            <td className="px-6 py-4 text-right">
+                                            <td className="px-4 py-2 text-right">
                                                 <button
                                                     onClick={() => startEditing(policy)}
                                                     className="text-blue-600 hover:text-blue-800"

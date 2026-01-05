@@ -726,22 +726,22 @@ export default function RecommendationDetailPage() {
                                 <table className="min-w-full divide-y divide-gray-200">
                                     <thead className="bg-gray-50">
                                         <tr>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Significance</th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Conclusion</th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Created</th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
+                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Significance</th>
+                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
+                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
+                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Conclusion</th>
+                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Created</th>
+                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody className="bg-white divide-y divide-gray-200">
                                         {limitations.map(limitation => (
                                             <tr key={limitation.limitation_id}>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">
                                                     #{limitation.limitation_id}
                                                 </td>
-                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                <td className="px-4 py-2 whitespace-nowrap">
                                                     <span className={`px-2 py-1 text-xs rounded ${
                                                         limitation.significance === 'Critical'
                                                             ? 'bg-red-100 text-red-800'
@@ -750,15 +750,15 @@ export default function RecommendationDetailPage() {
                                                         {limitation.significance}
                                                     </span>
                                                 </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">
                                                     {limitation.category?.label || '-'}
                                                 </td>
-                                                <td className="px-6 py-4 text-sm text-gray-900 max-w-xs truncate" title={limitation.description}>
+                                                <td className="px-4 py-2 text-sm text-gray-900 max-w-xs truncate" title={limitation.description}>
                                                     {limitation.description.length > 80
                                                         ? `${limitation.description.substring(0, 80)}...`
                                                         : limitation.description}
                                                 </td>
-                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                <td className="px-4 py-2 whitespace-nowrap">
                                                     <span className={`px-2 py-1 text-xs rounded ${
                                                         limitation.conclusion === 'Mitigate'
                                                             ? 'bg-yellow-100 text-yellow-800'
@@ -767,10 +767,10 @@ export default function RecommendationDetailPage() {
                                                         {limitation.conclusion}
                                                     </span>
                                                 </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
                                                     {limitation.created_at?.split('T')[0]}
                                                 </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                                <td className="px-4 py-2 whitespace-nowrap text-sm">
                                                     <Link
                                                         to={`/models/${limitation.model_id}?tab=limitations`}
                                                         className="text-blue-600 hover:text-blue-800 hover:underline"

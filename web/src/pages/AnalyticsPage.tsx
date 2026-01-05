@@ -244,7 +244,7 @@ export default function AnalyticsPage() {
                                     {Object.keys(results[0]).map((key) => (
                                         <th
                                             key={key}
-                                            className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                                            className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
                                         >
                                             {key}
                                         </th>
@@ -255,7 +255,7 @@ export default function AnalyticsPage() {
                                 {results.map((row, i) => (
                                     <tr key={i} className="hover:bg-gray-50">
                                         {Object.values(row).map((value: any, j) => (
-                                            <td key={j} className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                            <td key={j} className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
                                                 {value === null ? 'NULL' : String(value)}
                                             </td>
                                         ))}

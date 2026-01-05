@@ -537,22 +537,22 @@ const ExceptionsReportPage: React.FC = () => {
                                 <table className="min-w-full divide-y divide-gray-200">
                                     <thead className="bg-gray-50">
                                         <tr>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                                 Exception Code
                                             </th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                                 Model
                                             </th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                                 Type
                                             </th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                                 Status
                                             </th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                                 Detected
                                             </th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                                 Actions
                                             </th>
                                         </tr>
@@ -560,14 +560,14 @@ const ExceptionsReportPage: React.FC = () => {
                                     <tbody className="bg-white divide-y divide-gray-200">
                                         {exceptions.length === 0 ? (
                                             <tr>
-                                                <td colSpan={6} className="px-6 py-4 text-center text-gray-500">
+                                                <td colSpan={6} className="px-4 py-2 text-center text-gray-500">
                                                     No exceptions found.
                                                 </td>
                                             </tr>
                                         ) : (
                                             exceptions.map((exc) => (
                                                 <tr key={exc.exception_id} className="hover:bg-gray-50">
-                                                    <td className="px-6 py-4 whitespace-nowrap">
+                                                    <td className="px-4 py-2 whitespace-nowrap">
                                                         <button
                                                             onClick={() => handleOpenDetail(exc.exception_id)}
                                                             className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline"
@@ -575,7 +575,7 @@ const ExceptionsReportPage: React.FC = () => {
                                                             {exc.exception_code}
                                                         </button>
                                                     </td>
-                                                    <td className="px-6 py-4 whitespace-nowrap">
+                                                    <td className="px-4 py-2 whitespace-nowrap">
                                                         <Link
                                                             to={`/models/${exc.model_id}`}
                                                             className="text-sm text-blue-600 hover:text-blue-800 hover:underline"
@@ -588,12 +588,12 @@ const ExceptionsReportPage: React.FC = () => {
                                                             </span>
                                                         )}
                                                     </td>
-                                                    <td className="px-6 py-4">
+                                                    <td className="px-4 py-2">
                                                         <span className="text-sm text-gray-900">
                                                             {EXCEPTION_TYPE_LABELS[exc.exception_type] || exc.exception_type}
                                                         </span>
                                                     </td>
-                                                    <td className="px-6 py-4 whitespace-nowrap">
+                                                    <td className="px-4 py-2 whitespace-nowrap">
                                                         {getStatusBadge(exc.status)}
                                                         {exc.auto_closed && (
                                                             <span className="ml-2 text-xs text-gray-500" title="Auto-closed by system">
@@ -601,10 +601,10 @@ const ExceptionsReportPage: React.FC = () => {
                                                             </span>
                                                         )}
                                                     </td>
-                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                    <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
                                                         {exc.detected_at?.split('T')[0] || '-'}
                                                     </td>
-                                                    <td className="px-6 py-4 whitespace-nowrap">
+                                                    <td className="px-4 py-2 whitespace-nowrap">
                                                         <button
                                                             onClick={() => handleOpenDetail(exc.exception_id)}
                                                             className="text-blue-600 hover:text-blue-800 text-sm"
@@ -621,7 +621,7 @@ const ExceptionsReportPage: React.FC = () => {
 
                             {/* Pagination */}
                             {total > limit && (
-                                <div className="px-6 py-4 flex items-center justify-between border-t border-gray-200">
+                                <div className="px-4 py-2 flex items-center justify-between border-t border-gray-200">
                                     <div className="text-sm text-gray-500">
                                         Page {Math.floor(skip / limit) + 1} of {Math.ceil(total / limit)}
                                     </div>

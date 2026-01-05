@@ -512,19 +512,19 @@ export default function ConditionalApprovalRulesPage() {
                 <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50">
                         <tr>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                 Rule Name
                             </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                 Conditions
                             </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                 Required Approvers
                             </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                 Status
                             </th>
-                            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                            <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">
                                 Actions
                             </th>
                         </tr>
@@ -532,14 +532,14 @@ export default function ConditionalApprovalRulesPage() {
                     <tbody className="bg-white divide-y divide-gray-200">
                         {rules.length === 0 ? (
                             <tr>
-                                <td colSpan={5} className="px-6 py-4 text-center text-gray-500">
+                                <td colSpan={5} className="px-4 py-2 text-center text-gray-500">
                                     No additional approval rules defined. Click "Add Rule" to create one.
                                 </td>
                             </tr>
                         ) : (
                             rules.map((rule) => (
                                 <tr key={rule.rule_id} className="hover:bg-gray-50">
-                                    <td className="px-6 py-4">
+                                    <td className="px-4 py-2">
                                         <div className="text-sm font-medium text-gray-900">
                                             {rule.rule_name}
                                         </div>
@@ -549,17 +549,17 @@ export default function ConditionalApprovalRulesPage() {
                                             </div>
                                         )}
                                     </td>
-                                    <td className="px-6 py-4">
+                                    <td className="px-4 py-2">
                                         <div className="text-sm text-gray-600">
                                             {rule.conditions_summary}
                                         </div>
                                     </td>
-                                    <td className="px-6 py-4">
+                                    <td className="px-4 py-2">
                                         <div className="text-sm text-gray-900">
                                             {rule.required_approver_names}
                                         </div>
                                     </td>
-                                    <td className="px-6 py-4">
+                                    <td className="px-4 py-2">
                                         <span
                                             className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
                                                 rule.is_active
@@ -570,7 +570,7 @@ export default function ConditionalApprovalRulesPage() {
                                             {rule.is_active ? 'Active' : 'Inactive'}
                                         </span>
                                     </td>
-                                    <td className="px-6 py-4 text-right text-sm font-medium">
+                                    <td className="px-4 py-2 text-right text-sm font-medium">
                                         <button
                                             onClick={() => handleEdit(rule)}
                                             className="text-blue-600 hover:text-blue-800 mr-3"

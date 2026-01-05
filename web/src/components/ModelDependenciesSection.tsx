@@ -227,23 +227,23 @@ export default function ModelDependenciesSection({ modelId, modelName }: Props) 
                             <table className="min-w-full divide-y divide-gray-200">
                                 <thead className="bg-gray-50">
                                     <tr>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             Feeder Model
                                         </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             Dependency Type
                                         </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             Description
                                         </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             Status
                                         </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             Effective Date
                                         </th>
                                         {canManageModelRelationshipsFlag && (
-                                            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                                                 Actions
                                             </th>
                                         )}
@@ -252,7 +252,7 @@ export default function ModelDependenciesSection({ modelId, modelName }: Props) 
                                 <tbody className="bg-white divide-y divide-gray-200">
                                     {inbound.map((dep) => (
                                         <tr key={dep.id} className="hover:bg-gray-50">
-                                            <td className="px-6 py-4 whitespace-nowrap">
+                                            <td className="px-4 py-2 whitespace-nowrap">
                                                 <Link
                                                     to={`/models/${dep.model_id}`}
                                                     className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
@@ -260,15 +260,15 @@ export default function ModelDependenciesSection({ modelId, modelName }: Props) 
                                                     {dep.model_name}
                                                 </Link>
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
+                                            <td className="px-4 py-2 whitespace-nowrap">
                                                 <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-purple-100 text-purple-800">
                                                     {dep.dependency_type}
                                                 </span>
                                             </td>
-                                            <td className="px-6 py-4 text-sm text-gray-500">
+                                            <td className="px-4 py-2 text-sm text-gray-500">
                                                 {dep.description || '-'}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
+                                            <td className="px-4 py-2 whitespace-nowrap">
                                                 {dep.is_active ? (
                                                     <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
                                                         Active
@@ -279,11 +279,11 @@ export default function ModelDependenciesSection({ modelId, modelName }: Props) 
                                                     </span>
                                                 )}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                            <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
                                                 {dep.effective_date || '-'}
                                             </td>
                                             {canManageModelRelationshipsFlag && (
-                                                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                                <td className="px-4 py-2 whitespace-nowrap text-right text-sm font-medium">
                                                     <button
                                                         onClick={() => handleEdit(dep, 'inbound')}
                                                         className="text-blue-600 hover:text-blue-900 mr-3"
@@ -351,23 +351,23 @@ export default function ModelDependenciesSection({ modelId, modelName }: Props) 
                             <table className="min-w-full divide-y divide-gray-200">
                                 <thead className="bg-gray-50">
                                     <tr>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             Consumer Model
                                         </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             Dependency Type
                                         </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             Description
                                         </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             Status
                                         </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             Effective Date
                                         </th>
                                         {canManageModelRelationshipsFlag && (
-                                            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                                                 Actions
                                             </th>
                                         )}
@@ -376,7 +376,7 @@ export default function ModelDependenciesSection({ modelId, modelName }: Props) 
                                 <tbody className="bg-white divide-y divide-gray-200">
                                     {outbound.map((dep) => (
                                         <tr key={dep.id} className="hover:bg-gray-50">
-                                            <td className="px-6 py-4 whitespace-nowrap">
+                                            <td className="px-4 py-2 whitespace-nowrap">
                                                 <Link
                                                     to={`/models/${dep.model_id}`}
                                                     className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
@@ -384,15 +384,15 @@ export default function ModelDependenciesSection({ modelId, modelName }: Props) 
                                                     {dep.model_name}
                                                 </Link>
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
+                                            <td className="px-4 py-2 whitespace-nowrap">
                                                 <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-indigo-100 text-indigo-800">
                                                     {dep.dependency_type}
                                                 </span>
                                             </td>
-                                            <td className="px-6 py-4 text-sm text-gray-500">
+                                            <td className="px-4 py-2 text-sm text-gray-500">
                                                 {dep.description || '-'}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
+                                            <td className="px-4 py-2 whitespace-nowrap">
                                                 {dep.is_active ? (
                                                     <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
                                                         Active
@@ -403,11 +403,11 @@ export default function ModelDependenciesSection({ modelId, modelName }: Props) 
                                                     </span>
                                                 )}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                            <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
                                                 {dep.effective_date || '-'}
                                             </td>
                                             {canManageModelRelationshipsFlag && (
-                                                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                                <td className="px-4 py-2 whitespace-nowrap text-right text-sm font-medium">
                                                     <button
                                                         onClick={() => handleEdit(dep, 'outbound')}
                                                         className="text-blue-600 hover:text-blue-900 mr-3"

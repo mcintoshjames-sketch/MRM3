@@ -614,7 +614,7 @@ export default function ApproverDashboardPage() {
                                     <thead className="bg-gray-50">
                                         <tr>
                                             <th
-                                                className="px-6 py-3 w-24 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                                className="px-4 py-2 w-24 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
                                                 onClick={() => requestValidationSort('request_id')}
                                             >
                                                 <div className="flex items-center gap-2">
@@ -623,7 +623,7 @@ export default function ApproverDashboardPage() {
                                                 </div>
                                             </th>
                                             <th
-                                                className="px-6 py-3 w-64 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                                className="px-4 py-2 w-64 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
                                                 onClick={() => requestValidationSort('model_display')}
                                             >
                                                 <div className="flex items-center gap-2">
@@ -632,7 +632,7 @@ export default function ApproverDashboardPage() {
                                                 </div>
                                             </th>
                                             <th
-                                                className="px-6 py-3 w-36 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                                className="px-4 py-2 w-36 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
                                                 onClick={() => requestValidationSort('validation_type')}
                                             >
                                                 <div className="flex items-center gap-2">
@@ -641,7 +641,7 @@ export default function ApproverDashboardPage() {
                                                 </div>
                                             </th>
                                             <th
-                                                className="px-6 py-3 w-24 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                                className="px-4 py-2 w-24 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
                                                 onClick={() => requestValidationSort('priority')}
                                             >
                                                 <div className="flex items-center gap-2">
@@ -650,7 +650,7 @@ export default function ApproverDashboardPage() {
                                                 </div>
                                             </th>
                                             <th
-                                                className="px-6 py-3 w-36 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                                className="px-4 py-2 w-36 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
                                                 onClick={() => requestValidationSort('requestor_name')}
                                             >
                                                 <div className="flex items-center gap-2">
@@ -659,7 +659,7 @@ export default function ApproverDashboardPage() {
                                                 </div>
                                             </th>
                                             <th
-                                                className="px-6 py-3 w-36 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                                className="px-4 py-2 w-36 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
                                                 onClick={() => requestValidationSort('primary_validator')}
                                             >
                                                 <div className="flex items-center gap-2">
@@ -668,7 +668,7 @@ export default function ApproverDashboardPage() {
                                                 </div>
                                             </th>
                                             <th
-                                                className="px-6 py-3 w-36 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                                className="px-4 py-2 w-36 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
                                                 onClick={() => requestValidationSort('approval_type')}
                                             >
                                                 <div className="flex items-center gap-2">
@@ -677,7 +677,7 @@ export default function ApproverDashboardPage() {
                                                 </div>
                                             </th>
                                             <th
-                                                className="px-6 py-3 w-28 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                                className="px-4 py-2 w-28 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
                                                 onClick={() => requestValidationSort('days_pending')}
                                             >
                                                 <div className="flex items-center gap-2">
@@ -686,7 +686,7 @@ export default function ApproverDashboardPage() {
                                                 </div>
                                             </th>
                                             <th
-                                                className="px-6 py-3 w-32 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                                className="px-4 py-2 w-32 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
                                                 onClick={() => requestValidationSort('target_completion_date')}
                                             >
                                                 <div className="flex items-center gap-2">
@@ -694,16 +694,16 @@ export default function ApproverDashboardPage() {
                                                     {getValidationSortIcon('target_completion_date')}
                                                 </div>
                                             </th>
-                                            <th className="px-6 py-3 w-32 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                            <th className="px-4 py-2 w-32 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody className="bg-white divide-y divide-gray-200">
                                         {sortedValidationRows.map((approval) => (
                                             <tr key={approval.approval_id} className="hover:bg-gray-50">
-                                                <td className="px-6 py-4 w-24 whitespace-nowrap text-sm font-mono">
+                                                <td className="px-4 py-2 w-24 whitespace-nowrap text-sm font-mono">
                                                     #{approval.request_id}
                                                 </td>
-                                                <td className="px-6 py-4 w-64 whitespace-normal break-words text-sm">
+                                                <td className="px-4 py-2 w-64 whitespace-normal break-words text-sm">
                                                     {approval.model_ids.length === 1 ? (
                                                         <Link
                                                             to={`/models/${approval.model_ids[0]}`}
@@ -726,21 +726,21 @@ export default function ApproverDashboardPage() {
                                                         </div>
                                                     )}
                                                 </td>
-                                                <td className="px-6 py-4 w-36 whitespace-normal break-words text-sm">
+                                                <td className="px-4 py-2 w-36 whitespace-normal break-words text-sm">
                                                     {approval.validation_type}
                                                 </td>
-                                                <td className="px-6 py-4 w-24 whitespace-nowrap">
+                                                <td className="px-4 py-2 w-24 whitespace-nowrap">
                                                     <span className={`px-2 py-1 text-xs rounded ${getPriorityColor(approval.priority)}`}>
                                                         {approval.priority}
                                                     </span>
                                                 </td>
-                                                <td className="px-6 py-4 w-36 whitespace-nowrap text-sm">
+                                                <td className="px-4 py-2 w-36 whitespace-nowrap text-sm">
                                                     {approval.requestor_name}
                                                 </td>
-                                                <td className="px-6 py-4 w-36 whitespace-nowrap text-sm">
+                                                <td className="px-4 py-2 w-36 whitespace-nowrap text-sm">
                                                     {approval.primary_validator || <span className="text-gray-400">Not assigned</span>}
                                                 </td>
-                                                <td className="px-6 py-4 w-36 whitespace-nowrap">
+                                                <td className="px-4 py-2 w-36 whitespace-nowrap">
                                                     <span className={`px-2 py-1 text-xs rounded ${getApprovalTypeColor(approval.approval_type)}`}>
                                                         {approval.approval_type}
                                                     </span>
@@ -750,15 +750,15 @@ export default function ApproverDashboardPage() {
                                                         </span>
                                                     )}
                                                 </td>
-                                                <td className="px-6 py-4 w-28 whitespace-nowrap">
+                                                <td className="px-4 py-2 w-28 whitespace-nowrap">
                                                     <span className={`px-2 py-1 text-xs font-semibold rounded ${getUrgencyColor(approval.days_pending)}`}>
                                                         {approval.days_pending} days
                                                     </span>
                                                 </td>
-                                                <td className="px-6 py-4 w-32 whitespace-nowrap text-sm">
+                                                <td className="px-4 py-2 w-32 whitespace-nowrap text-sm">
                                                     {formatDate(approval.target_completion_date)}
                                                 </td>
-                                                <td className="px-6 py-4 w-32 whitespace-nowrap">
+                                                <td className="px-4 py-2 w-32 whitespace-nowrap">
                                                     <Link
                                                         to={`/validation-workflow/${approval.request_id}`}
                                                         className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700"
@@ -803,19 +803,19 @@ export default function ApproverDashboardPage() {
                                 <table className="min-w-full divide-y divide-gray-200">
                                     <thead className="bg-gray-50">
                                         <tr>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Model</th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Reason</th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Production Date</th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Requested By</th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Requested On</th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Model</th>
+                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Reason</th>
+                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Production Date</th>
+                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Requested By</th>
+                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Requested On</th>
+                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody className="bg-white divide-y divide-gray-200">
                                         {decommissioningApprovals.map((req) => (
                                             <tr key={req.request_id} className="hover:bg-gray-50">
-                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                <td className="px-4 py-2 whitespace-nowrap">
                                                     <Link
                                                         to={`/models/${req.model_id}/decommission`}
                                                         className="text-blue-600 hover:text-blue-800 font-medium"
@@ -823,24 +823,24 @@ export default function ApproverDashboardPage() {
                                                         {req.model_name}
                                                     </Link>
                                                 </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">
                                                     {req.reason || '-'}
                                                 </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">
                                                     {req.last_production_date}
                                                 </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
                                                     {req.created_by_name || '-'}
                                                 </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
                                                     {req.created_at ? req.created_at.split('T')[0] : '-'}
                                                 </td>
-                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                <td className="px-4 py-2 whitespace-nowrap">
                                                     <span className="px-2 py-1 text-xs font-medium rounded-full bg-orange-100 text-orange-800">
                                                         {req.status}
                                                     </span>
                                                 </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                                <td className="px-4 py-2 whitespace-nowrap text-sm">
                                                     <Link
                                                         to={`/models/${req.model_id}/decommission`}
                                                         className="text-blue-600 hover:text-blue-800 font-medium"
@@ -964,7 +964,7 @@ export default function ApproverDashboardPage() {
                                     <thead className="bg-gray-50">
                                         <tr>
                                             <th
-                                                className="px-6 py-3 w-32 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                                className="px-4 py-2 w-32 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
                                                 onClick={() => requestRecommendationSort('recommendation_code')}
                                             >
                                                 <div className="flex items-center gap-2">
@@ -973,7 +973,7 @@ export default function ApproverDashboardPage() {
                                                 </div>
                                             </th>
                                             <th
-                                                className="px-6 py-3 w-56 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                                className="px-4 py-2 w-56 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
                                                 onClick={() => requestRecommendationSort('title')}
                                             >
                                                 <div className="flex items-center gap-2">
@@ -982,7 +982,7 @@ export default function ApproverDashboardPage() {
                                                 </div>
                                             </th>
                                             <th
-                                                className="px-6 py-3 w-44 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                                className="px-4 py-2 w-44 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
                                                 onClick={() => requestRecommendationSort('model.model_name')}
                                             >
                                                 <div className="flex items-center gap-2">
@@ -991,7 +991,7 @@ export default function ApproverDashboardPage() {
                                                 </div>
                                             </th>
                                             <th
-                                                className="px-6 py-3 w-24 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                                className="px-4 py-2 w-24 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
                                                 onClick={() => requestRecommendationSort('priority.label')}
                                             >
                                                 <div className="flex items-center gap-2">
@@ -1000,7 +1000,7 @@ export default function ApproverDashboardPage() {
                                                 </div>
                                             </th>
                                             <th
-                                                className="px-6 py-3 w-36 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                                className="px-4 py-2 w-36 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
                                                 onClick={() => requestRecommendationSort('current_status.label')}
                                             >
                                                 <div className="flex items-center gap-2">
@@ -1009,7 +1009,7 @@ export default function ApproverDashboardPage() {
                                                 </div>
                                             </th>
                                             <th
-                                                className="px-6 py-3 w-48 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                                className="px-4 py-2 w-48 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
                                                 onClick={() => requestRecommendationSort('action_description')}
                                             >
                                                 <div className="flex items-center gap-2">
@@ -1018,7 +1018,7 @@ export default function ApproverDashboardPage() {
                                                 </div>
                                             </th>
                                             <th
-                                                className="px-6 py-3 w-28 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                                className="px-4 py-2 w-28 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
                                                 onClick={() => requestRecommendationSort('current_target_date')}
                                             >
                                                 <div className="flex items-center gap-2">
@@ -1027,7 +1027,7 @@ export default function ApproverDashboardPage() {
                                                 </div>
                                             </th>
                                             <th
-                                                className="px-6 py-3 w-28 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                                className="px-4 py-2 w-28 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
                                                 onClick={() => requestRecommendationSort('days_until_due')}
                                             >
                                                 <div className="flex items-center gap-2">
@@ -1035,13 +1035,13 @@ export default function ApproverDashboardPage() {
                                                     {getRecommendationSortIcon('days_until_due')}
                                                 </div>
                                             </th>
-                                            <th className="px-6 py-3 w-32 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                            <th className="px-4 py-2 w-32 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody className="bg-white divide-y divide-gray-200">
                                         {sortedRecommendationApprovals.map((task) => (
                                             <tr key={task.recommendation_id} className="hover:bg-gray-50">
-                                                <td className="px-6 py-4 w-32 whitespace-nowrap text-sm font-mono">
+                                                <td className="px-4 py-2 w-32 whitespace-nowrap text-sm font-mono">
                                                     <Link
                                                         to={`/recommendations/${task.recommendation_id}`}
                                                         className="text-blue-600 hover:text-blue-800"
@@ -1049,10 +1049,10 @@ export default function ApproverDashboardPage() {
                                                         {task.recommendation_code}
                                                     </Link>
                                                 </td>
-                                                <td className="px-6 py-4 w-56 whitespace-normal break-words text-sm">
+                                                <td className="px-4 py-2 w-56 whitespace-normal break-words text-sm">
                                                     {task.title}
                                                 </td>
-                                                <td className="px-6 py-4 w-44 whitespace-nowrap">
+                                                <td className="px-4 py-2 w-44 whitespace-nowrap">
                                                     <Link
                                                         to={`/models/${task.model.model_id}`}
                                                         className="font-medium text-blue-600 hover:text-blue-800 block truncate"
@@ -1060,26 +1060,26 @@ export default function ApproverDashboardPage() {
                                                         {task.model.model_name}
                                                     </Link>
                                                 </td>
-                                                <td className="px-6 py-4 w-24 whitespace-nowrap">
+                                                <td className="px-4 py-2 w-24 whitespace-nowrap">
                                                     <span className={`px-2 py-1 text-xs rounded ${getPriorityColor(task.priority?.label || task.priority?.code || '')}`}>
                                                         {task.priority?.label || task.priority?.code}
                                                     </span>
                                                 </td>
-                                                <td className="px-6 py-4 w-36 whitespace-normal text-sm">
+                                                <td className="px-4 py-2 w-36 whitespace-normal text-sm">
                                                     {task.current_status?.label || task.current_status?.code}
                                                 </td>
-                                                <td className="px-6 py-4 w-48 whitespace-normal break-words text-sm">
+                                                <td className="px-4 py-2 w-48 whitespace-normal break-words text-sm">
                                                     {task.action_description}
                                                 </td>
-                                                <td className="px-6 py-4 w-28 whitespace-nowrap text-sm">
+                                                <td className="px-4 py-2 w-28 whitespace-nowrap text-sm">
                                                     {formatDate(task.current_target_date)}
                                                 </td>
-                                                <td className="px-6 py-4 w-28 whitespace-nowrap">
+                                                <td className="px-4 py-2 w-28 whitespace-nowrap">
                                                     <span className={`px-2 py-1 text-xs font-semibold rounded ${getDueStatusColor(task.days_until_due)}`}>
                                                         {getDueLabel(task.days_until_due)}
                                                     </span>
                                                 </td>
-                                                <td className="px-6 py-4 w-32 whitespace-nowrap">
+                                                <td className="px-4 py-2 w-32 whitespace-nowrap">
                                                     <Link
                                                         to={`/recommendations/${task.recommendation_id}`}
                                                         className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700"
@@ -1213,7 +1213,7 @@ export default function ApproverDashboardPage() {
                                     <thead className="bg-gray-50">
                                         <tr>
                                             <th
-                                                className="px-6 py-3 w-52 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                                className="px-4 py-2 w-52 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
                                                 onClick={() => requestMonitoringSort('plan_name')}
                                             >
                                                 <div className="flex items-center gap-2">
@@ -1222,7 +1222,7 @@ export default function ApproverDashboardPage() {
                                                 </div>
                                             </th>
                                             <th
-                                                className="px-6 py-3 w-48 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                                className="px-4 py-2 w-48 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
                                                 onClick={() => requestMonitoringSort('period_start_date')}
                                             >
                                                 <div className="flex items-center gap-2">
@@ -1231,7 +1231,7 @@ export default function ApproverDashboardPage() {
                                                 </div>
                                             </th>
                                             <th
-                                                className="px-6 py-3 w-28 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                                className="px-4 py-2 w-28 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
                                                 onClick={() => requestMonitoringSort('approval_type')}
                                             >
                                                 <div className="flex items-center gap-2">
@@ -1240,7 +1240,7 @@ export default function ApproverDashboardPage() {
                                                 </div>
                                             </th>
                                             <th
-                                                className="px-6 py-3 w-36 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                                className="px-4 py-2 w-36 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
                                                 onClick={() => requestMonitoringSort('region.region_name')}
                                             >
                                                 <div className="flex items-center gap-2">
@@ -1249,7 +1249,7 @@ export default function ApproverDashboardPage() {
                                                 </div>
                                             </th>
                                             <th
-                                                className="px-6 py-3 w-28 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                                className="px-4 py-2 w-28 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
                                                 onClick={() => requestMonitoringSort('days_pending')}
                                             >
                                                 <div className="flex items-center gap-2">
@@ -1258,7 +1258,7 @@ export default function ApproverDashboardPage() {
                                                 </div>
                                             </th>
                                             <th
-                                                className="px-6 py-3 w-32 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                                className="px-4 py-2 w-32 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
                                                 onClick={() => requestMonitoringSort('report_due_date')}
                                             >
                                                 <div className="flex items-center gap-2">
@@ -1266,35 +1266,35 @@ export default function ApproverDashboardPage() {
                                                     {getMonitoringSortIcon('report_due_date')}
                                                 </div>
                                             </th>
-                                            <th className="px-6 py-3 w-32 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                            <th className="px-4 py-2 w-32 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody className="bg-white divide-y divide-gray-200">
                                         {sortedMonitoringApprovals.map((approval) => (
                                             <tr key={approval.approval_id} className="hover:bg-gray-50">
-                                                <td className="px-6 py-4 w-52 whitespace-normal break-words text-sm">
+                                                <td className="px-4 py-2 w-52 whitespace-normal break-words text-sm">
                                                     {approval.plan_name}
                                                 </td>
-                                                <td className="px-6 py-4 w-48 whitespace-nowrap text-sm">
+                                                <td className="px-4 py-2 w-48 whitespace-nowrap text-sm">
                                                     {formatPeriod(approval.period_start_date, approval.period_end_date)}
                                                 </td>
-                                                <td className="px-6 py-4 w-28 whitespace-nowrap">
+                                                <td className="px-4 py-2 w-28 whitespace-nowrap">
                                                     <span className={`px-2 py-1 text-xs rounded ${getApprovalTypeColor(approval.approval_type)}`}>
                                                         {approval.approval_type}
                                                     </span>
                                                 </td>
-                                                <td className="px-6 py-4 w-36 whitespace-nowrap text-sm">
+                                                <td className="px-4 py-2 w-36 whitespace-nowrap text-sm">
                                                     {approval.region?.region_name || '-'}
                                                 </td>
-                                                <td className="px-6 py-4 w-28 whitespace-nowrap">
+                                                <td className="px-4 py-2 w-28 whitespace-nowrap">
                                                     <span className={`px-2 py-1 text-xs font-semibold rounded ${getUrgencyColor(approval.days_pending)}`}>
                                                         {approval.days_pending} days
                                                     </span>
                                                 </td>
-                                                <td className="px-6 py-4 w-32 whitespace-nowrap text-sm">
+                                                <td className="px-4 py-2 w-32 whitespace-nowrap text-sm">
                                                     {formatDate(approval.report_due_date)}
                                                 </td>
-                                                <td className="px-6 py-4 w-32 whitespace-nowrap">
+                                                <td className="px-4 py-2 w-32 whitespace-nowrap">
                                                     <Link
                                                         to={`/monitoring/cycles/${approval.cycle_id}`}
                                                         className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700"

@@ -389,7 +389,7 @@ export default function AuditPage() {
 
             {/* Results */}
             <div className="bg-white rounded-lg shadow-md overflow-hidden">
-                <div className="px-6 py-3 bg-gray-50 border-b">
+                <div className="px-4 py-2 bg-gray-50 border-b">
                     <span className="text-sm text-gray-600">
                         {loading ? 'Loading...' : `${logs.length} audit log entries`}
                     </span>
@@ -404,19 +404,19 @@ export default function AuditPage() {
                     <table className="min-w-full divide-y divide-gray-200">
                         <thead className="bg-gray-50">
                             <tr>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                     Timestamp
                                 </th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                     Action
                                 </th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                     Entity
                                 </th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                     Changed By
                                 </th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                     Details
                                 </th>
                             </tr>
@@ -425,17 +425,17 @@ export default function AuditPage() {
                             {logs.map((log) => (
                                 <>
                                     <tr key={log.log_id} className="hover:bg-gray-50">
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                        <td className="px-4 py-2 whitespace-nowrap text-sm">
                                             {new Date(log.timestamp).toLocaleString()}
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
+                                        <td className="px-4 py-2 whitespace-nowrap">
                                             <span
                                                 className={`px-2 py-1 text-xs rounded ${getActionBadgeColor(log.action)}`}
                                             >
                                                 {log.action}
                                             </span>
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
+                                        <td className="px-4 py-2 whitespace-nowrap">
                                             <div className="text-sm font-medium">{log.entity_type}</div>
                                             {getEntityLink(log.entity_type, log.entity_id) ? (
                                                 <Link
@@ -450,11 +450,11 @@ export default function AuditPage() {
                                                 </div>
                                             )}
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
+                                        <td className="px-4 py-2 whitespace-nowrap">
                                             <div className="text-sm">{log.user.full_name}</div>
                                             <div className="text-xs text-gray-500">{log.user.email}</div>
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
+                                        <td className="px-4 py-2 whitespace-nowrap">
                                             {log.changes && Object.keys(log.changes).length > 0 ? (
                                                 <button
                                                     onClick={() =>
@@ -473,7 +473,7 @@ export default function AuditPage() {
                                     </tr>
                                     {expandedLog === log.log_id && log.changes && (
                                         <tr key={`${log.log_id}-details`}>
-                                            <td colSpan={5} className="px-6 py-4 bg-gray-50">
+                                            <td colSpan={5} className="px-4 py-2 bg-gray-50">
                                                 <div className="text-sm">
                                                     <h4 className="font-semibold mb-2">Changes:</h4>
                                                     <div className="bg-white p-3 rounded border">

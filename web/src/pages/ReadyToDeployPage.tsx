@@ -230,7 +230,7 @@ const ReadyToDeployPage: React.FC = () => {
                             <thead className="bg-gray-50">
                                 <tr>
                                     <th
-                                        className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                                        className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                                         onClick={() => requestSort('model_name')}
                                     >
                                         <div className="flex items-center gap-2">
@@ -239,7 +239,7 @@ const ReadyToDeployPage: React.FC = () => {
                                         </div>
                                     </th>
                                     <th
-                                        className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                                        className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                                         onClick={() => requestSort('version_number')}
                                     >
                                         <div className="flex items-center gap-2">
@@ -248,7 +248,7 @@ const ReadyToDeployPage: React.FC = () => {
                                         </div>
                                     </th>
                                     <th
-                                        className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                                        className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                                         onClick={() => requestSort('region_code')}
                                     >
                                         <div className="flex items-center gap-2">
@@ -257,7 +257,7 @@ const ReadyToDeployPage: React.FC = () => {
                                         </div>
                                     </th>
                                     <th
-                                        className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                                        className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                                         onClick={() => requestSort('owner_name')}
                                     >
                                         <div className="flex items-center gap-2">
@@ -265,11 +265,11 @@ const ReadyToDeployPage: React.FC = () => {
                                             {getSortIcon('owner_name')}
                                         </div>
                                     </th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         Source
                                     </th>
                                     <th
-                                        className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                                        className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                                         onClick={() => requestSort('days_since_approval')}
                                     >
                                         <div className="flex items-center gap-2">
@@ -277,10 +277,10 @@ const ReadyToDeployPage: React.FC = () => {
                                             {getSortIcon('days_since_approval')}
                                         </div>
                                     </th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         Task Status
                                     </th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         Actions
                                     </th>
                                 </tr>
@@ -301,7 +301,7 @@ const ReadyToDeployPage: React.FC = () => {
                                 ) : (
                                     sortedData.map((item) => (
                                         <tr key={`${item.version_id}-${item.region_id}`} className="hover:bg-gray-50">
-                                            <td className="px-6 py-4 whitespace-nowrap">
+                                            <td className="px-4 py-2 whitespace-nowrap">
                                                 <Link
                                                     to={`/models/${item.model_id}`}
                                                     className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
@@ -309,27 +309,27 @@ const ReadyToDeployPage: React.FC = () => {
                                                     {item.model_name}
                                                 </Link>
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                            <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">
                                                 {item.version_number}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
+                                            <td className="px-4 py-2 whitespace-nowrap">
                                                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
                                                     {item.region_code}
                                                 </span>
                                                 <span className="ml-2 text-sm text-gray-500">{item.region_name}</span>
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                            <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
                                                 {item.owner_name}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
+                                            <td className="px-4 py-2 whitespace-nowrap">
                                                 {getVersionSourceBadge(item.version_source)}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
+                                            <td className="px-4 py-2 whitespace-nowrap">
                                                 <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusBadgeColor(item.days_since_approval)}`}>
                                                     {item.days_since_approval} days
                                                 </span>
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
+                                            <td className="px-4 py-2 whitespace-nowrap">
                                                 {item.has_pending_task ? (
                                                     <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                                                         Scheduled
@@ -338,7 +338,7 @@ const ReadyToDeployPage: React.FC = () => {
                                                     <span className="text-sm text-gray-400">Not scheduled</span>
                                                 )}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                            <td className="px-4 py-2 whitespace-nowrap text-sm">
                                                 <div className="flex gap-2">
                                                     <Link
                                                         to={`/models/${item.model_id}?tab=versions`}

@@ -145,7 +145,7 @@ export function VendorsContent() {
                     <thead className="bg-gray-50">
                         <tr>
                             <th
-                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
                                 onClick={() => requestSort('vendor_id')}
                             >
                                 <div className="flex items-center gap-2">
@@ -154,7 +154,7 @@ export function VendorsContent() {
                                 </div>
                             </th>
                             <th
-                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
                                 onClick={() => requestSort('name')}
                             >
                                 <div className="flex items-center gap-2">
@@ -163,7 +163,7 @@ export function VendorsContent() {
                                 </div>
                             </th>
                             <th
-                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
                                 onClick={() => requestSort('contact_info')}
                             >
                                 <div className="flex items-center gap-2">
@@ -172,7 +172,7 @@ export function VendorsContent() {
                                 </div>
                             </th>
                             <th
-                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
                                 onClick={() => requestSort('created_at')}
                             >
                                 <div className="flex items-center gap-2">
@@ -180,7 +180,7 @@ export function VendorsContent() {
                                     {getSortIcon('created_at')}
                                 </div>
                             </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                 Actions
                             </th>
                         </tr>
@@ -188,17 +188,17 @@ export function VendorsContent() {
                     <tbody className="bg-white divide-y divide-gray-200">
                         {sortedData.length === 0 ? (
                             <tr>
-                                <td colSpan={5} className="px-6 py-4 text-center text-gray-500">
+                                <td colSpan={5} className="px-4 py-2 text-center text-gray-500">
                                     No vendors yet. Click "Add Vendor" to create one.
                                 </td>
                             </tr>
                         ) : (
                             sortedData.map((vendor) => (
                                 <tr key={vendor.vendor_id}>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                    <td className="px-4 py-2 whitespace-nowrap text-sm">
                                         {vendor.vendor_id}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap font-medium">
+                                    <td className="px-4 py-2 whitespace-nowrap font-medium">
                                         <Link
                                             to={`/vendors/${vendor.vendor_id}`}
                                             className="text-blue-600 hover:text-blue-800 hover:underline"
@@ -206,13 +206,13 @@ export function VendorsContent() {
                                             {vendor.name}
                                         </Link>
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                    <td className="px-4 py-2 whitespace-nowrap text-sm">
                                         {vendor.contact_info || '-'}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                    <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
                                         {vendor.created_at.split('T')[0]}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
+                                    <td className="px-4 py-2 whitespace-nowrap">
                                         <Link
                                             to={`/vendors/${vendor.vendor_id}`}
                                             className="text-blue-600 hover:text-blue-800 text-sm mr-3"

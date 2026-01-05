@@ -800,18 +800,18 @@ export default function MonitoringPlansPage() {
                             <table className="min-w-full divide-y divide-gray-200">
                                 <thead className="bg-gray-50">
                                     <tr>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Members</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Plans</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Members</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Plans</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                                        <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody className="bg-white divide-y divide-gray-200">
                                     {teams.length === 0 ? (
                                         <tr>
-                                            <td colSpan={6} className="px-6 py-4 text-center text-gray-500">
+                                            <td colSpan={6} className="px-4 py-2 text-center text-gray-500">
                                                 No monitoring teams. Click "Add Team" to create one.
                                             </td>
                                         </tr>
@@ -819,18 +819,18 @@ export default function MonitoringPlansPage() {
                                         teams.map((team) => (
                                             <Fragment key={team.team_id}>
                                                 <tr className="hover:bg-gray-50">
-                                                    <td className="px-6 py-4 font-medium">{team.name}</td>
-                                                    <td className="px-6 py-4 text-sm text-gray-600">{team.description || '-'}</td>
-                                                    <td className="px-6 py-4">{team.member_count}</td>
-                                                    <td className="px-6 py-4">{team.plan_count}</td>
-                                                    <td className="px-6 py-4">
+                                                    <td className="px-4 py-2 font-medium">{team.name}</td>
+                                                    <td className="px-4 py-2 text-sm text-gray-600">{team.description || '-'}</td>
+                                                    <td className="px-4 py-2">{team.member_count}</td>
+                                                    <td className="px-4 py-2">{team.plan_count}</td>
+                                                    <td className="px-4 py-2">
                                                         <span className={`px-2 py-1 text-xs rounded-full ${
                                                             team.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
                                                         }`}>
                                                             {team.is_active ? 'Active' : 'Inactive'}
                                                         </span>
                                                     </td>
-                                                    <td className="px-6 py-4 text-right text-sm">
+                                                    <td className="px-4 py-2 text-right text-sm">
                                                         <button
                                                             onClick={() => handlePeekTeam(team)}
                                                             className="text-blue-600 hover:text-blue-800 mr-3"
@@ -855,7 +855,7 @@ export default function MonitoringPlansPage() {
                                                 </tr>
                                                 {peekTeamId === team.team_id && (
                                                     <tr className="bg-gray-50">
-                                                        <td colSpan={6} className="px-6 py-3 text-sm text-gray-700">
+                                                        <td colSpan={6} className="px-4 py-2 text-sm text-gray-700">
                                                             {loadingPeekTeamId === team.team_id && (
                                                                 <div>Loading team members...</div>
                                                             )}
@@ -1149,7 +1149,7 @@ export default function MonitoringPlansPage() {
                     {showQuickTeamModal && (
                         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
                             <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-                                <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+                                <div className="px-4 py-2 border-b border-gray-200 flex items-center justify-between">
                                     <h4 className="text-lg font-semibold">Create New Team</h4>
                                     <button
                                         type="button"
@@ -1165,7 +1165,7 @@ export default function MonitoringPlansPage() {
                                     </button>
                                 </div>
                                 <form
-                                    className="px-6 py-4 space-y-4"
+                                    className="px-4 py-2 space-y-4"
                                     onSubmit={(e) => {
                                         e.preventDefault();
                                         handleQuickAddTeam();
@@ -1262,10 +1262,10 @@ export default function MonitoringPlansPage() {
                     {showDeactivateModal && deactivatePlanTarget && (
                         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
                             <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
-                                <div className="px-6 py-4 border-b border-gray-200">
+                                <div className="px-4 py-2 border-b border-gray-200">
                                     <h4 className="text-lg font-semibold">Deactivate Monitoring Plan</h4>
                                 </div>
-                                <div className="px-6 py-4 space-y-4">
+                                <div className="px-4 py-2 space-y-4">
                                     <p className="text-sm text-gray-600">
                                         Deactivating this plan stops new cycles and pauses auto-advance.
                                     </p>
@@ -1322,7 +1322,7 @@ export default function MonitoringPlansPage() {
                                         </div>
                                     )}
                                 </div>
-                                <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-2">
+                                <div className="px-4 py-2 border-t border-gray-200 flex justify-end gap-2">
                                     <button
                                         type="button"
                                         className="btn-secondary"
@@ -1356,22 +1356,22 @@ export default function MonitoringPlansPage() {
                             <table className="min-w-full divide-y divide-gray-200">
                                 <thead className="bg-gray-50">
                                     <tr>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Frequency</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Team</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Models</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Metrics</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Versions</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Open Recs</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Next Submission</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Frequency</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Team</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Models</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Metrics</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Versions</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Open Recs</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Next Submission</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                                        <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody className="bg-white divide-y divide-gray-200">
                                     {plans.length === 0 ? (
                                         <tr>
-                                            <td colSpan={10} className="px-6 py-4 text-center text-gray-500">
+                                            <td colSpan={10} className="px-4 py-2 text-center text-gray-500">
                                                 No monitoring plans. Click "Add Plan" to create one.
                                             </td>
                                         </tr>
@@ -1379,7 +1379,7 @@ export default function MonitoringPlansPage() {
                                         plans.map((plan) => (
                                             <Fragment key={plan.plan_id}>
                                                 <tr className="hover:bg-gray-50">
-                                                    <td className="px-6 py-4">
+                                                    <td className="px-4 py-2">
                                                         <Link to={`/monitoring/${plan.plan_id}`} className="font-medium text-blue-600 hover:text-blue-800 hover:underline">
                                                             {plan.name}
                                                         </Link>
@@ -1387,9 +1387,9 @@ export default function MonitoringPlansPage() {
                                                             <div className="text-xs text-gray-500">{plan.description}</div>
                                                         )}
                                                     </td>
-                                                    <td className="px-6 py-4 text-sm">{plan.frequency}</td>
-                                                    <td className="px-6 py-4 text-sm">{plan.team_name || '-'}</td>
-                                                    <td className="px-6 py-4 text-sm">
+                                                    <td className="px-4 py-2 text-sm">{plan.frequency}</td>
+                                                    <td className="px-4 py-2 text-sm">{plan.team_name || '-'}</td>
+                                                    <td className="px-4 py-2 text-sm">
                                                         <button
                                                             onClick={() => handlePeekPlanModels(plan)}
                                                             className="text-blue-600 hover:text-blue-800 underline"
@@ -1397,7 +1397,7 @@ export default function MonitoringPlansPage() {
                                                             {plan.model_count}
                                                         </button>
                                                     </td>
-                                                    <td className="px-6 py-4 text-sm">
+                                                    <td className="px-4 py-2 text-sm">
                                                         <button
                                                             onClick={() => openMetricsModal(plan)}
                                                             className="text-blue-600 hover:text-blue-800 underline"
@@ -1405,7 +1405,7 @@ export default function MonitoringPlansPage() {
                                                             {plan.metric_count} KPMs
                                                         </button>
                                                     </td>
-                                                    <td className="px-6 py-4 text-sm">
+                                                    <td className="px-4 py-2 text-sm">
                                                         <button
                                                             onClick={() => openVersionsModal(plan)}
                                                             className="text-blue-600 hover:text-blue-800 underline"
@@ -1418,7 +1418,7 @@ export default function MonitoringPlansPage() {
                                                                 : ''}
                                                         </button>
                                                     </td>
-                                                    <td className="px-6 py-4 text-sm">
+                                                    <td className="px-4 py-2 text-sm">
                                                         <Link
                                                             to={`/recommendations?open_only=true&plan_id=${plan.plan_id}`}
                                                             className="text-blue-600 hover:text-blue-800 underline"
@@ -1426,17 +1426,17 @@ export default function MonitoringPlansPage() {
                                                             {plan.open_recommendation_count ?? 0}
                                                         </Link>
                                                     </td>
-                                                    <td className="px-6 py-4 text-sm">
+                                                    <td className="px-4 py-2 text-sm">
                                                         {plan.next_submission_due_date || '-'}
                                                     </td>
-                                                    <td className="px-6 py-4">
+                                                    <td className="px-4 py-2">
                                                         <span className={`px-2 py-1 text-xs rounded-full ${
                                                             plan.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
                                                         }`}>
                                                             {plan.is_active ? 'Active' : 'Inactive'}
                                                         </span>
                                                     </td>
-                                                    <td className="px-6 py-4 text-right text-sm space-x-2">
+                                                    <td className="px-4 py-2 text-right text-sm space-x-2">
                                                         <button
                                                             onClick={() => handleEditPlan(plan)}
                                                             className="text-blue-600 hover:text-blue-800"
@@ -1463,7 +1463,7 @@ export default function MonitoringPlansPage() {
                                                 </tr>
                                                 {peekPlanId === plan.plan_id && (
                                                     <tr className="bg-gray-50">
-                                                        <td colSpan={10} className="px-6 py-3 text-sm text-gray-700">
+                                                        <td colSpan={10} className="px-4 py-2 text-sm text-gray-700">
                                                             {loadingPeekPlanId === plan.plan_id && (
                                                                 <div>Loading models...</div>
                                                             )}

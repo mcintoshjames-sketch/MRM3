@@ -525,14 +525,14 @@ const MyDeploymentTasksPage = () => {
                       title={selectedTasks.size === filteredTasks.length ? "Deselect all" : "Select all"}
                     />
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Model</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Version</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Region</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Planned Date</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Days Until Due</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Validation Status</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Model</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Version</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Region</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Planned Date</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Days Until Due</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Validation Status</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
@@ -546,28 +546,28 @@ const MyDeploymentTasksPage = () => {
                         className="h-4 w-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
                       />
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="px-4 py-2 whitespace-nowrap">
                       <div className="text-sm font-medium text-gray-900">{task.model_name}</div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="px-4 py-2 whitespace-nowrap">
                       <div className="text-sm text-gray-900">{task.version_number}</div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="px-4 py-2 whitespace-nowrap">
                       <div className="text-sm text-gray-900">
                         {task.region_code ? `${task.region_name} (${task.region_code})` : 'Global'}
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="px-4 py-2 whitespace-nowrap">
                       <div className="text-sm text-gray-900">
                         {task.planned_production_date.split('T')[0]}
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="px-4 py-2 whitespace-nowrap">
                       <div className={`text-sm font-medium ${task.days_until_due < 0 ? 'text-red-600' : task.days_until_due <= 7 ? 'text-yellow-600' : 'text-gray-900'}`}>
                         {task.days_until_due < 0 ? `${Math.abs(task.days_until_due)} days overdue` : `${task.days_until_due} days`}
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="px-4 py-2 whitespace-nowrap">
                       {task.validation_status ? (
                         <span className={`px-2 py-1 text-xs font-semibold rounded ${task.validation_status === 'Approved' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
                           {task.validation_status}
@@ -576,10 +576,10 @@ const MyDeploymentTasksPage = () => {
                         <span className="text-sm text-gray-500">No validation</span>
                       )}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="px-4 py-2 whitespace-nowrap">
                       {getStatusBadge(task)}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                    <td className="px-4 py-2 whitespace-nowrap text-sm">
                       {task.status === 'PENDING' && (
                         <button
                           onClick={() => openConfirmModal(task)}

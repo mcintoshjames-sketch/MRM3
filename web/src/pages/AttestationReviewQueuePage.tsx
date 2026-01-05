@@ -170,19 +170,19 @@ export default function AttestationReviewQueuePage() {
                     <table className="min-w-full divide-y divide-gray-200">
                         <thead className="bg-gray-50">
                             <tr>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Model</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Risk Tier</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Attesting User</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cycle</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Submitted</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Decision</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Model</th>
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Risk Tier</th>
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Attesting User</th>
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Cycle</th>
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Submitted</th>
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Decision</th>
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                             </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
                             {filteredRecords.map((record) => (
                                 <tr key={record.attestation_id} className="hover:bg-gray-50">
-                                    <td className="px-6 py-4 whitespace-nowrap">
+                                    <td className="px-4 py-2 whitespace-nowrap">
                                         <Link
                                             to={`/models/${record.model_id}`}
                                             className="text-blue-600 hover:text-blue-800 font-medium"
@@ -190,22 +190,22 @@ export default function AttestationReviewQueuePage() {
                                             {record.model_name}
                                         </Link>
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
+                                    <td className="px-4 py-2 whitespace-nowrap">
                                         {getRiskTierBadge(record.risk_tier_code)}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                    <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
                                         {record.attesting_user_name}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                    <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
                                         {record.cycle_name}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                    <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
                                         {formatDate(record.attested_at)}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
+                                    <td className="px-4 py-2 whitespace-nowrap">
                                         {getDecisionBadge(record.decision)}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
+                                    <td className="px-4 py-2 whitespace-nowrap">
                                         <Link
                                             to={`/attestations/${record.attestation_id}`}
                                             className="btn-primary text-sm py-1 px-3"

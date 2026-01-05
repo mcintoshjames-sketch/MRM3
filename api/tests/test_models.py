@@ -145,7 +145,7 @@ class TestCreateModel:
                 "user_ids": [test_user.user_id]
             }
         )
-        assert response.status_code == 422
+        assert response.status_code == 400
 
 
 class TestGetModel:
@@ -482,7 +482,9 @@ class TestBusinessLineName:
                 "description": "Testing business_line_name on create",
                 "development_type": "In-House",
                 "owner_id": test_user.user_id,
+                "developer_id": test_user.user_id,
                 "usage_frequency_id": usage_frequency["daily"].value_id,
+                "initial_implementation_date": date.today().isoformat(),
                 "user_ids": [test_user.user_id]
             }
         )

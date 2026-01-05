@@ -246,7 +246,7 @@ const ComponentDefinitionsPage: React.FC = () => {
 
                     return (
                         <div key={sectionKey} className="bg-white rounded-lg shadow-md overflow-hidden">
-                            <div className="bg-gray-100 px-6 py-3 border-b">
+                            <div className="bg-gray-100 px-4 py-2 border-b">
                                 <h2 className="font-semibold text-gray-800">
                                     Section {sectionNum} – {sectionTitle}
                                 </h2>
@@ -256,22 +256,22 @@ const ComponentDefinitionsPage: React.FC = () => {
                                 <table className="min-w-full">
                                     <thead className="bg-gray-50">
                                         <tr>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase w-1/4">
+                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase w-1/4">
                                                 Component
                                             </th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase w-1/6">
+                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase w-1/6">
                                                 Tier 1 (High)
                                             </th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase w-1/6">
+                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase w-1/6">
                                                 Tier 2 (Medium)
                                             </th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase w-1/6">
+                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase w-1/6">
                                                 Tier 3 (Low)
                                             </th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase w-1/6">
+                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase w-1/6">
                                                 Tier 4 (Very Low)
                                             </th>
-                                            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase w-24">
+                                            <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">
                                                 Actions
                                             </th>
                                         </tr>
@@ -282,7 +282,7 @@ const ComponentDefinitionsPage: React.FC = () => {
 
                                             return (
                                                 <tr key={component.component_id}>
-                                                    <td className="px-6 py-4">
+                                                    <td className="px-4 py-2">
                                                         <div className="text-sm font-medium text-gray-900">
                                                             {component.component_code}
                                                         </div>
@@ -294,7 +294,7 @@ const ComponentDefinitionsPage: React.FC = () => {
                                                     {/* Expectation columns */}
                                                     {isEditing ? (
                                                         <>
-                                                            <td className="px-6 py-4">
+                                                            <td className="px-4 py-2">
                                                                 <select
                                                                     value={editForm.expectation_high}
                                                                     onChange={(e) => setEditForm({ ...editForm, expectation_high: e.target.value })}
@@ -305,7 +305,7 @@ const ComponentDefinitionsPage: React.FC = () => {
                                                                     <option value="NotExpected">Not Expected</option>
                                                                 </select>
                                                             </td>
-                                                            <td className="px-6 py-4">
+                                                            <td className="px-4 py-2">
                                                                 <select
                                                                     value={editForm.expectation_medium}
                                                                     onChange={(e) => setEditForm({ ...editForm, expectation_medium: e.target.value })}
@@ -316,7 +316,7 @@ const ComponentDefinitionsPage: React.FC = () => {
                                                                     <option value="NotExpected">Not Expected</option>
                                                                 </select>
                                                             </td>
-                                                            <td className="px-6 py-4">
+                                                            <td className="px-4 py-2">
                                                                 <select
                                                                     value={editForm.expectation_low}
                                                                     onChange={(e) => setEditForm({ ...editForm, expectation_low: e.target.value })}
@@ -327,7 +327,7 @@ const ComponentDefinitionsPage: React.FC = () => {
                                                                     <option value="NotExpected">Not Expected</option>
                                                                 </select>
                                                             </td>
-                                                            <td className="px-6 py-4">
+                                                            <td className="px-4 py-2">
                                                                 <select
                                                                     value={editForm.expectation_very_low}
                                                                     onChange={(e) => setEditForm({ ...editForm, expectation_very_low: e.target.value })}
@@ -341,22 +341,22 @@ const ComponentDefinitionsPage: React.FC = () => {
                                                         </>
                                                     ) : (
                                                         <>
-                                                            <td className="px-6 py-4">
+                                                            <td className="px-4 py-2">
                                                                 <span className={`px-2 py-1 rounded text-xs font-medium ${getExpectationBadge(component.expectation_high)}`}>
                                                                     {component.expectation_high}
                                                                 </span>
                                                             </td>
-                                                            <td className="px-6 py-4">
+                                                            <td className="px-4 py-2">
                                                                 <span className={`px-2 py-1 rounded text-xs font-medium ${getExpectationBadge(component.expectation_medium)}`}>
                                                                     {component.expectation_medium}
                                                                 </span>
                                                             </td>
-                                                            <td className="px-6 py-4">
+                                                            <td className="px-4 py-2">
                                                                 <span className={`px-2 py-1 rounded text-xs font-medium ${getExpectationBadge(component.expectation_low)}`}>
                                                                     {component.expectation_low}
                                                                 </span>
                                                             </td>
-                                                            <td className="px-6 py-4">
+                                                            <td className="px-4 py-2">
                                                                 <span className={`px-2 py-1 rounded text-xs font-medium ${getExpectationBadge(component.expectation_very_low)}`}>
                                                                     {component.expectation_very_low}
                                                                 </span>
@@ -365,7 +365,7 @@ const ComponentDefinitionsPage: React.FC = () => {
                                                     )}
 
                                                     {/* Actions */}
-                                                    <td className="px-6 py-4 text-right text-sm">
+                                                    <td className="px-4 py-2 text-right text-sm">
                                                         {isEditing ? (
                                                             <div className="flex gap-2 justify-end">
                                                                 <button

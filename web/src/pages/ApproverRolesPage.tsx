@@ -199,19 +199,19 @@ export default function ApproverRolesPage() {
                 <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50">
                         <tr>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                 Role Name
                             </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                 Description
                             </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                 Rules Using
                             </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                 Status
                             </th>
-                            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                            <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">
                                 Actions
                             </th>
                         </tr>
@@ -219,29 +219,29 @@ export default function ApproverRolesPage() {
                     <tbody className="bg-white divide-y divide-gray-200">
                         {roles.length === 0 ? (
                             <tr>
-                                <td colSpan={5} className="px-6 py-4 text-center text-gray-500">
+                                <td colSpan={5} className="px-4 py-2 text-center text-gray-500">
                                     No approver roles defined. Click "Add Approver Role" to create one.
                                 </td>
                             </tr>
                         ) : (
                             roles.map((role) => (
                                 <tr key={role.role_id} className="hover:bg-gray-50">
-                                    <td className="px-6 py-4">
+                                    <td className="px-4 py-2">
                                         <div className="text-sm font-medium text-gray-900">
                                             {role.role_name}
                                         </div>
                                     </td>
-                                    <td className="px-6 py-4">
+                                    <td className="px-4 py-2">
                                         <div className="text-sm text-gray-600">
                                             {role.description || '-'}
                                         </div>
                                     </td>
-                                    <td className="px-6 py-4">
+                                    <td className="px-4 py-2">
                                         <div className="text-sm text-gray-900">
                                             {role.rules_count || 0}
                                         </div>
                                     </td>
-                                    <td className="px-6 py-4">
+                                    <td className="px-4 py-2">
                                         <span
                                             className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
                                                 role.is_active
@@ -252,7 +252,7 @@ export default function ApproverRolesPage() {
                                             {role.is_active ? 'Active' : 'Inactive'}
                                         </span>
                                     </td>
-                                    <td className="px-6 py-4 text-right text-sm font-medium">
+                                    <td className="px-4 py-2 text-right text-sm font-medium">
                                         <button
                                             onClick={() => handleEdit(role)}
                                             className="text-blue-600 hover:text-blue-800 mr-3"

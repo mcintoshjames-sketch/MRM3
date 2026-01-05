@@ -1303,7 +1303,7 @@ export default function ValidationWorkflowPage() {
 
             {/* Dynamic Table */}
             <div className="bg-white rounded-lg shadow-md">
-                <div className="max-h-[60vh] overflow-auto">
+                <div className="max-h-[70vh] overflow-auto">
                     <table className="min-w-full divide-y divide-gray-200">
                         <thead className="bg-gray-50 sticky top-0 z-10">
                             <tr>
@@ -1313,7 +1313,7 @@ export default function ValidationWorkflowPage() {
                                     return (
                                         <th
                                             key={colKey}
-                                            className={`px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase ${renderer.sortKey ? 'cursor-pointer hover:bg-gray-100' : ''}`}
+                                            className={`px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase ${renderer.sortKey ? 'cursor-pointer hover:bg-gray-100' : ''}`}
                                             onClick={() => renderer.sortKey && requestSort(renderer.sortKey)}
                                         >
                                             <div className="flex items-center gap-2">
@@ -1328,7 +1328,7 @@ export default function ValidationWorkflowPage() {
                         <tbody className="bg-white divide-y divide-gray-200">
                             {sortedData.length === 0 ? (
                                 <tr>
-                                    <td colSpan={columnPrefs.selectedColumns.length} className="px-6 py-4 text-center text-gray-500">
+                                    <td colSpan={columnPrefs.selectedColumns.length} className="px-4 py-2 text-center text-gray-500">
                                         No validation projects found. Click "New Validation Project" to create one.
                                     </td>
                                 </tr>
@@ -1339,7 +1339,7 @@ export default function ValidationWorkflowPage() {
                                             const renderer = columnRenderers[colKey];
                                             if (!renderer) return null;
                                             return (
-                                                <td key={colKey} className="px-6 py-4 whitespace-nowrap text-sm">
+                                                <td key={colKey} className="px-4 py-2 whitespace-nowrap text-sm">
                                                     {renderer.cell(req)}
                                                 </td>
                                             );

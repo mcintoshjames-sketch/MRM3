@@ -360,7 +360,7 @@ export default function IRPsPage() {
                                 <thead className="bg-gray-50">
                                     <tr>
                                         <th
-                                            className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                            className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
                                             onClick={() => requestSort('irp_id')}
                                         >
                                             <div className="flex items-center gap-2">
@@ -369,7 +369,7 @@ export default function IRPsPage() {
                                             </div>
                                         </th>
                                         <th
-                                            className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                            className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
                                             onClick={() => requestSort('process_name')}
                                         >
                                             <div className="flex items-center gap-2">
@@ -378,7 +378,7 @@ export default function IRPsPage() {
                                             </div>
                                         </th>
                                         <th
-                                            className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                            className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
                                             onClick={() => requestSort('contact_user.full_name')}
                                         >
                                             <div className="flex items-center gap-2">
@@ -386,11 +386,11 @@ export default function IRPsPage() {
                                                 {getSortIcon('contact_user.full_name')}
                                             </div>
                                         </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                             Status
                                         </th>
                                         <th
-                                            className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                            className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
                                             onClick={() => requestSort('covered_mrsa_count')}
                                         >
                                             <div className="flex items-center gap-2">
@@ -399,7 +399,7 @@ export default function IRPsPage() {
                                             </div>
                                         </th>
                                         <th
-                                            className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                            className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
                                             onClick={() => requestSort('latest_review_date')}
                                         >
                                             <div className="flex items-center gap-2">
@@ -408,7 +408,7 @@ export default function IRPsPage() {
                                             </div>
                                         </th>
                                         <th
-                                            className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                            className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
                                             onClick={() => requestSort('latest_certification_date')}
                                         >
                                             <div className="flex items-center gap-2">
@@ -417,7 +417,7 @@ export default function IRPsPage() {
                                             </div>
                                         </th>
                                         {canManageIrpsFlag && (
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                                 Actions
                                             </th>
                                         )}
@@ -426,17 +426,17 @@ export default function IRPsPage() {
                                 <tbody className="bg-white divide-y divide-gray-200">
                                     {sortedData.length === 0 ? (
                                         <tr>
-                                            <td colSpan={canManageIrpsFlag ? 8 : 7} className="px-6 py-4 text-center text-gray-500">
+                                            <td colSpan={canManageIrpsFlag ? 8 : 7} className="px-4 py-2 text-center text-gray-500">
                                                 No IRPs found. {canManageIrpsFlag && 'Click "Add IRP" to create one.'}
                                             </td>
                                         </tr>
                                     ) : (
                                         sortedData.map((irp) => (
                                             <tr key={irp.irp_id} className="hover:bg-gray-50">
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                                <td className="px-4 py-2 whitespace-nowrap text-sm">
                                                     {irp.irp_id}
                                                 </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                                <td className="px-4 py-2 whitespace-nowrap text-sm">
                                                     <Link
                                                         to={`/irps/${irp.irp_id}`}
                                                         className="font-medium text-blue-600 hover:text-blue-800"
@@ -444,10 +444,10 @@ export default function IRPsPage() {
                                                         {irp.process_name}
                                                     </Link>
                                                 </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                                <td className="px-4 py-2 whitespace-nowrap text-sm">
                                                     {irp.contact_user?.full_name || '-'}
                                                 </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                                <td className="px-4 py-2 whitespace-nowrap text-sm">
                                                     <span className={`px-2 py-1 text-xs rounded font-medium ${
                                                         irp.is_active
                                                             ? 'bg-green-100 text-green-800'
@@ -456,12 +456,12 @@ export default function IRPsPage() {
                                                         {irp.is_active ? 'Active' : 'Inactive'}
                                                     </span>
                                                 </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                                <td className="px-4 py-2 whitespace-nowrap text-sm">
                                                     <span className="px-2 py-1 bg-amber-100 text-amber-800 rounded text-xs font-medium">
                                                         {irp.covered_mrsa_count}
                                                     </span>
                                                 </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                                <td className="px-4 py-2 whitespace-nowrap text-sm">
                                                     {irp.latest_review_date ? (
                                                         <div className="flex flex-col">
                                                             <span>{irp.latest_review_date}</span>
@@ -481,13 +481,13 @@ export default function IRPsPage() {
                                                         <span className="text-gray-400">No reviews</span>
                                                     )}
                                                 </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                                <td className="px-4 py-2 whitespace-nowrap text-sm">
                                                     {irp.latest_certification_date || (
                                                         <span className="text-gray-400">Not certified</span>
                                                     )}
                                                 </td>
                                                 {canManageIrpsFlag && (
-                                                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                                    <td className="px-4 py-2 whitespace-nowrap text-sm">
                                                         <div className="flex gap-2">
                                                             <button
                                                                 onClick={() => handleEdit(irp)}

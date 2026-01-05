@@ -448,9 +448,8 @@ export default function AdminDashboardPage() {
             onClick={onClick}
             disabled={disabled}
             aria-disabled={disabled}
-            className={`bg-white p-4 rounded-lg shadow-md text-left transition-shadow ${
-                disabled ? 'cursor-default opacity-70' : 'cursor-pointer hover:shadow-lg'
-            }`}
+            className={`bg-white p-4 rounded-lg shadow-md text-left transition-shadow ${disabled ? 'cursor-default opacity-70' : 'cursor-pointer hover:shadow-lg'
+                }`}
         >
             <h3 className="text-xs font-medium text-gray-500 uppercase">{title}</h3>
             <p className={`text-3xl font-bold mt-2 ${colorClass}`}>{count}</p>
@@ -535,7 +534,7 @@ export default function AdminDashboardPage() {
                             </svg>
                         </button>
                     </div>
-                    <div className="space-y-2 max-h-64 overflow-y-auto">
+                    <div className="space-y-2 max-h-[min(20rem,50vh)] overflow-y-auto">
                         {mrsaPastDue.slice(0, 5).map((item) => (
                             <div
                                 key={item.mrsa_id}
@@ -627,11 +626,10 @@ export default function AdminDashboardPage() {
                                 <div className="flex items-start justify-between gap-2">
                                     <div className="flex-1 min-w-0">
                                         <div className="flex items-center gap-2 mb-1">
-                                            <span className={`px-1.5 py-0.5 text-xs font-medium rounded ${
-                                                submission.row_approval_status === 'needs_revision'
+                                            <span className={`px-1.5 py-0.5 text-xs font-medium rounded ${submission.row_approval_status === 'needs_revision'
                                                     ? 'bg-yellow-100 text-yellow-700'
                                                     : 'bg-green-100 text-green-700'
-                                            }`}>
+                                                }`}>
                                                 {submission.row_approval_status === 'needs_revision' ? 'Needs Revision' : 'New Record'}
                                             </span>
                                             <span className="px-1.5 py-0.5 text-xs font-medium rounded bg-gray-100 text-gray-700">
@@ -830,11 +828,10 @@ export default function AdminDashboardPage() {
                                 <div className="flex items-start justify-between gap-2">
                                     <div className="flex-1 min-w-0">
                                         <div className="flex items-center gap-2 mb-1">
-                                            <span className={`px-1.5 py-0.5 text-xs font-medium rounded ${
-                                                item.days_pending > 14 ? 'bg-purple-100 text-purple-700' :
-                                                item.days_pending > 7 ? 'bg-purple-50 text-purple-600' :
-                                                'bg-purple-50 text-purple-500'
-                                            }`}>
+                                            <span className={`px-1.5 py-0.5 text-xs font-medium rounded ${item.days_pending > 14 ? 'bg-purple-100 text-purple-700' :
+                                                    item.days_pending > 7 ? 'bg-purple-50 text-purple-600' :
+                                                        'bg-purple-50 text-purple-500'
+                                                }`}>
                                                 {item.validation_type}
                                             </span>
                                             <Link
@@ -1004,11 +1001,10 @@ export default function AdminDashboardPage() {
                                         className={`hover:bg-orange-50 ${item.needs_comment_update ? 'bg-orange-50' : ''}`}
                                     >
                                         <td className="px-3 py-2 whitespace-nowrap">
-                                            <span className={`px-2 py-1 text-xs font-semibold rounded ${
-                                                item.overdue_type === 'PRE_SUBMISSION'
+                                            <span className={`px-2 py-1 text-xs font-semibold rounded ${item.overdue_type === 'PRE_SUBMISSION'
                                                     ? 'bg-yellow-100 text-yellow-800'
                                                     : 'bg-red-100 text-red-800'
-                                            }`}>
+                                                }`}>
                                                 {item.overdue_type === 'PRE_SUBMISSION' ? 'Submission' : 'Validation'}
                                             </span>
                                         </td>
@@ -1111,17 +1107,16 @@ export default function AdminDashboardPage() {
                                 style={{
                                     borderLeftWidth: '3px',
                                     borderLeftColor: item.severity === 'critical' ? '#2563eb' :
-                                                    item.severity === 'high' ? '#3b82f6' : '#60a5fa'
+                                        item.severity === 'high' ? '#3b82f6' : '#60a5fa'
                                 }}
                             >
                                 <div className="flex items-start justify-between gap-2">
                                     <div className="flex-1 min-w-0">
                                         <div className="flex items-center gap-2 mb-1">
-                                            <span className={`px-1.5 py-0.5 text-xs font-medium rounded ${
-                                                item.severity === 'critical' ? 'bg-blue-100 text-blue-700' :
-                                                item.severity === 'high' ? 'bg-blue-50 text-blue-600' :
-                                                'bg-blue-50 text-blue-500'
-                                            }`}>
+                                            <span className={`px-1.5 py-0.5 text-xs font-medium rounded ${item.severity === 'critical' ? 'bg-blue-100 text-blue-700' :
+                                                    item.severity === 'high' ? 'bg-blue-50 text-blue-600' :
+                                                        'bg-blue-50 text-blue-500'
+                                                }`}>
                                                 {item.priority}
                                             </span>
                                             <span className="px-1.5 py-0.5 text-xs font-medium rounded bg-gray-100 text-gray-700">
@@ -1208,17 +1203,16 @@ export default function AdminDashboardPage() {
                                 style={{
                                     borderLeftWidth: '3px',
                                     borderLeftColor: violation.severity === 'critical' ? '#dc2626' :
-                                                    violation.severity === 'high' ? '#ea580c' : '#ca8a04'
+                                        violation.severity === 'high' ? '#ea580c' : '#ca8a04'
                                 }}
                             >
                                 <div className="flex items-start justify-between gap-2">
                                     <div className="flex-1 min-w-0">
                                         <div className="flex items-center gap-2 mb-1">
-                                            <span className={`px-1.5 py-0.5 text-xs font-medium rounded ${
-                                                violation.severity === 'critical' ? 'bg-red-100 text-red-700' :
-                                                violation.severity === 'high' ? 'bg-orange-100 text-orange-700' :
-                                                'bg-yellow-100 text-yellow-700'
-                                            }`}>
+                                            <span className={`px-1.5 py-0.5 text-xs font-medium rounded ${violation.severity === 'critical' ? 'bg-red-100 text-red-700' :
+                                                    violation.severity === 'high' ? 'bg-orange-100 text-orange-700' :
+                                                        'bg-yellow-100 text-yellow-700'
+                                                }`}>
                                                 {violation.severity}
                                             </span>
                                             <span className="text-xs text-gray-400">{formatTimeAgo(violation.timestamp)}</span>
@@ -1291,17 +1285,16 @@ export default function AdminDashboardPage() {
                                     style={{
                                         borderLeftWidth: '3px',
                                         borderLeftColor: item.severity === 'critical' ? '#9333ea' :
-                                                        item.severity === 'high' ? '#a855f7' : '#c084fc'
+                                            item.severity === 'high' ? '#a855f7' : '#c084fc'
                                     }}
                                 >
                                     <div className="flex items-start justify-between gap-2">
                                         <div className="flex-1 min-w-0">
                                             <div className="flex items-center gap-2 mb-1">
-                                                <span className={`px-1.5 py-0.5 text-xs font-medium rounded ${
-                                                    item.severity === 'critical' ? 'bg-purple-100 text-purple-700' :
-                                                    item.severity === 'high' ? 'bg-purple-50 text-purple-600' :
-                                                    'bg-purple-50 text-purple-500'
-                                                }`}>
+                                                <span className={`px-1.5 py-0.5 text-xs font-medium rounded ${item.severity === 'critical' ? 'bg-purple-100 text-purple-700' :
+                                                        item.severity === 'high' ? 'bg-purple-50 text-purple-600' :
+                                                            'bg-purple-50 text-purple-500'
+                                                    }`}>
                                                     {item.severity}
                                                 </span>
                                                 {item.is_interim && (
@@ -1400,11 +1393,10 @@ export default function AdminDashboardPage() {
                                         className={`hover:bg-orange-50 ${submission.needs_comment_update ? 'bg-red-50' : ''}`}
                                     >
                                         <td className="px-4 py-3 whitespace-nowrap">
-                                            <span className={`px-2 py-1 text-xs font-semibold rounded ${
-                                                submission.urgency === 'overdue'
+                                            <span className={`px-2 py-1 text-xs font-semibold rounded ${submission.urgency === 'overdue'
                                                     ? 'bg-red-100 text-red-800'
                                                     : 'bg-yellow-100 text-yellow-800'
-                                            }`}>
+                                                }`}>
                                                 {submission.urgency === 'overdue' ? 'Overdue' : 'In Grace Period'}
                                             </span>
                                         </td>
@@ -1419,11 +1411,10 @@ export default function AdminDashboardPage() {
                                         <td className="px-4 py-3 whitespace-nowrap text-sm">{submission.model_owner}</td>
                                         <td className="px-4 py-3 whitespace-nowrap text-sm">{submission.submission_due_date}</td>
                                         <td className="px-4 py-3 whitespace-nowrap">
-                                            <span className={`px-2 py-1 text-xs font-semibold rounded ${
-                                                submission.urgency === 'overdue'
+                                            <span className={`px-2 py-1 text-xs font-semibold rounded ${submission.urgency === 'overdue'
                                                     ? 'bg-orange-100 text-orange-800'
                                                     : 'bg-blue-100 text-blue-800'
-                                            }`}>
+                                                }`}>
                                                 {submission.days_overdue} days
                                             </span>
                                         </td>
@@ -1537,14 +1528,13 @@ export default function AdminDashboardPage() {
                                             </span>
                                         </td>
                                         <td className="px-4 py-3 whitespace-nowrap">
-                                            <span className={`px-2 py-1 text-xs font-semibold rounded ${
-                                                cycle.status === 'PENDING' ? 'bg-gray-100 text-gray-800' :
-                                                cycle.status === 'DATA_COLLECTION' ? 'bg-blue-100 text-blue-800' :
-                                                cycle.status === 'ON_HOLD' ? 'bg-orange-100 text-orange-800' :
-                                                cycle.status === 'UNDER_REVIEW' ? 'bg-yellow-100 text-yellow-800' :
-                                                cycle.status === 'PENDING_APPROVAL' ? 'bg-orange-100 text-orange-800' :
-                                                'bg-gray-100 text-gray-800'
-                                            }`}>
+                                            <span className={`px-2 py-1 text-xs font-semibold rounded ${cycle.status === 'PENDING' ? 'bg-gray-100 text-gray-800' :
+                                                    cycle.status === 'DATA_COLLECTION' ? 'bg-blue-100 text-blue-800' :
+                                                        cycle.status === 'ON_HOLD' ? 'bg-orange-100 text-orange-800' :
+                                                            cycle.status === 'UNDER_REVIEW' ? 'bg-yellow-100 text-yellow-800' :
+                                                                cycle.status === 'PENDING_APPROVAL' ? 'bg-orange-100 text-orange-800' :
+                                                                    'bg-gray-100 text-gray-800'
+                                                }`}>
                                                 {cycle.status.replace(/_/g, ' ')}
                                             </span>
                                         </td>
@@ -1659,12 +1649,11 @@ export default function AdminDashboardPage() {
                                             </Link>
                                         </td>
                                         <td className="px-4 py-3 whitespace-nowrap">
-                                            <span className={`px-2 py-1 text-xs font-semibold rounded ${
-                                                rec.priority.code === 'CRITICAL' ? 'bg-red-100 text-red-800' :
-                                                rec.priority.code === 'HIGH' ? 'bg-orange-100 text-orange-800' :
-                                                rec.priority.code === 'MEDIUM' ? 'bg-yellow-100 text-yellow-800' :
-                                                'bg-gray-100 text-gray-800'
-                                            }`}>
+                                            <span className={`px-2 py-1 text-xs font-semibold rounded ${rec.priority.code === 'CRITICAL' ? 'bg-red-100 text-red-800' :
+                                                    rec.priority.code === 'HIGH' ? 'bg-orange-100 text-orange-800' :
+                                                        rec.priority.code === 'MEDIUM' ? 'bg-yellow-100 text-yellow-800' :
+                                                            'bg-gray-100 text-gray-800'
+                                                }`}>
                                                 {rec.priority.label}
                                             </span>
                                         </td>
@@ -1873,11 +1862,10 @@ export default function AdminDashboardPage() {
                                         <td className="px-4 py-3 whitespace-nowrap text-sm">{revalidation.next_submission_due}</td>
                                         <td className="px-4 py-3 whitespace-nowrap text-sm">{revalidation.next_validation_due}</td>
                                         <td className="px-4 py-3 whitespace-nowrap">
-                                            <span className={`px-2 py-1 text-xs font-semibold rounded ${
-                                                revalidation.days_until_submission_due < 30 ? 'bg-yellow-100 text-yellow-800' :
-                                                revalidation.days_until_submission_due < 60 ? 'bg-blue-100 text-blue-800' :
-                                                'bg-gray-100 text-gray-800'
-                                            }`}>
+                                            <span className={`px-2 py-1 text-xs font-semibold rounded ${revalidation.days_until_submission_due < 30 ? 'bg-yellow-100 text-yellow-800' :
+                                                    revalidation.days_until_submission_due < 60 ? 'bg-blue-100 text-blue-800' :
+                                                        'bg-gray-100 text-gray-800'
+                                                }`}>
                                                 {revalidation.days_until_submission_due} days
                                             </span>
                                         </td>
@@ -2330,11 +2318,10 @@ export function UATToolsSection({ onRefresh }: { onRefresh: () => void }) {
 
             {/* Result Display */}
             {lastResult && (
-                <div className={`mt-4 p-3 rounded border ${
-                    lastResult.type === 'success'
+                <div className={`mt-4 p-3 rounded border ${lastResult.type === 'success'
                         ? 'bg-green-50 border-green-200 text-green-800'
                         : 'bg-red-100 border-red-300 text-red-800'
-                }`}>
+                    }`}>
                     <p className="font-medium">{lastResult.message}</p>
                     {lastResult.details && (
                         <pre className="mt-2 text-xs overflow-auto max-h-40">

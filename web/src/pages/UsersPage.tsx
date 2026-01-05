@@ -277,7 +277,7 @@ export function UsersContent() {
                     <thead className="bg-gray-50">
                         <tr>
                             <th
-                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
                                 onClick={() => requestSort('user_id')}
                             >
                                 <div className="flex items-center gap-2">
@@ -286,7 +286,7 @@ export function UsersContent() {
                                 </div>
                             </th>
                             <th
-                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
                                 onClick={() => requestSort('full_name')}
                             >
                                 <div className="flex items-center gap-2">
@@ -295,7 +295,7 @@ export function UsersContent() {
                                 </div>
                             </th>
                             <th
-                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
                                 onClick={() => requestSort('email')}
                             >
                                 <div className="flex items-center gap-2">
@@ -304,7 +304,7 @@ export function UsersContent() {
                                 </div>
                             </th>
                             <th
-                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
                                 onClick={() => requestSort('role')}
                             >
                                 <div className="flex items-center gap-2">
@@ -313,7 +313,7 @@ export function UsersContent() {
                                 </div>
                             </th>
                             <th
-                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
                                 onClick={() => requestSort('lob.full_path')}
                             >
                                 <div className="flex items-center gap-2">
@@ -321,10 +321,10 @@ export function UsersContent() {
                                     {getSortIcon('lob.full_path')}
                                 </div>
                             </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                 Regions
                             </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                 Actions
                             </th>
                         </tr>
@@ -332,17 +332,17 @@ export function UsersContent() {
                     <tbody className="bg-white divide-y divide-gray-200">
                         {sortedData.length === 0 ? (
                             <tr>
-                                <td colSpan={7} className="px-6 py-4 text-center text-gray-500">
+                                <td colSpan={7} className="px-4 py-2 text-center text-gray-500">
                                     No users yet. Click "Add User" to create one.
                                 </td>
                             </tr>
                         ) : (
                             sortedData.map((user) => (
                                 <tr key={user.user_id}>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                    <td className="px-4 py-2 whitespace-nowrap text-sm">
                                         {user.user_id}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap font-medium">
+                                    <td className="px-4 py-2 whitespace-nowrap font-medium">
                                         <Link
                                             to={`/users/${user.user_id}`}
                                             className="text-blue-600 hover:text-blue-800"
@@ -353,15 +353,15 @@ export function UsersContent() {
                                             <span className="ml-2 text-xs text-blue-600">(You)</span>
                                         )}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                    <td className="px-4 py-2 whitespace-nowrap text-sm">
                                         {user.email}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
+                                    <td className="px-4 py-2 whitespace-nowrap">
                                         <span className={`px-2 py-1 text-xs rounded ${getRoleBadgeClass(getUserRoleCode(user))}`}>
                                             {getRoleDisplay(user)}
                                         </span>
                                     </td>
-                                    <td className="px-6 py-4 text-sm">
+                                    <td className="px-4 py-2 text-sm">
                                         {user.lob ? (
                                             <span className="text-gray-700" title={user.lob.full_path}>
                                                 {user.lob.name}
@@ -370,7 +370,7 @@ export function UsersContent() {
                                             <span className="text-gray-400">—</span>
                                         )}
                                     </td>
-                                    <td className="px-6 py-4 text-sm">
+                                    <td className="px-4 py-2 text-sm">
                                         {user.regions && user.regions.length > 0 ? (
                                             <div className="flex flex-wrap gap-1">
                                                 {user.regions.map(r => (
@@ -383,7 +383,7 @@ export function UsersContent() {
                                             <span className="text-gray-400">—</span>
                                         )}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
+                                    <td className="px-4 py-2 whitespace-nowrap">
                                         <Link
                                             to={`/users/${user.user_id}`}
                                             className="text-blue-600 hover:text-blue-800 text-sm mr-3"

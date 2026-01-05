@@ -316,28 +316,28 @@ const RegionalComplianceReportPage: React.FC = () => {
                         <table className="min-w-full divide-y divide-gray-200">
                             <thead className="bg-gray-50">
                                 <tr>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         Region
                                     </th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         Model
                                     </th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         Deployed Version
                                     </th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         Deployment Date
                                     </th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         Validation Status
                                     </th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         Date Validated
                                     </th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         Regional Approval
                                     </th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         Compliance
                                     </th>
                                 </tr>
@@ -345,14 +345,14 @@ const RegionalComplianceReportPage: React.FC = () => {
                             <tbody className="bg-white divide-y divide-gray-200">
                                 {reportData && reportData.records.length === 0 ? (
                                     <tr>
-                                        <td colSpan={8} className="px-6 py-4 text-center text-gray-500">
+                                        <td colSpan={8} className="px-4 py-2 text-center text-gray-500">
                                             No records found. Try adjusting your filters.
                                         </td>
                                     </tr>
                                 ) : (
                                     reportData?.records.map((record, index) => (
                                         <tr key={index} className="hover:bg-gray-50">
-                                            <td className="px-6 py-4 whitespace-nowrap">
+                                            <td className="px-4 py-2 whitespace-nowrap">
                                                 <div className="flex flex-col">
                                                     <span className="text-sm font-medium text-gray-900">
                                                         {record.region_code}
@@ -362,7 +362,7 @@ const RegionalComplianceReportPage: React.FC = () => {
                                                     </span>
                                                 </div>
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
+                                            <td className="px-4 py-2 whitespace-nowrap">
                                                 <a
                                                     href={`/models/${record.model_id}`}
                                                     className="text-sm text-blue-600 hover:text-blue-800 hover:underline"
@@ -370,19 +370,19 @@ const RegionalComplianceReportPage: React.FC = () => {
                                                     {record.model_name}
                                                 </a>
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
+                                            <td className="px-4 py-2 whitespace-nowrap">
                                                 <span className="text-sm text-gray-900">
                                                     {record.deployed_version || (
                                                         <span className="text-gray-400">Not deployed</span>
                                                     )}
                                                 </span>
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                            <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
                                                 {record.deployment_date
                                                     ? record.deployment_date.split('T')[0]
                                                     : '-'}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
+                                            <td className="px-4 py-2 whitespace-nowrap">
                                                 {record.validation_status ? (
                                                     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusBadgeClass(record.validation_status_code)}`}>
                                                         {record.validation_status}
@@ -391,12 +391,12 @@ const RegionalComplianceReportPage: React.FC = () => {
                                                     <span className="text-sm text-gray-400">No validation</span>
                                                 )}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                            <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
                                                 {record.validation_completion_date
                                                     ? record.validation_completion_date.split('T')[0]
                                                     : '-'}
                                             </td>
-                                            <td className="px-6 py-4">
+                                            <td className="px-4 py-2">
                                                 {record.requires_regional_approval ? (
                                                     record.has_regional_approval ? (
                                                         <div className="space-y-1">
@@ -428,7 +428,7 @@ const RegionalComplianceReportPage: React.FC = () => {
                                                     <span className="text-sm text-gray-400">Not required</span>
                                                 )}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
+                                            <td className="px-4 py-2 whitespace-nowrap">
                                                 {getComplianceStatusBadge(record)}
                                             </td>
                                         </tr>

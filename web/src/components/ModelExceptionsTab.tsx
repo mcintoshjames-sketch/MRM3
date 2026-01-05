@@ -351,7 +351,7 @@ const ModelExceptionsTab: React.FC<Props> = ({ modelId }) => {
             {showDetailModal && exceptionDetail && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
                     <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
-                        <div className="px-6 py-4 border-b border-gray-200">
+                        <div className="px-4 py-2 border-b border-gray-200">
                             <div className="flex items-center justify-between">
                                 <h3 className="text-lg font-semibold text-gray-900">
                                     Exception Details
@@ -364,7 +364,7 @@ const ModelExceptionsTab: React.FC<Props> = ({ modelId }) => {
                                 </button>
                             </div>
                         </div>
-                        <div className="px-6 py-4 space-y-4">
+                        <div className="px-4 py-2 space-y-4">
                             {/* Basic Info */}
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
@@ -482,7 +482,7 @@ const ModelExceptionsTab: React.FC<Props> = ({ modelId }) => {
                                 </div>
                             )}
                         </div>
-                        <div className="px-6 py-4 border-t border-gray-200 flex justify-end">
+                        <div className="px-4 py-2 border-t border-gray-200 flex justify-end">
                             <button
                                 onClick={closeModals}
                                 className="btn-secondary"
@@ -498,12 +498,12 @@ const ModelExceptionsTab: React.FC<Props> = ({ modelId }) => {
             {showAcknowledgeModal && exceptionDetail && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
                     <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
-                        <div className="px-6 py-4 border-b border-gray-200">
+                        <div className="px-4 py-2 border-b border-gray-200">
                             <h3 className="text-lg font-semibold text-gray-900">
                                 Acknowledge Exception
                             </h3>
                         </div>
-                        <div className="px-6 py-4 space-y-4">
+                        <div className="px-4 py-2 space-y-4">
                             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
                                 <p className="text-sm text-yellow-800">
                                     <strong>{exceptionDetail.exception_code}</strong>: {getTypeLabel(exceptionDetail.exception_type)}
@@ -522,7 +522,7 @@ const ModelExceptionsTab: React.FC<Props> = ({ modelId }) => {
                                 />
                             </div>
                         </div>
-                        <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
+                        <div className="px-4 py-2 border-t border-gray-200 flex justify-end gap-3">
                             <button
                                 onClick={closeModals}
                                 className="btn-secondary"
@@ -546,12 +546,12 @@ const ModelExceptionsTab: React.FC<Props> = ({ modelId }) => {
             {showCloseModal && exceptionDetail && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
                     <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
-                        <div className="px-6 py-4 border-b border-gray-200">
+                        <div className="px-4 py-2 border-b border-gray-200">
                             <h3 className="text-lg font-semibold text-gray-900">
                                 Close Exception
                             </h3>
                         </div>
-                        <div className="px-6 py-4 space-y-4">
+                        <div className="px-4 py-2 space-y-4">
                             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                                 <p className="text-sm text-blue-800">
                                     <strong>{exceptionDetail.exception_code}</strong>: {getTypeLabel(exceptionDetail.exception_type)}
@@ -594,7 +594,7 @@ const ModelExceptionsTab: React.FC<Props> = ({ modelId }) => {
                                 )}
                             </div>
                         </div>
-                        <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
+                        <div className="px-4 py-2 border-t border-gray-200 flex justify-end gap-3">
                             <button
                                 onClick={closeModals}
                                 className="btn-secondary"
@@ -618,7 +618,7 @@ const ModelExceptionsTab: React.FC<Props> = ({ modelId }) => {
             {showCreateModal && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
                     <div className="bg-white rounded-lg shadow-xl max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">
-                        <div className="px-6 py-4 border-b border-gray-200">
+                        <div className="px-4 py-2 border-b border-gray-200">
                             <div className="flex items-center justify-between">
                                 <h3 className="text-lg font-semibold text-gray-900">
                                     Create Exception
@@ -631,7 +631,7 @@ const ModelExceptionsTab: React.FC<Props> = ({ modelId }) => {
                                 </button>
                             </div>
                         </div>
-                        <div className="px-6 py-4 space-y-4">
+                        <div className="px-4 py-2 space-y-4">
                             {/* Exception Type */}
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -706,7 +706,7 @@ const ModelExceptionsTab: React.FC<Props> = ({ modelId }) => {
                                 </div>
                             )}
                         </div>
-                        <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
+                        <div className="px-4 py-2 border-t border-gray-200 flex justify-end gap-3">
                             <button
                                 onClick={closeModals}
                                 className="btn-secondary"

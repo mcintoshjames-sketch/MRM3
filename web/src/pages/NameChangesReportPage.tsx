@@ -316,7 +316,7 @@ const NameChangesReportPage: React.FC = () => {
 
                         {/* Recent Changes Table */}
                         <div className="bg-white rounded-lg shadow-md overflow-hidden">
-                            <div className="px-6 py-4 border-b border-gray-200">
+                            <div className="px-4 py-2 border-b border-gray-200">
                                 <h3 className="text-lg font-semibold text-gray-900">Name Changes</h3>
                                 <p className="text-sm text-gray-500 mt-1">
                                     {startDate || endDate
@@ -343,19 +343,19 @@ const NameChangesReportPage: React.FC = () => {
                                     <table className="min-w-full divide-y divide-gray-200">
                                         <thead className="bg-gray-50">
                                             <tr>
-                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                                     Model
                                                 </th>
-                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                                     Old Name
                                                 </th>
-                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                                     New Name
                                                 </th>
-                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                                     Changed By
                                                 </th>
-                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                                     Changed At
                                                 </th>
                                             </tr>
@@ -363,7 +363,7 @@ const NameChangesReportPage: React.FC = () => {
                                         <tbody className="bg-white divide-y divide-gray-200">
                                             {statistics.recent_changes.map((record) => (
                                                 <tr key={record.history_id} className="hover:bg-gray-50">
-                                                    <td className="px-6 py-4 whitespace-nowrap">
+                                                    <td className="px-4 py-2 whitespace-nowrap">
                                                         <Link
                                                             to={`/models/${record.model_id}`}
                                                             className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
@@ -371,16 +371,16 @@ const NameChangesReportPage: React.FC = () => {
                                                             #{record.model_id}
                                                         </Link>
                                                     </td>
-                                                    <td className="px-6 py-4">
+                                                    <td className="px-4 py-2">
                                                         <span className="text-gray-500 line-through">{record.old_name}</span>
                                                     </td>
-                                                    <td className="px-6 py-4">
+                                                    <td className="px-4 py-2">
                                                         <span className="text-gray-900 font-medium">{record.new_name}</span>
                                                     </td>
-                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                                                    <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-600">
                                                         {record.changed_by_name || 'Unknown'}
                                                     </td>
-                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                                                    <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-600">
                                                         {record.changed_at.split('T')[0]}
                                                     </td>
                                                 </tr>

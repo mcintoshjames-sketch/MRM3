@@ -191,30 +191,30 @@ export default function BulkAttestationPage() {
                 {/* Models Table (read-only) */}
                 {models.length > 0 && (
                     <div className="bg-white rounded-lg shadow overflow-hidden">
-                        <div className="px-6 py-4 border-b border-gray-200">
+                        <div className="px-4 py-2 border-b border-gray-200">
                             <h2 className="text-lg font-semibold text-gray-900">Attestation Status</h2>
                         </div>
                         <table className="min-w-full divide-y divide-gray-200">
                             <thead className="bg-gray-50">
                                 <tr>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Model</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Risk Tier</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Model</th>
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Risk Tier</th>
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
                                 </tr>
                             </thead>
                             <tbody className="bg-white divide-y divide-gray-200">
                                 {models.map(model => (
                                     <tr key={model.model_id}>
-                                        <td className="px-6 py-4">
+                                        <td className="px-4 py-2">
                                             <Link to={`/models/${model.model_id}`} className="text-blue-600 hover:text-blue-800">
                                                 {model.model_name}
                                             </Link>
                                         </td>
-                                        <td className="px-6 py-4 text-sm text-gray-600">
+                                        <td className="px-4 py-2 text-sm text-gray-600">
                                             {model.risk_tier_label || '-'}
                                         </td>
-                                        <td className="px-6 py-4">
+                                        <td className="px-4 py-2">
                                             {model.attestation_status === 'SUBMITTED' && (
                                                 <span className="px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800">Submitted</span>
                                             )}
@@ -225,7 +225,7 @@ export default function BulkAttestationPage() {
                                                 <span className="px-2 py-1 text-xs font-medium rounded-full bg-red-100 text-red-800">Rejected</span>
                                             )}
                                         </td>
-                                        <td className="px-6 py-4">
+                                        <td className="px-4 py-2">
                                             <Link to={`/attestations/${model.attestation_id}`} className="text-blue-600 hover:text-blue-800 text-sm">
                                                 View
                                             </Link>
@@ -333,7 +333,7 @@ export default function BulkAttestationPage() {
 
             {/* Step 1: Model Selection */}
             <div className="bg-white rounded-lg shadow mb-6">
-                <div className="px-6 py-4 border-b border-gray-200">
+                <div className="px-4 py-2 border-b border-gray-200">
                     <h2 className="text-lg font-semibold text-gray-900">Step 1: Select Models</h2>
                     <p className="text-sm text-gray-600 mt-1">
                         Select the models you can fully attest to. Unchecked models will need to be attested individually.
@@ -353,7 +353,7 @@ export default function BulkAttestationPage() {
 
             {/* Step 2: Attestation Questions */}
             <div className="bg-white rounded-lg shadow mb-6">
-                <div className="px-6 py-4 border-b border-gray-200">
+                <div className="px-4 py-2 border-b border-gray-200">
                     <h2 className="text-lg font-semibold text-gray-900">Step 2: Answer Attestation Questions</h2>
                     <p className="text-sm text-gray-600 mt-1">
                         Your answers will apply to ALL {selectedCount} selected models.
@@ -440,7 +440,7 @@ export default function BulkAttestationPage() {
 
             {/* Step 3: Additional Comments */}
             <div className="bg-white rounded-lg shadow mb-6">
-                <div className="px-6 py-4 border-b border-gray-200">
+                <div className="px-4 py-2 border-b border-gray-200">
                     <h2 className="text-lg font-semibold text-gray-900">Step 3: Additional Comments (Optional)</h2>
                 </div>
                 <div className="p-6">

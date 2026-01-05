@@ -155,25 +155,25 @@ export default function MyPendingSubmissionsPage() {
                     <table className="min-w-full divide-y divide-gray-200">
                         <thead className="bg-gray-50">
                             <tr>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                     Urgency
                                 </th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                     Model
                                 </th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                     Validation Type
                                 </th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                     Submission Due
                                 </th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                     Grace Period End
                                 </th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                     Validation Due
                                 </th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                     Actions
                                 </th>
                             </tr>
@@ -181,12 +181,12 @@ export default function MyPendingSubmissionsPage() {
                         <tbody className="bg-white divide-y divide-gray-200">
                             {filteredSubmissions.map((submission) => (
                                 <tr key={submission.request_id} className="hover:bg-gray-50">
-                                    <td className="px-6 py-4 whitespace-nowrap">
+                                    <td className="px-4 py-2 whitespace-nowrap">
                                         <span className={`px-2 py-1 text-xs font-semibold rounded ${getUrgencyBadge(submission.urgency)}`}>
                                             {getUrgencyLabel(submission.urgency)}
                                         </span>
                                     </td>
-                                    <td className="px-6 py-4">
+                                    <td className="px-4 py-2">
                                         <Link
                                             to={`/models/${submission.model_id}`}
                                             className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
@@ -194,12 +194,12 @@ export default function MyPendingSubmissionsPage() {
                                             {submission.model_name}
                                         </Link>
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
+                                    <td className="px-4 py-2 whitespace-nowrap">
                                         <span className="px-2 py-1 text-xs rounded bg-blue-100 text-blue-800">
                                             {submission.validation_type}
                                         </span>
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
+                                    <td className="px-4 py-2 whitespace-nowrap">
                                         <div className="text-sm text-gray-900">{submission.submission_due_date}</div>
                                         {submission.days_until_submission_due !== null && (
                                             <div className={`text-xs font-medium ${
@@ -214,10 +214,10 @@ export default function MyPendingSubmissionsPage() {
                                             </div>
                                         )}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                    <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">
                                         {submission.grace_period_end}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
+                                    <td className="px-4 py-2 whitespace-nowrap">
                                         <div className="text-sm text-gray-900">{submission.model_validation_due_date}</div>
                                         {submission.days_until_validation_due !== null && (
                                             <div className={`text-xs font-medium ${
@@ -232,7 +232,7 @@ export default function MyPendingSubmissionsPage() {
                                             </div>
                                         )}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
+                                    <td className="px-4 py-2 whitespace-nowrap">
                                         <Link
                                             to={`/validation-workflow/${submission.request_id}`}
                                             className="text-blue-600 hover:text-blue-800 text-sm hover:underline"
@@ -246,7 +246,7 @@ export default function MyPendingSubmissionsPage() {
                     </table>
 
                     {/* Summary Footer */}
-                    <div className="bg-gray-50 px-6 py-3 border-t border-gray-200">
+                    <div className="bg-gray-50 px-4 py-2 border-t border-gray-200">
                         <div className="text-sm text-gray-600">
                             {filter !== 'all' ? (
                                 <>

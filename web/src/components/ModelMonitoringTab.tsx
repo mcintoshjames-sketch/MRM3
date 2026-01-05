@@ -337,19 +337,19 @@ const ModelMonitoringTab: React.FC<ModelMonitoringTabProps> = ({ modelId, modelN
                 <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50">
                         <tr>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                 Plan Name
                             </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                 Frequency
                             </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                 Current Cycle Status
                             </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                 Latest Results
                             </th>
-                            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                                 Actions
                             </th>
                         </tr>
@@ -357,7 +357,7 @@ const ModelMonitoringTab: React.FC<ModelMonitoringTabProps> = ({ modelId, modelN
                     <tbody className="bg-white divide-y divide-gray-200">
                         {plans.map((plan) => (
                             <tr key={plan.plan_id} className="hover:bg-gray-50">
-                                <td className="px-6 py-4 whitespace-nowrap">
+                                <td className="px-4 py-2 whitespace-nowrap">
                                     <div className="text-sm font-medium text-gray-900">
                                         {plan.plan_name}
                                     </div>
@@ -367,10 +367,10 @@ const ModelMonitoringTab: React.FC<ModelMonitoringTabProps> = ({ modelId, modelN
                                         </div>
                                     )}
                                 </td>
-                                <td className="px-6 py-4 whitespace-nowrap">
+                                <td className="px-4 py-2 whitespace-nowrap">
                                     <span className="text-sm text-gray-700">{plan.frequency}</span>
                                 </td>
-                                <td className="px-6 py-4 whitespace-nowrap">
+                                <td className="px-4 py-2 whitespace-nowrap">
                                     <span
                                         className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(
                                             plan.latest_cycle_status
@@ -379,7 +379,7 @@ const ModelMonitoringTab: React.FC<ModelMonitoringTabProps> = ({ modelId, modelN
                                         {formatStatus(plan.latest_cycle_status)}
                                     </span>
                                 </td>
-                                <td className="px-6 py-4 whitespace-nowrap">
+                                <td className="px-4 py-2 whitespace-nowrap">
                                     {plan.latest_cycle_outcome_summary ? (
                                         <span className="text-sm text-gray-700">
                                             {plan.latest_cycle_outcome_summary}
@@ -390,7 +390,7 @@ const ModelMonitoringTab: React.FC<ModelMonitoringTabProps> = ({ modelId, modelN
                                         </span>
                                     )}
                                 </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
+                                <td className="px-4 py-2 whitespace-nowrap text-right text-sm">
                                     <Link
                                         to={`/monitoring/${plan.plan_id}`}
                                         className="text-blue-600 hover:text-blue-800 hover:underline"

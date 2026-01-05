@@ -227,23 +227,23 @@ export default function ModelHierarchySection({ modelId, modelName }: Props) {
                             <table className="min-w-full divide-y divide-gray-200">
                                 <thead className="bg-gray-50">
                                     <tr>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             Parent Model
                                         </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             Relationship Type
                                         </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             Effective Date
                                         </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             End Date
                                         </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             Notes
                                         </th>
                                         {canManageModelRelationshipsFlag && (
-                                            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                                                 Actions
                                             </th>
                                         )}
@@ -252,7 +252,7 @@ export default function ModelHierarchySection({ modelId, modelName }: Props) {
                                 <tbody className="bg-white divide-y divide-gray-200">
                                     {parents.map((relation) => (
                                         <tr key={relation.id} className="hover:bg-gray-50">
-                                            <td className="px-6 py-4 whitespace-nowrap">
+                                            <td className="px-4 py-2 whitespace-nowrap">
                                                 <Link
                                                     to={`/models/${relation.model_id}`}
                                                     className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
@@ -260,22 +260,22 @@ export default function ModelHierarchySection({ modelId, modelName }: Props) {
                                                     {relation.model_name}
                                                 </Link>
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
+                                            <td className="px-4 py-2 whitespace-nowrap">
                                                 <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
                                                     {relation.relation_type}
                                                 </span>
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                            <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
                                                 {relation.effective_date || '-'}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                            <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
                                                 {relation.end_date || '-'}
                                             </td>
-                                            <td className="px-6 py-4 text-sm text-gray-500">
+                                            <td className="px-4 py-2 text-sm text-gray-500">
                                                 {relation.notes || '-'}
                                             </td>
                                             {canManageModelRelationshipsFlag && (
-                                                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                                <td className="px-4 py-2 whitespace-nowrap text-right text-sm font-medium">
                                                     <button
                                                         onClick={() => handleEdit(relation, 'parent')}
                                                         className="text-blue-600 hover:text-blue-900 mr-3"
@@ -330,23 +330,23 @@ export default function ModelHierarchySection({ modelId, modelName }: Props) {
                             <table className="min-w-full divide-y divide-gray-200">
                                 <thead className="bg-gray-50">
                                     <tr>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             Sub-Model
                                         </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             Relationship Type
                                         </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             Effective Date
                                         </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             End Date
                                         </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             Notes
                                         </th>
                                         {canManageModelRelationshipsFlag && (
-                                            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                                                 Actions
                                             </th>
                                         )}
@@ -355,7 +355,7 @@ export default function ModelHierarchySection({ modelId, modelName }: Props) {
                                 <tbody className="bg-white divide-y divide-gray-200">
                                     {children.map((relation) => (
                                         <tr key={relation.id} className="hover:bg-gray-50">
-                                            <td className="px-6 py-4 whitespace-nowrap">
+                                            <td className="px-4 py-2 whitespace-nowrap">
                                                 <Link
                                                     to={`/models/${relation.model_id}`}
                                                     className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
@@ -363,22 +363,22 @@ export default function ModelHierarchySection({ modelId, modelName }: Props) {
                                                     {relation.model_name}
                                                 </Link>
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
+                                            <td className="px-4 py-2 whitespace-nowrap">
                                                 <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
                                                     {relation.relation_type}
                                                 </span>
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                            <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
                                                 {relation.effective_date || '-'}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                            <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
                                                 {relation.end_date || '-'}
                                             </td>
-                                            <td className="px-6 py-4 text-sm text-gray-500">
+                                            <td className="px-4 py-2 text-sm text-gray-500">
                                                 {relation.notes || '-'}
                                             </td>
                                             {canManageModelRelationshipsFlag && (
-                                                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                                <td className="px-4 py-2 whitespace-nowrap text-right text-sm font-medium">
                                                     <button
                                                         onClick={() => handleEdit(relation, 'child')}
                                                         className="text-blue-600 hover:text-blue-900 mr-3"

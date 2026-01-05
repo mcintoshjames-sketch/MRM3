@@ -462,7 +462,7 @@ export default function AdminMonitoringOverview() {
                     </table>
 
                     {/* Summary Footer */}
-                    <div className="bg-gray-50 px-6 py-3 border-t border-gray-200">
+                    <div className="bg-gray-50 px-4 py-2 border-t border-gray-200">
                         <div className="text-sm text-gray-600">
                             Showing <span className="font-medium">{filteredCycles.length}</span> of{' '}
                             <span className="font-medium">{data.cycles.length}</span> active cycles

@@ -2805,7 +2805,7 @@ export default function ModelsPage() {
                 </div>
 
                 <div className="bg-white rounded-lg shadow-md">
-                    <div className="max-h-[60vh] overflow-auto">
+                    <div className="max-h-[70vh] overflow-auto">
                         <table className="min-w-full divide-y divide-gray-200">
                             <thead className="bg-gray-50 sticky top-0 z-10">
                                 <tr>
@@ -2815,7 +2815,7 @@ export default function ModelsPage() {
                                         return (
                                             <th
                                                 key={colKey}
-                                                className={`px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase ${isSortable ? 'cursor-pointer hover:bg-gray-100' : ''}`}
+                                                className={`px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase ${isSortable ? 'cursor-pointer hover:bg-gray-100' : ''}`}
                                                 onClick={isSortable ? () => requestSort(renderer.sortKey!) : undefined}
                                             >
                                                 <div className="flex items-center gap-2">
@@ -2826,14 +2826,14 @@ export default function ModelsPage() {
                                         );
                                     })}
                                     {canManageModelsFlag && (
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                                     )}
                                 </tr>
                             </thead>
                             <tbody className="bg-white divide-y divide-gray-200">
                                 {sortedData.length === 0 ? (
                                     <tr>
-                                        <td colSpan={selectedColumns.length + (canManageModelsFlag ? 1 : 0)} className="px-6 py-4 text-center text-gray-500">
+                                        <td colSpan={selectedColumns.length + (canManageModelsFlag ? 1 : 0)} className="px-4 py-2 text-center text-gray-500">
                                             No models yet. Click "Add Model" to create one.
                                         </td>
                                     </tr>
@@ -2841,12 +2841,12 @@ export default function ModelsPage() {
                                     paginatedModels.map((model) => (
                                         <tr key={model.model_id} className="hover:bg-gray-50">
                                             {selectedColumns.filter(colKey => columnRenderers[colKey]).map(colKey => (
-                                                <td key={colKey} className="px-6 py-4 whitespace-nowrap text-sm">
+                                                <td key={colKey} className="px-4 py-2 whitespace-nowrap text-sm">
                                                     {columnRenderers[colKey].cell(model)}
                                                 </td>
                                             ))}
                                             {canManageModelsFlag && (
-                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                <td className="px-4 py-2 whitespace-nowrap">
                                                     <button
                                                         onClick={() => handleDelete(model.model_id)}
                                                         className="text-red-600 hover:text-red-800 text-sm"

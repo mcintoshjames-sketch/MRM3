@@ -4047,7 +4047,7 @@ export default function TaxonomyPage() {
                                 <div key={report.report_id} className="bg-white shadow rounded-lg overflow-hidden">
                                     {/* Report Header */}
                                     <div
-                                        className="px-6 py-4 border-b border-gray-200 cursor-pointer hover:bg-gray-50 flex items-center justify-between"
+                                        className="px-4 py-2 border-b border-gray-200 cursor-pointer hover:bg-gray-50 flex items-center justify-between"
                                         onClick={() => toggleFryReport(report.report_id)}
                                     >
                                         <div className="flex items-center">
@@ -4075,7 +4075,7 @@ export default function TaxonomyPage() {
 
                                     {/* Schedules (expanded view) */}
                                     {expandedReports.has(report.report_id) && selectedFryReport?.report_id === report.report_id && (
-                                        <div className="px-6 py-4 bg-gray-50">
+                                        <div className="px-4 py-2 bg-gray-50">
                                             {selectedFryReport.schedules && selectedFryReport.schedules.length > 0 ? (
                                                 <div className="space-y-3">
                                                     {selectedFryReport.schedules.map((schedule) => (
@@ -4296,22 +4296,22 @@ export default function TaxonomyPage() {
                                         <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-10">
                                             {/* Expand */}
                                         </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             Priority
                                         </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             Requires Action Plan
                                         </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             Requires Final Approval
                                         </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             Enforce Timeframes
                                         </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             Description
                                         </th>
-                                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             Actions
                                         </th>
                                     </tr>
@@ -4338,7 +4338,7 @@ export default function TaxonomyPage() {
                                                         </svg>
                                                     </button>
                                                 </td>
-                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                <td className="px-4 py-2 whitespace-nowrap">
                                                     <div className="flex items-center">
                                                         <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
                                                             config.priority.code === 'HIGH' ? 'bg-red-100 text-red-800' :
@@ -4352,7 +4352,7 @@ export default function TaxonomyPage() {
                                                         <span className="ml-2 text-xs text-gray-500">({config.priority.code})</span>
                                                     </div>
                                                 </td>
-                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                <td className="px-4 py-2 whitespace-nowrap">
                                                     <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
                                                         config.requires_action_plan ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
                                                     }`}>
@@ -4360,7 +4360,7 @@ export default function TaxonomyPage() {
                                                     </span>
                                                     <span className="ml-1 text-xs text-gray-400">(default)</span>
                                                 </td>
-                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                <td className="px-4 py-2 whitespace-nowrap">
                                                     <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
                                                         config.requires_final_approval ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
                                                     }`}>
@@ -4368,7 +4368,7 @@ export default function TaxonomyPage() {
                                                     </span>
                                                     <span className="ml-1 text-xs text-gray-400">(default)</span>
                                                 </td>
-                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                <td className="px-4 py-2 whitespace-nowrap">
                                                     <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
                                                         config.enforce_timeframes ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
                                                     }`}>
@@ -4376,12 +4376,12 @@ export default function TaxonomyPage() {
                                                     </span>
                                                     <span className="ml-1 text-xs text-gray-400">(default)</span>
                                                 </td>
-                                                <td className="px-6 py-4">
+                                                <td className="px-4 py-2">
                                                     <p className="text-sm text-gray-600 max-w-xs truncate" title={config.description || ''}>
                                                         {config.description || '—'}
                                                     </p>
                                                 </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                                <td className="px-4 py-2 whitespace-nowrap text-right text-sm font-medium">
                                                     <button
                                                         onClick={() => setEditingPriorityConfig(config)}
                                                         className="text-blue-600 hover:text-blue-800"
@@ -4394,7 +4394,7 @@ export default function TaxonomyPage() {
                                             {/* Expanded Regional Overrides Section */}
                                             {expandedPriorityIds.has(config.priority.value_id) && (
                                                 <tr>
-                                                    <td colSpan={7} className="bg-gray-50 px-6 py-4">
+                                                    <td colSpan={7} className="bg-gray-50 px-4 py-2">
                                                         <div className="ml-8">
                                                             <div className="flex justify-between items-center mb-3">
                                                                 <h4 className="text-sm font-medium text-gray-700">
@@ -5030,12 +5030,12 @@ export default function TaxonomyPage() {
                     {editingTimeframeConfig && (
                         <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50">
                             <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
-                                <div className="px-6 py-4 border-b border-gray-200">
+                                <div className="px-4 py-2 border-b border-gray-200">
                                     <h3 className="text-lg font-medium text-gray-900">
                                         Edit Timeframe Configuration
                                     </h3>
                                 </div>
-                                <div className="px-6 py-4 space-y-4">
+                                <div className="px-4 py-2 space-y-4">
                                     {/* Read-only fields */}
                                     <div className="grid grid-cols-3 gap-4">
                                         <div>
@@ -5087,7 +5087,7 @@ export default function TaxonomyPage() {
                                     </div>
                                 </div>
 
-                                <div className="px-6 py-4 border-t border-gray-200 flex justify-end space-x-3">
+                                <div className="px-4 py-2 border-t border-gray-200 flex justify-end space-x-3">
                                     <button
                                         onClick={() => setEditingTimeframeConfig(null)}
                                         className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
@@ -6498,7 +6498,7 @@ export default function TaxonomyPage() {
 
                                         return (
                                             <div key={sectionKey} className="bg-white rounded-lg shadow-md overflow-hidden">
-                                                <div className="bg-gray-100 px-6 py-3 border-b">
+                                                <div className="bg-gray-100 px-4 py-2 border-b">
                                                     <h2 className="font-semibold text-gray-800">
                                                         Section {sectionNum} – {sectionTitle}
                                                     </h2>
@@ -6508,22 +6508,22 @@ export default function TaxonomyPage() {
                                                     <table className="min-w-full">
                                                         <thead className="bg-gray-50">
                                                             <tr>
-                                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase w-1/4">
+                                                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase w-1/4">
                                                                     Component
                                                                 </th>
-                                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase w-1/6">
+                                                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase w-1/6">
                                                                     Tier 1 (High)
                                                                 </th>
-                                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase w-1/6">
+                                                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase w-1/6">
                                                                     Tier 2 (Medium)
                                                                 </th>
-                                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase w-1/6">
+                                                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase w-1/6">
                                                                     Tier 3 (Low)
                                                                 </th>
-                                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase w-1/6">
+                                                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase w-1/6">
                                                                     Tier 4 (Very Low)
                                                                 </th>
-                                                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase w-24">
+                                                                <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">
                                                                     Actions
                                                                 </th>
                                                             </tr>
@@ -6534,7 +6534,7 @@ export default function TaxonomyPage() {
 
                                                                 return (
                                                                     <tr key={component.component_id}>
-                                                                        <td className="px-6 py-4">
+                                                                        <td className="px-4 py-2">
                                                                             <div className="text-sm font-medium text-gray-900">
                                                                                 {component.component_code}
                                                                             </div>
@@ -6546,7 +6546,7 @@ export default function TaxonomyPage() {
                                                                         {/* Expectation columns */}
                                                                         {isEditing ? (
                                                                             <>
-                                                                                <td className="px-6 py-4">
+                                                                                <td className="px-4 py-2">
                                                                                     <select
                                                                                         value={componentEditForm.expectation_high}
                                                                                         onChange={(e) => setComponentEditForm({ ...componentEditForm, expectation_high: e.target.value })}
@@ -6557,7 +6557,7 @@ export default function TaxonomyPage() {
                                                                                         <option value="NotExpected">Not Expected</option>
                                                                                     </select>
                                                                                 </td>
-                                                                                <td className="px-6 py-4">
+                                                                                <td className="px-4 py-2">
                                                                                     <select
                                                                                         value={componentEditForm.expectation_medium}
                                                                                         onChange={(e) => setComponentEditForm({ ...componentEditForm, expectation_medium: e.target.value })}
@@ -6568,7 +6568,7 @@ export default function TaxonomyPage() {
                                                                                         <option value="NotExpected">Not Expected</option>
                                                                                     </select>
                                                                                 </td>
-                                                                                <td className="px-6 py-4">
+                                                                                <td className="px-4 py-2">
                                                                                     <select
                                                                                         value={componentEditForm.expectation_low}
                                                                                         onChange={(e) => setComponentEditForm({ ...componentEditForm, expectation_low: e.target.value })}
@@ -6579,7 +6579,7 @@ export default function TaxonomyPage() {
                                                                                         <option value="NotExpected">Not Expected</option>
                                                                                     </select>
                                                                                 </td>
-                                                                                <td className="px-6 py-4">
+                                                                                <td className="px-4 py-2">
                                                                                     <select
                                                                                         value={componentEditForm.expectation_very_low}
                                                                                         onChange={(e) => setComponentEditForm({ ...componentEditForm, expectation_very_low: e.target.value })}
@@ -6593,22 +6593,22 @@ export default function TaxonomyPage() {
                                                                             </>
                                                                         ) : (
                                                                             <>
-                                                                                <td className="px-6 py-4">
+                                                                                <td className="px-4 py-2">
                                                                                     <span className={`px-2 py-1 rounded text-xs font-medium ${getExpectationBadge(component.expectation_high)}`}>
                                                                                         {formatExpectation(component.expectation_high)}
                                                                                     </span>
                                                                                 </td>
-                                                                                <td className="px-6 py-4">
+                                                                                <td className="px-4 py-2">
                                                                                     <span className={`px-2 py-1 rounded text-xs font-medium ${getExpectationBadge(component.expectation_medium)}`}>
                                                                                         {formatExpectation(component.expectation_medium)}
                                                                                     </span>
                                                                                 </td>
-                                                                                <td className="px-6 py-4">
+                                                                                <td className="px-4 py-2">
                                                                                     <span className={`px-2 py-1 rounded text-xs font-medium ${getExpectationBadge(component.expectation_low)}`}>
                                                                                         {formatExpectation(component.expectation_low)}
                                                                                     </span>
                                                                                 </td>
-                                                                                <td className="px-6 py-4">
+                                                                                <td className="px-4 py-2">
                                                                                     <span className={`px-2 py-1 rounded text-xs font-medium ${getExpectationBadge(component.expectation_very_low)}`}>
                                                                                         {formatExpectation(component.expectation_very_low)}
                                                                                     </span>
@@ -6617,7 +6617,7 @@ export default function TaxonomyPage() {
                                                                         )}
 
                                                                         {/* Actions */}
-                                                                        <td className="px-6 py-4 text-right text-sm">
+                                                                        <td className="px-4 py-2 text-right text-sm">
                                                                             {isEditing ? (
                                                                                 <div className="flex gap-2 justify-end">
                                                                                     <button
@@ -6702,7 +6702,7 @@ export default function TaxonomyPage() {
                                         {componentConfigHistory.map(config => (
                                             <div key={config.config_id} className="bg-white rounded-lg shadow-md overflow-hidden">
                                                 <div
-                                                    className="px-6 py-4 bg-gray-50 border-b cursor-pointer hover:bg-gray-100 transition-colors"
+                                                    className="px-4 py-2 bg-gray-50 border-b cursor-pointer hover:bg-gray-100 transition-colors"
                                                     onClick={() => handleExpandComponentConfiguration(config.config_id)}
                                                 >
                                                     <div className="flex items-center justify-between">
@@ -6745,7 +6745,7 @@ export default function TaxonomyPage() {
                                                 </div>
 
                                                 {expandedComponentConfigId === config.config_id && (
-                                                    <div className="px-6 py-4">
+                                                    <div className="px-4 py-2">
                                                         {componentConfigDetailLoading ? (
                                                             <div className="text-center py-8 text-gray-500">
                                                                 Loading configuration details...

@@ -3441,31 +3441,31 @@ export default function ModelDetailsPage() {
                             <table className="min-w-full divide-y divide-gray-200">
                                 <thead className="bg-gray-50">
                                     <tr>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                             Request ID
                                         </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                             Request Date
                                         </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                             Requestor
                                         </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                             Type
                                         </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                             Priority
                                         </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                             Status
                                         </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                             Primary Validator
                                         </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                             Target Date
                                         </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                             Actions
                                         </th>
                                     </tr>
@@ -3476,21 +3476,21 @@ export default function ModelDetailsPage() {
                                         req.current_status !== 'Cancelled'
                                     ).map((request) => (
                                         <tr key={request.request_id} className="hover:bg-gray-50">
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-mono">
+                                            <td className="px-4 py-2 whitespace-nowrap text-sm font-mono">
                                                 #{request.request_id}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                            <td className="px-4 py-2 whitespace-nowrap text-sm">
                                                 {request.request_date}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                            <td className="px-4 py-2 whitespace-nowrap text-sm">
                                                 {request.requestor_name}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
+                                            <td className="px-4 py-2 whitespace-nowrap">
                                                 <span className="px-2 py-1 text-xs rounded bg-blue-100 text-blue-800">
                                                     {request.validation_type}
                                                 </span>
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
+                                            <td className="px-4 py-2 whitespace-nowrap">
                                                 <span className={`px-2 py-1 text-xs rounded ${request.priority === 'Critical' ? 'bg-red-100 text-red-800' :
                                                     request.priority === 'High' ? 'bg-orange-100 text-orange-800' :
                                                         request.priority === 'Medium' ? 'bg-yellow-100 text-yellow-800' :
@@ -3499,7 +3499,7 @@ export default function ModelDetailsPage() {
                                                     {request.priority}
                                                 </span>
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
+                                            <td className="px-4 py-2 whitespace-nowrap">
                                                 <span className={`px-2 py-1 text-xs rounded ${request.current_status === 'Intake' ? 'bg-gray-100 text-gray-800' :
                                                     request.current_status === 'Planning' ? 'bg-blue-100 text-blue-800' :
                                                         request.current_status === 'In Progress' ? 'bg-yellow-100 text-yellow-800' :
@@ -3511,15 +3511,15 @@ export default function ModelDetailsPage() {
                                                     {request.current_status}
                                                 </span>
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                            <td className="px-4 py-2 whitespace-nowrap text-sm">
                                                 {request.primary_validator || (
                                                     <span className="text-orange-600">Unassigned</span>
                                                 )}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                            <td className="px-4 py-2 whitespace-nowrap text-sm">
                                                 {request.target_completion_date}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
+                                            <td className="px-4 py-2 whitespace-nowrap">
                                                 <Link
                                                     to={`/validation-workflow/${request.request_id}`}
                                                     className="text-blue-600 hover:text-blue-800 text-sm"
@@ -3571,25 +3571,25 @@ export default function ModelDetailsPage() {
                                             <table className="min-w-full divide-y divide-gray-200">
                                                 <thead className="bg-gray-50">
                                                     <tr>
-                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                                             Request ID
                                                         </th>
-                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                                             Request Date
                                                         </th>
-                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                                             Requestor
                                                         </th>
-                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                                             Type
                                                         </th>
-                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                                             Status
                                                         </th>
-                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                                             Primary Validator
                                                         </th>
-                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                                             Actions
                                                         </th>
                                                     </tr>
@@ -3597,30 +3597,30 @@ export default function ModelDetailsPage() {
                                                 <tbody className="bg-white divide-y divide-gray-200">
                                                     {historicalRequests.map((request) => (
                                                         <tr key={request.request_id} className="hover:bg-gray-50">
-                                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-mono">
+                                                            <td className="px-4 py-2 whitespace-nowrap text-sm font-mono">
                                                                 #{request.request_id}
                                                             </td>
-                                                            <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                                            <td className="px-4 py-2 whitespace-nowrap text-sm">
                                                                 {request.request_date}
                                                             </td>
-                                                            <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                                            <td className="px-4 py-2 whitespace-nowrap text-sm">
                                                                 {request.requestor_name}
                                                             </td>
-                                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                            <td className="px-4 py-2 whitespace-nowrap">
                                                                 <span className="px-2 py-1 text-xs rounded bg-blue-100 text-blue-800">
                                                                     {request.validation_type}
                                                                 </span>
                                                             </td>
-                                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                            <td className="px-4 py-2 whitespace-nowrap">
                                                                 <span className={`px-2 py-1 text-xs rounded ${request.current_status === 'Approved' ? 'bg-green-100 text-green-800' : 'bg-gray-400 text-white'
                                                                     }`}>
                                                                     {request.current_status}
                                                                 </span>
                                                             </td>
-                                                            <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                                            <td className="px-4 py-2 whitespace-nowrap text-sm">
                                                                 {request.primary_validator || '-'}
                                                             </td>
-                                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                            <td className="px-4 py-2 whitespace-nowrap">
                                                                 <Link
                                                                     to={`/validation-workflow/${request.request_id}`}
                                                                     className="text-blue-600 hover:text-blue-800 text-sm"
@@ -3978,13 +3978,13 @@ export default function ModelDetailsPage() {
 
                             return (
                                 <>
-                        <div className="px-6 py-4 border-b border-gray-200">
+                        <div className="px-4 py-2 border-b border-gray-200">
                             <h3 className="text-lg font-semibold text-gray-900">Link MRSA to IRP</h3>
                             <p className="text-sm text-gray-500 mt-1">
                                 Select an Independent Review Process to cover this MRSA
                             </p>
                         </div>
-                        <div className="px-6 py-4">
+                        <div className="px-4 py-2">
                             {allIrps.length === 0 ? (
                                 <div className="text-center py-4">
                                     <p className="text-gray-500">No active IRPs available.</p>
@@ -4055,7 +4055,7 @@ export default function ModelDetailsPage() {
                                 </>
                             )}
                         </div>
-                        <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
+                        <div className="px-4 py-2 border-t border-gray-200 flex justify-end gap-3">
                             <button
                                 onClick={() => {
                                     setShowIrpLinkModal(false);

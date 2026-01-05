@@ -114,22 +114,22 @@ export default function ValidationPoliciesPage() {
                 <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50">
                         <tr>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                 Risk Tier
                             </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                 Re-Validation Frequency
                             </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                 Grace Period
                             </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                 Completion Lead Time
                             </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                 Description
                             </th>
-                            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                            <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">
                                 Actions
                             </th>
                         </tr>
@@ -137,7 +137,7 @@ export default function ValidationPoliciesPage() {
                     <tbody className="bg-white divide-y divide-gray-200">
                         {policies.length === 0 ? (
                             <tr>
-                                <td colSpan={6} className="px-6 py-4 text-center text-gray-500">
+                                <td colSpan={6} className="px-4 py-2 text-center text-gray-500">
                                     No validation policies configured. Run the seed script to create default policies.
                                 </td>
                             </tr>
@@ -147,7 +147,7 @@ export default function ValidationPoliciesPage() {
                                     {editingPolicy === policy.policy_id ? (
                                         // Edit mode
                                         <>
-                                            <td className="px-6 py-4">
+                                            <td className="px-4 py-2">
                                                 <div className="font-medium text-gray-900">
                                                     {policy.risk_tier.label}
                                                 </div>
@@ -155,7 +155,7 @@ export default function ValidationPoliciesPage() {
                                                     {policy.risk_tier.code}
                                                 </div>
                                             </td>
-                                            <td className="px-6 py-4">
+                                            <td className="px-4 py-2">
                                                 <div className="flex items-center gap-2">
                                                     <input
                                                         type="number"
@@ -171,7 +171,7 @@ export default function ValidationPoliciesPage() {
                                                     <span className="text-sm text-gray-600">months</span>
                                                 </div>
                                             </td>
-                                            <td className="px-6 py-4">
+                                            <td className="px-4 py-2">
                                                 <div className="flex items-center gap-2">
                                                     <input
                                                         type="number"
@@ -187,7 +187,7 @@ export default function ValidationPoliciesPage() {
                                                     <span className="text-sm text-gray-600">months</span>
                                                 </div>
                                             </td>
-                                            <td className="px-6 py-4">
+                                            <td className="px-4 py-2">
                                                 <div className="flex items-center gap-2">
                                                     <input
                                                         type="number"
@@ -203,7 +203,7 @@ export default function ValidationPoliciesPage() {
                                                     <span className="text-sm text-gray-600">days</span>
                                                 </div>
                                             </td>
-                                            <td className="px-6 py-4">
+                                            <td className="px-4 py-2">
                                                 <textarea
                                                     value={editFormData.description}
                                                     onChange={(e) => setEditFormData({
@@ -214,7 +214,7 @@ export default function ValidationPoliciesPage() {
                                                     rows={2}
                                                 />
                                             </td>
-                                            <td className="px-6 py-4 text-right">
+                                            <td className="px-4 py-2 text-right">
                                                 <button
                                                     onClick={() => handleUpdate(policy.policy_id)}
                                                     className="text-green-600 hover:text-green-800 mr-3"
@@ -232,7 +232,7 @@ export default function ValidationPoliciesPage() {
                                     ) : (
                                         // View mode
                                         <>
-                                            <td className="px-6 py-4">
+                                            <td className="px-4 py-2">
                                                 <div className="font-medium text-gray-900">
                                                     {policy.risk_tier.label}
                                                 </div>
@@ -240,22 +240,22 @@ export default function ValidationPoliciesPage() {
                                                     {policy.risk_tier.code}
                                                 </div>
                                             </td>
-                                            <td className="px-6 py-4">
+                                            <td className="px-4 py-2">
                                                 <span className="font-medium">{policy.frequency_months}</span>
                                                 <span className="text-sm text-gray-600 ml-1">months</span>
                                             </td>
-                                            <td className="px-6 py-4">
+                                            <td className="px-4 py-2">
                                                 <span className="font-medium">{policy.grace_period_months}</span>
                                                 <span className="text-sm text-gray-600 ml-1">months</span>
                                             </td>
-                                            <td className="px-6 py-4">
+                                            <td className="px-4 py-2">
                                                 <span className="font-medium">{policy.model_change_lead_time_days}</span>
                                                 <span className="text-sm text-gray-600 ml-1">days</span>
                                             </td>
-                                            <td className="px-6 py-4 text-sm text-gray-700">
+                                            <td className="px-4 py-2 text-sm text-gray-700">
                                                 {policy.description || '-'}
                                             </td>
-                                            <td className="px-6 py-4 text-right">
+                                            <td className="px-4 py-2 text-right">
                                                 <button
                                                     onClick={() => startEditing(policy)}
                                                     className="text-blue-600 hover:text-blue-800"

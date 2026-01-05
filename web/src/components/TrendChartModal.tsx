@@ -389,7 +389,7 @@ const TrendChartModal: React.FC<TrendChartModalProps> = ({
 
                 {/* Model Filter - Only show when multiple models exist */}
                 {availableModels.length > 1 && (
-                    <div className="px-6 py-3 border-b bg-gray-50 flex items-center gap-3">
+                    <div className="px-4 py-2 border-b bg-gray-50 flex items-center gap-3">
                         <label className="text-sm font-medium text-gray-700">Filter by Model:</label>
                         <select
                             value={modelFilter === 'all' ? 'all' : modelFilter === 'plan-level' ? 'plan-level' : modelFilter.toString()}

@@ -170,7 +170,7 @@ const FryConfigPage: React.FC = () => {
                 <div key={report.report_id} className="bg-white shadow rounded-lg overflow-hidden">
                   {/* Report Header */}
                   <div
-                    className="px-6 py-4 border-b border-gray-200 cursor-pointer hover:bg-gray-50 flex items-center justify-between"
+                    className="px-4 py-2 border-b border-gray-200 cursor-pointer hover:bg-gray-50 flex items-center justify-between"
                     onClick={() => toggleReport(report.report_id)}
                   >
                     <div className="flex items-center">
@@ -200,7 +200,7 @@ const FryConfigPage: React.FC = () => {
 
                   {/* Schedules (expanded view) */}
                   {expandedReports.has(report.report_id) && selectedReport?.report_id === report.report_id && (
-                    <div className="px-6 py-4 bg-gray-50">
+                    <div className="px-4 py-2 bg-gray-50">
                       {selectedReport.schedules && selectedReport.schedules.length > 0 ? (
                         <div className="space-y-3">
                           {selectedReport.schedules.map((schedule) => (

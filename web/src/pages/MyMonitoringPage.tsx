@@ -264,25 +264,25 @@ export default function MyMonitoringPage() {
                     <table className="min-w-full divide-y divide-gray-200">
                         <thead className="bg-gray-50">
                             <tr>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                     Role
                                 </th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                     Plan
                                 </th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                     Period
                                 </th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                     Status
                                 </th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                     Due Date
                                 </th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                     Action Needed
                                 </th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                     Actions
                                 </th>
                             </tr>
@@ -290,12 +290,12 @@ export default function MyMonitoringPage() {
                         <tbody className="bg-white divide-y divide-gray-200">
                             {filteredTasks.map((task) => (
                                 <tr key={task.cycle_id} className={`hover:bg-gray-50 ${requiresMonitoringAction(task) && task.is_overdue ? 'bg-red-50' : ''}`}>
-                                    <td className="px-6 py-4 whitespace-nowrap">
+                                    <td className="px-4 py-2 whitespace-nowrap">
                                         <span className={`px-2 py-1 text-xs font-semibold rounded ${getRoleBadge(task.user_role)}`}>
                                             {getRoleLabel(task.user_role)}
                                         </span>
                                     </td>
-                                    <td className="px-6 py-4">
+                                    <td className="px-4 py-2">
                                         <Link
                                             to={`/monitoring/${task.plan_id}`}
                                             className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
@@ -303,15 +303,15 @@ export default function MyMonitoringPage() {
                                             {task.plan_name}
                                         </Link>
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                    <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">
                                         {task.period_start_date.split('T')[0]} - {task.period_end_date.split('T')[0]}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
+                                    <td className="px-4 py-2 whitespace-nowrap">
                                         <span className={`px-2 py-1 text-xs font-semibold rounded ${getStatusBadge(task.status)}`}>
                                             {getStatusLabel(task.status)}
                                         </span>
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
+                                    <td className="px-4 py-2 whitespace-nowrap">
                                         <div className="text-sm text-gray-900">
                                             {task.user_role === 'team_member'
                                                 ? task.report_due_date.split('T')[0]
@@ -332,7 +332,7 @@ export default function MyMonitoringPage() {
                                             </div>
                                         )}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
+                                    <td className="px-4 py-2 whitespace-nowrap">
                                         <span className={`text-sm font-medium ${
                                             task.action_needed.includes('Submit') ? 'text-blue-600' :
                                             task.action_needed.includes('Review') ? 'text-yellow-600' :
@@ -347,7 +347,7 @@ export default function MyMonitoringPage() {
                                             </div>
                                         )}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
+                                    <td className="px-4 py-2 whitespace-nowrap">
                                         <Link
                                             to={`/monitoring/${task.plan_id}?cycle=${task.cycle_id}`}
                                             className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
@@ -366,7 +366,7 @@ export default function MyMonitoringPage() {
                     </table>
 
                     {/* Summary Footer */}
-                    <div className="bg-gray-50 px-6 py-3 border-t border-gray-200">
+                    <div className="bg-gray-50 px-4 py-2 border-t border-gray-200">
                         <div className="text-sm text-gray-600">
                             {filter !== 'all' ? (
                                 <>
