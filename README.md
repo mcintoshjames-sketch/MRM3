@@ -24,7 +24,7 @@ docker compose up --build
 
 For Postgres-backed concurrency tests and performance benchmarks, use the
 separate test container defined in `docker-compose.test.yml`.
-See `docs/TESTING_POSTGRES.md` for setup, verification, and teardown steps.
+See `TESTING_POSTGRES.md` for setup, verification, and teardown steps.
 
 ## Default Login
 

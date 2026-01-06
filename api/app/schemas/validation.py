@@ -608,6 +608,10 @@ class ValidationRequestListResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     completion_date: Optional[datetime] = Field(None, description="Date when validation was completed (latest approval date)")
+    model_compliance_status: str = Field(
+        "N/A",
+        description="Computed model compliance status (e.g., Validated Late, On Track, At Risk)"
+    )
 
     # Risk-tier-based SLA (replaces fixed complete_work_days)
     applicable_lead_time_days: int = Field(

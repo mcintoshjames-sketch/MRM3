@@ -133,7 +133,7 @@ interface AttestationQuestion {
 interface AttestationChangeLink {
     link_id: number;
     attestation_id: number;
-    change_type: 'MODEL_EDIT' | 'NEW_MODEL' | 'DECOMMISSION';
+    change_type: 'MODEL_EDIT' | 'MODEL_VERSION' | 'NEW_MODEL' | 'DECOMMISSION';
     model_id: number | null;
     pending_edit_id: number | null;
     decommissioning_request_id: number | null;
@@ -152,7 +152,7 @@ interface AttestationChangeLink {
 type TabType = 'cycles' | 'rules' | 'targets' | 'review' | 'owners' | 'all-records' | 'questions' | 'linked-changes';
 type FilterCycle = 'all' | number;
 type AllRecordsStatusFilter = 'all' | 'PENDING' | 'SUBMITTED' | 'ACCEPTED' | 'REJECTED' | 'OVERDUE';
-type LinkedChangesFilter = 'all' | 'MODEL_EDIT' | 'NEW_MODEL' | 'DECOMMISSION';
+type LinkedChangesFilter = 'all' | 'MODEL_EDIT' | 'MODEL_VERSION' | 'NEW_MODEL' | 'DECOMMISSION';
 
 interface GroupedByOwner {
     owner_id: number;
@@ -2602,7 +2602,7 @@ export default function AttestationCyclesPage() {
                     </div>
 
                     {/* Summary Stats */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
                         <button
                             type="button"
                             aria-pressed={linkedChangesTypeFilter === 'all'}
@@ -2625,6 +2625,19 @@ export default function AttestationCyclesPage() {
                             <div className="text-sm text-gray-500">Model Edits</div>
                             <div className="text-2xl font-bold text-blue-600">
                                 {linkedChanges.filter(l => l.change_type === 'MODEL_EDIT').length}
+                            </div>
+                        </button>
+                        <button
+                            type="button"
+                            aria-pressed={linkedChangesTypeFilter === 'MODEL_VERSION'}
+                            onClick={() => toggleLinkedChangesTypeFilter('MODEL_VERSION')}
+                            className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 ${
+                                linkedChangesTypeFilter === 'MODEL_VERSION' ? 'ring-2 ring-purple-500' : ''
+                            }`}
+                        >
+                            <div className="text-sm text-gray-500">Model Changes</div>
+                            <div className="text-2xl font-bold text-purple-600">
+                                {linkedChanges.filter(l => l.change_type === 'MODEL_VERSION').length}
                             </div>
                         </button>
                         <button
@@ -2687,10 +2700,12 @@ export default function AttestationCyclesPage() {
                                             <td className="px-4 py-2 whitespace-nowrap">
                                                 <span className={`px-2 py-1 text-xs font-medium rounded ${
                                                     link.change_type === 'MODEL_EDIT' ? 'bg-blue-100 text-blue-800' :
+                                                    link.change_type === 'MODEL_VERSION' ? 'bg-purple-100 text-purple-800' :
                                                     link.change_type === 'NEW_MODEL' ? 'bg-green-100 text-green-800' :
                                                     'bg-red-100 text-red-800'
                                                 }`}>
                                                     {link.change_type === 'MODEL_EDIT' ? 'Model Edit' :
+                                                     link.change_type === 'MODEL_VERSION' ? 'Model Change' :
                                                      link.change_type === 'NEW_MODEL' ? 'New Model' :
                                                      'Decommission'}
                                                 </span>
@@ -2736,6 +2751,14 @@ export default function AttestationCyclesPage() {
                                                         )}
                                                     </span>
                                                 )}
+                                                {link.change_type === 'MODEL_VERSION' && link.model && (
+                                                    <Link
+                                                        to={`/models/${link.model.model_id}`}
+                                                        className="text-blue-600 hover:text-blue-800 hover:underline"
+                                                    >
+                                                        {link.model.model_name}
+                                                    </Link>
+                                                )}
                                                 {link.change_type === 'DECOMMISSION' && link.decommissioning_request_id && (
                                                     <Link
                                                         to={`/models/${link.model_id}/decommission`}
@@ -2767,6 +2790,11 @@ export default function AttestationCyclesPage() {
                                                 {link.change_type === 'NEW_MODEL' && !link.pending_edit && !link.decommissioning_request && (
                                                     <span className="px-2 py-1 text-xs font-medium rounded bg-green-100 text-green-800">
                                                         Created
+                                                    </span>
+                                                )}
+                                                {link.change_type === 'MODEL_VERSION' && !link.pending_edit && !link.decommissioning_request && (
+                                                    <span className="px-2 py-1 text-xs font-medium rounded bg-purple-100 text-purple-800">
+                                                        Submitted
                                                     </span>
                                                 )}
                                             </td>

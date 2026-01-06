@@ -110,6 +110,7 @@ def create_delegate(
             # Revoked delegation exists - update it instead
             existing.can_submit_changes = delegate_data.can_submit_changes
             existing.can_manage_regional = delegate_data.can_manage_regional
+            existing.can_attest = delegate_data.can_attest
             existing.delegated_by_id = current_user.user_id
             existing.delegated_at = utc_now()
             existing.revoked_at = None
@@ -124,7 +125,8 @@ def create_delegate(
                 changes={
                     "user_id": delegate_data.user_id,
                     "can_submit_changes": delegate_data.can_submit_changes,
-                    "can_manage_regional": delegate_data.can_manage_regional
+                    "can_manage_regional": delegate_data.can_manage_regional,
+                    "can_attest": delegate_data.can_attest
                 }
             )
 
@@ -138,6 +140,7 @@ def create_delegate(
         user_id=delegate_data.user_id,
         can_submit_changes=delegate_data.can_submit_changes,
         can_manage_regional=delegate_data.can_manage_regional,
+        can_attest=delegate_data.can_attest,
         delegated_by_id=current_user.user_id,
         delegated_at=utc_now()
     )
@@ -156,7 +159,8 @@ def create_delegate(
         changes={
             "user_id": delegate_data.user_id,
             "can_submit_changes": delegate_data.can_submit_changes,
-            "can_manage_regional": delegate_data.can_manage_regional
+            "can_manage_regional": delegate_data.can_manage_regional,
+            "can_attest": delegate_data.can_attest
         }
     )
     db.commit()
@@ -248,6 +252,11 @@ def update_delegate(
         delegate.can_manage_regional = delegate_update.can_manage_regional
         changes["can_manage_regional"] = {
             "old": old_value, "new": delegate_update.can_manage_regional}
+
+    if delegate_update.can_attest is not None:
+        old_value = delegate.can_attest
+        delegate.can_attest = delegate_update.can_attest
+        changes["can_attest"] = {"old": old_value, "new": delegate_update.can_attest}
 
     if changes:
         create_audit_log(
@@ -450,12 +459,14 @@ def batch_add_delegates(
                 # Update existing active delegation
                 existing.can_submit_changes = batch_request.can_submit_changes
                 existing.can_manage_regional = batch_request.can_manage_regional
+                existing.can_attest = batch_request.can_attest
                 delegations_updated += 1
                 action = "replaced" if batch_request.replace_existing else "updated"
             else:
                 # Restore revoked delegation
                 existing.can_submit_changes = batch_request.can_submit_changes
                 existing.can_manage_regional = batch_request.can_manage_regional
+                existing.can_attest = batch_request.can_attest
                 existing.delegated_by_id = current_user.user_id
                 existing.delegated_at = utc_now()
                 existing.revoked_at = None
@@ -469,6 +480,7 @@ def batch_add_delegates(
                 user_id=batch_request.delegate_user_id,
                 can_submit_changes=batch_request.can_submit_changes,
                 can_manage_regional=batch_request.can_manage_regional,
+                can_attest=batch_request.can_attest,
                 delegated_by_id=current_user.user_id,
                 delegated_at=utc_now()
             )
@@ -495,6 +507,7 @@ def batch_add_delegates(
                 "delegate_user_id": batch_request.delegate_user_id,
                 "can_submit_changes": batch_request.can_submit_changes,
                 "can_manage_regional": batch_request.can_manage_regional,
+                "can_attest": batch_request.can_attest,
                 "replace_existing": batch_request.replace_existing,
                 "delegations_revoked": delegations_revoked if batch_request.replace_existing else 0
             }

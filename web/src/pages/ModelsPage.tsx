@@ -108,6 +108,7 @@ interface UserWithLOB extends User {
 interface Model {
     model_id: number;
     model_name: string;
+    external_model_id: string | null;
     description: string;
     products_covered: string | null;
     development_type: string;
@@ -221,6 +222,7 @@ export default function ModelsPage() {
     }, [searchParams, setSearchParams]);
     const [formData, setFormData] = useState({
         model_name: '',
+        external_model_id: '',
         description: '',
         products_covered: '',
         development_type: 'In-House',
@@ -258,6 +260,7 @@ export default function ModelsPage() {
     // Check if form has unsaved changes
     const formIsDirty = showForm && (
         formData.model_name !== '' ||
+        formData.external_model_id !== '' ||
         formData.description !== '' ||
         formData.products_covered !== '' ||
         formData.owner_id !== 0 ||
@@ -296,6 +299,7 @@ export default function ModelsPage() {
         setShowForm(false);
         setFormData({
             model_name: '',
+            external_model_id: '',
             description: '',
             products_covered: '',
             development_type: 'In-House',
@@ -334,6 +338,7 @@ export default function ModelsPage() {
     // 'default' determines which columns are shown initially in the table
     const availableColumns = [
         { key: 'model_id', label: 'Model ID', default: false },
+        { key: 'external_model_id', label: 'External Model ID', default: false },
         { key: 'model_name', label: 'Model Name', default: true },
         { key: 'is_aiml', label: 'AI/ML', default: true },
         { key: 'is_mrsa', label: 'MRSA', default: false },
@@ -798,6 +803,7 @@ export default function ModelsPage() {
                 region_ids: formData.region_ids.length > 0 ? formData.region_ids : null,
                 initial_version_number: formData.initial_version_number || null,
                 initial_implementation_date: formData.initial_implementation_date || null,
+                external_model_id: formData.external_model_id || null,
                 validation_request_type_id: formData.validation_request_type_id || null,
                 validation_request_priority_id: formData.validation_request_priority_id || null,
                 validation_request_target_date: formData.validation_request_target_date || null,
@@ -833,6 +839,7 @@ export default function ModelsPage() {
             setShowForm(false);
             setFormData({
                 model_name: '',
+                external_model_id: '',
                 description: '',
                 products_covered: '',
                 development_type: 'In-House',
@@ -944,6 +951,12 @@ export default function ModelsPage() {
             sortKey: 'model_id',
             cell: (model) => model.model_id,
             csvValue: (model) => model.model_id.toString()
+        },
+        external_model_id: {
+            header: 'External Model ID',
+            sortKey: 'external_model_id',
+            cell: (model) => model.external_model_id || '-',
+            csvValue: (model) => model.external_model_id || ''
         },
         model_name: {
             header: 'Name',
@@ -1707,6 +1720,19 @@ export default function ModelsPage() {
                                         value={formData.model_name}
                                         onChange={(e) => setFormData({ ...formData, model_name: e.target.value })}
                                         required
+                                    />
+                                </div>
+
+                                <div className="mb-4">
+                                    <label htmlFor="external_model_id" className="block text-sm font-medium mb-2">
+                                        External Model ID (Optional)
+                                    </label>
+                                    <input
+                                        id="external_model_id"
+                                        type="text"
+                                        className="input-field"
+                                        value={formData.external_model_id}
+                                        onChange={(e) => setFormData({ ...formData, external_model_id: e.target.value })}
                                     />
                                 </div>
 

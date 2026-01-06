@@ -214,6 +214,8 @@ export default function ValidationRequestDetailPage() {
     const [holdReason, setHoldReason] = useState('');
     const [cancelReason, setCancelReason] = useState('');
     const [resumeNotes, setResumeNotes] = useState('');
+    const [showSendBackModal, setShowSendBackModal] = useState(false);
+    const [sendBackReason, setSendBackReason] = useState('');
 
     // Deploy modal state (Issue 5: Deploy Approved Version CTA)
     const [showDeployModal, setShowDeployModal] = useState(false);
@@ -1099,9 +1101,17 @@ export default function ValidationRequestDetailPage() {
     // Handle sending validation back from Pending Approval to In Progress
     const handleSendBackToInProgress = async () => {
         if (!request) return;
+        setShowSendBackModal(true);
+    };
 
-        const reason = prompt('Enter reason for sending back to In Progress:');
-        if (!reason) return;
+    const confirmSendBackToInProgress = async () => {
+        if (!request) return;
+
+        const trimmedReason = sendBackReason.trim();
+        if (!trimmedReason) {
+            setError('A reason is required to send back to In Progress.');
+            return;
+        }
 
         const inProgressStatus = statusOptions.find(s => s.code === 'IN_PROGRESS');
         if (!inProgressStatus) {
@@ -1113,8 +1123,10 @@ export default function ValidationRequestDetailPage() {
         try {
             await api.patch(`/validation-workflow/requests/${id}/status`, {
                 new_status_id: inProgressStatus.value_id,
-                change_reason: reason
+                change_reason: trimmedReason
             });
+            setShowSendBackModal(false);
+            setSendBackReason('');
             await fetchData();
         } catch (err: any) {
             setError(err.response?.data?.detail || 'Failed to send back to In Progress');
@@ -3132,6 +3144,59 @@ export default function ValidationRequestDetailPage() {
                                 className="btn-secondary"
                             >
                                 Go Back
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Send Back to In Progress Modal */}
+            {showSendBackModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-lg p-6 w-full max-w-md border-t-4 border-orange-500">
+                        <div className="flex items-center gap-3 mb-4">
+                            <svg className="h-6 w-6 text-orange-600" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M3 12h13.5m0 0L11.25 6.75M16.5 12l-5.25 5.25" />
+                            </svg>
+                            <h3 className="text-lg font-bold text-orange-800">Send Back to In Progress</h3>
+                        </div>
+                        <div className="bg-orange-50 border border-orange-200 rounded p-3 mb-4">
+                            <p className="text-sm text-orange-800">
+                                <strong>This returns the validation to In Progress for major rework.</strong>
+                            </p>
+                            <ul className="text-sm text-orange-700 mt-2 ml-4 list-disc">
+                                <li>Global/Regional approvals will be reset</li>
+                                <li>Conditional approvals will be voided</li>
+                            </ul>
+                        </div>
+                        <div className="mb-4">
+                            <label className="block text-sm font-medium mb-2">
+                                Reason <span className="text-red-500">*</span>
+                            </label>
+                            <textarea
+                                className="input-field"
+                                rows={4}
+                                value={sendBackReason}
+                                onChange={(e) => setSendBackReason(e.target.value)}
+                                placeholder="Explain why this requires major rework..."
+                            />
+                            <p className="text-xs text-gray-500 mt-1">
+                                {sendBackReason.trim().length} characters
+                            </p>
+                        </div>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={confirmSendBackToInProgress}
+                                disabled={actionLoading || sendBackReason.trim().length < 1}
+                                className="bg-orange-600 text-white px-4 py-2 rounded hover:bg-orange-700 disabled:opacity-50"
+                            >
+                                {actionLoading ? 'Sending...' : 'Send Back'}
+                            </button>
+                            <button
+                                onClick={() => { setShowSendBackModal(false); setSendBackReason(''); }}
+                                className="btn-secondary"
+                            >
+                                Cancel
                             </button>
                         </div>
                     </div>

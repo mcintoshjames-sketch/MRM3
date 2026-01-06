@@ -6,6 +6,7 @@ export interface ModelDelegate {
     user_id: number;
     can_submit_changes: boolean;
     can_manage_regional: boolean;
+    can_attest: boolean;
     delegated_by_id: number;
     delegated_at: string;
     revoked_at: string | null;
@@ -20,11 +21,13 @@ export interface ModelDelegateCreate {
     user_id: number;
     can_submit_changes: boolean;
     can_manage_regional: boolean;
+    can_attest: boolean;
 }
 
 export interface ModelDelegateUpdate {
     can_submit_changes?: boolean;
     can_manage_regional?: boolean;
+    can_attest?: boolean;
 }
 
 export interface BatchDelegateRequest {
@@ -33,6 +36,7 @@ export interface BatchDelegateRequest {
     delegate_user_id: number;
     can_submit_changes: boolean;
     can_manage_regional: boolean;
+    can_attest: boolean;
     replace_existing: boolean;
 }
 

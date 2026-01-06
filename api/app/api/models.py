@@ -200,6 +200,7 @@ def _format_audit_changes(changes: dict, db: Session) -> Optional[str]:
     # Field display names (snake_case -> readable)
     field_names = {
         "model_name": "Name",
+        "external_model_id": "External Model ID",
         "description": "Description",
         "products_covered": "Products Covered",
         "development_type": "Development Type",
@@ -509,6 +510,7 @@ def _build_model_list_response(
     result = {
         "model_id": model.model_id,
         "model_name": model.model_name,
+        "external_model_id": model.external_model_id,
         "description": model.description,
         "products_covered": model.products_covered,
         "development_type": model.development_type,

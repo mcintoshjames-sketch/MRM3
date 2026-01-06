@@ -761,6 +761,47 @@ def check_change_validation_blockers(
     return blockers
 
 
+def _validate_region_scope(
+    models: List[Model],
+    region_ids: List[int],
+    regions: List["Region"]
+) -> None:
+    """Ensure selected region scope is valid for all models."""
+    if not region_ids:
+        return
+
+    region_labels = {
+        region.region_id: region.code or region.name or str(region.region_id)
+        for region in regions
+    }
+    conflicts: List[str] = []
+
+    for model in models:
+        deployed_region_ids = {mr.region_id for mr in model.model_regions or []}
+        missing_region_ids = [
+            region_id for region_id in region_ids
+            if region_id not in deployed_region_ids
+        ]
+        if missing_region_ids:
+            missing_labels = ", ".join(
+                region_labels.get(region_id, str(region_id))
+                for region_id in missing_region_ids
+            )
+            conflicts.append(
+                f"{model.model_name} (ID {model.model_id}): {missing_labels}"
+            )
+
+    if conflicts:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Selected region scope includes regions where one or more models "
+                "are not deployed. Remove ineligible regions or models. Conflicts: "
+                + "; ".join(conflicts)
+            ),
+        )
+
+
 def find_prior_validation_for_models(
     db: Session,
     model_ids: List[int],
@@ -816,6 +857,74 @@ def find_prior_validation_for_models(
     ).first()
 
     return prior_validation.request_id if prior_validation else None
+
+
+def find_models_with_prior_full_validation(
+    db: Session,
+    model_ids: List[int]
+) -> List[Dict[str, Any]]:
+    """Return models that already have an APPROVED full validation."""
+    if not model_ids:
+        return []
+
+    approved_status = db.query(TaxonomyValue).join(Taxonomy).filter(
+        Taxonomy.name == "Validation Request Status",
+        TaxonomyValue.code == "APPROVED"
+    ).first()
+    if not approved_status:
+        return []
+
+    full_type_values = db.query(TaxonomyValue).join(Taxonomy).filter(
+        Taxonomy.name == "Validation Type",
+        TaxonomyValue.code.in_(FULL_PLAN_VALIDATION_TYPES)
+    ).all()
+    if not full_type_values:
+        return []
+
+    full_type_ids = [value.value_id for value in full_type_values]
+
+    rows = db.query(
+        Model.model_id,
+        Model.model_name
+    ).join(
+        ValidationRequestModelVersion,
+        ValidationRequestModelVersion.model_id == Model.model_id
+    ).join(
+        ValidationRequest,
+        ValidationRequest.request_id == ValidationRequestModelVersion.request_id
+    ).filter(
+        Model.model_id.in_(model_ids),
+        ValidationRequest.current_status_id == approved_status.value_id,
+        ValidationRequest.validation_type_id.in_(full_type_ids)
+    ).distinct().all()
+
+    return [
+        {"model_id": row.model_id, "model_name": row.model_name}
+        for row in rows
+    ]
+
+
+def _validate_initial_validation_eligibility(
+    db: Session,
+    model_ids: List[int]
+) -> None:
+    """Block INITIAL validations when any model has a prior full validation."""
+    prior_models = find_models_with_prior_full_validation(db, model_ids)
+    if not prior_models:
+        return
+
+    conflicts = ", ".join(
+        f"{model['model_name']} (ID {model['model_id']})"
+        for model in prior_models
+    )
+    raise HTTPException(
+        status_code=400,
+        detail=(
+            "Initial validations are only allowed for models without a prior full "
+            "validation (Initial or Comprehensive). Conflicts: "
+            f"{conflicts}."
+        )
+    )
 
 
 def get_allowed_approval_roles(db: Session) -> List[str]:
@@ -910,7 +1019,8 @@ def create_status_history_entry(
     old_status_id: Optional[int],
     new_status_id: int,
     changed_by_id: int,
-    change_reason: Optional[str] = None
+    change_reason: Optional[str] = None,
+    additional_context: Optional[str] = None
 ):
     """Create a status history entry."""
     history = ValidationStatusHistory(
@@ -919,9 +1029,11 @@ def create_status_history_entry(
         new_status_id=new_status_id,
         changed_by_id=changed_by_id,
         change_reason=change_reason,
+        additional_context=additional_context,
         changed_at=utc_now()
     )
     db.add(history)
+    return history
 
 
 def update_version_statuses_for_validation(
@@ -1957,6 +2069,9 @@ def create_validation_request(
         raise HTTPException(
             status_code=404, detail="Validation type not found")
 
+    if validation_type.code == "INITIAL":
+        _validate_initial_validation_eligibility(db, request_data.model_ids)
+
     conflicts = find_active_validation_conflicts(
         db,
         request_data.model_ids,
@@ -1967,6 +2082,17 @@ def create_validation_request(
             status_code=400,
             detail=build_validation_conflict_message(conflicts, validation_type.code)
         )
+
+    # Verify regions if provided
+    regions = []
+    if request_data.region_ids:
+        from app.models import Region
+        regions = db.query(Region).filter(
+            Region.region_id.in_(request_data.region_ids)).all()
+        if len(regions) != len(request_data.region_ids):
+            raise HTTPException(
+                status_code=404, detail="One or more regions not found")
+        _validate_region_scope(models, request_data.region_ids, regions)
 
     # If check_warnings flag is set, return warnings without creating
     if request_data.check_warnings:
@@ -2046,16 +2172,6 @@ def create_validation_request(
     # Get initial status (INTAKE)
     intake_status = get_taxonomy_value_by_code(
         db, "Validation Request Status", "INTAKE")
-
-    # Verify regions if provided
-    regions = []
-    if request_data.region_ids:
-        from app.models import Region
-        regions = db.query(Region).filter(
-            Region.region_id.in_(request_data.region_ids)).all()
-        if len(regions) != len(request_data.region_ids):
-            raise HTTPException(
-                status_code=404, detail="One or more regions not found")
 
     # Auto-populate prior_validation_request_id if not provided
     # Links to the most recent APPROVED validation for these models
@@ -2295,7 +2411,8 @@ def list_validation_requests(
             created_at=req.created_at,
             updated_at=req.updated_at,
             completion_date=req.completion_date,
-            applicable_lead_time_days=req.applicable_lead_time_days
+            applicable_lead_time_days=req.applicable_lead_time_days,
+            model_compliance_status=req.model_compliance_status
         ))
 
     return result
@@ -2393,7 +2510,7 @@ def update_validation_request(
     check_validator_or_admin(current_user)
 
     validation_request = db.query(ValidationRequest).options(
-        joinedload(ValidationRequest.models),
+        joinedload(ValidationRequest.models).joinedload(Model.model_regions),
         joinedload(ValidationRequest.requestor),
         joinedload(ValidationRequest.validation_type),
         joinedload(ValidationRequest.priority),
@@ -2418,16 +2535,41 @@ def update_validation_request(
     changes = {}
     update_dict = update_data.model_dump(exclude_unset=True)
 
+    if "validation_type_id" in update_dict:
+        new_validation_type_id = update_dict["validation_type_id"]
+        if new_validation_type_id != validation_request.validation_type_id:
+            new_validation_type = db.query(TaxonomyValue).filter(
+                TaxonomyValue.value_id == new_validation_type_id
+            ).first()
+            if not new_validation_type:
+                raise HTTPException(
+                    status_code=404, detail="Validation type not found"
+                )
+            if new_validation_type.code == "INITIAL":
+                _validate_initial_validation_eligibility(
+                    db,
+                    [model.model_id for model in validation_request.models]
+                )
+
     # Handle region_ids separately (many-to-many relationship)
     if 'region_ids' in update_dict:
         from app.models import Region
-        new_region_ids = update_dict.pop('region_ids')
+        new_region_ids = update_dict.pop('region_ids') or []
         old_region_ids = [r.region_id for r in validation_request.regions]
 
         if set(old_region_ids) != set(new_region_ids):
             # Update regions
             new_regions = db.query(Region).filter(Region.region_id.in_(
                 new_region_ids)).all() if new_region_ids else []
+            if new_region_ids and len(new_regions) != len(new_region_ids):
+                raise HTTPException(
+                    status_code=404, detail="One or more regions not found")
+            if new_region_ids:
+                _validate_region_scope(
+                    validation_request.models,
+                    new_region_ids,
+                    new_regions
+                )
             validation_request.regions = new_regions
             changes['region_ids'] = {
                 "old": old_region_ids, "new": new_region_ids}
@@ -2489,6 +2631,8 @@ def update_request_models(
             detail="Model changes only allowed in Intake or Planning status"
         )
 
+    validation_type_code = validation_request.validation_type.code if validation_request.validation_type else None
+
     add_entries = update_data.add_models or []
     remove_ids = set(update_data.remove_model_ids or [])
 
@@ -2527,13 +2671,20 @@ def update_request_models(
     requested_ids = set(add_model_ids) | remove_ids
     models_by_id: Dict[int, Model] = {}
     if requested_ids:
-        models = db.query(Model).filter(
+        models = db.query(Model).options(
+            joinedload(Model.model_regions)
+        ).filter(
             Model.model_id.in_(requested_ids)
         ).all()
         if len(models) != len(requested_ids):
             raise HTTPException(
                 status_code=404, detail="One or more models not found")
         models_by_id = {model.model_id: model for model in models}
+
+    if add_entries and validation_request.regions:
+        scoped_region_ids = [region.region_id for region in validation_request.regions]
+        models_to_check = [models_by_id[entry.model_id] for entry in add_entries]
+        _validate_region_scope(models_to_check, scoped_region_ids, validation_request.regions)
 
     existing_model_ids = {assoc.model_id for assoc in validation_request.model_versions_assoc}
 
@@ -2553,7 +2704,6 @@ def update_request_models(
             )
 
     if add_model_ids:
-        validation_type_code = validation_request.validation_type.code if validation_request.validation_type else None
         conflicts = find_active_validation_conflicts(
             db,
             add_model_ids,
@@ -2570,6 +2720,9 @@ def update_request_models(
     if not remaining_ids:
         raise HTTPException(
             status_code=400, detail="At least one model must remain")
+
+    if validation_type_code == "INITIAL":
+        _validate_initial_validation_eligibility(db, list(remaining_ids))
 
     is_change = validation_request.validation_type.code == "CHANGE" if validation_request.validation_type else False
 
@@ -3082,6 +3235,18 @@ def update_validation_request_status(
             detail="Cannot manually set status to Revision. Use the 'Send Back' option in the approval workflow instead. This ensures proper tracking of revision requests and approval resets."
         )
 
+    if old_status_code == "PENDING_APPROVAL" and new_status_code == "IN_PROGRESS":
+        if not is_admin(current_user):
+            raise HTTPException(
+                status_code=403,
+                detail="Only admins can send a validation back to In Progress from Pending Approval."
+            )
+        if not status_update.change_reason or not status_update.change_reason.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="A change reason is required when sending back to In Progress."
+            )
+
     # Additional business rules
 
     # BUSINESS RULE: Cannot move to or remain in active workflow statuses without a primary validator
@@ -3227,15 +3392,22 @@ def update_validation_request_status(
         # The function is idempotent - it won't create duplicates for existing approvals
         auto_assign_approvers(db, validation_request, current_user)
 
+    admin_sendback_snapshot = None
+    if old_status_code == "PENDING_APPROVAL" and new_status_code == "IN_PROGRESS":
+        admin_sendback_snapshot = create_revision_snapshot(db, validation_request)
+        admin_sendback_snapshot["context_type"] = "admin_in_progress_sendback"
+        admin_sendback_snapshot["sent_back_to_in_progress_by_user_id"] = current_user.user_id
+
     # Update status
     old_status_id = validation_request.current_status_id
     validation_request.current_status_id = new_status.value_id
     validation_request.updated_at = utc_now()
 
     # Create status history
-    create_status_history_entry(
+    status_history_entry = create_status_history_entry(
         db, request_id, old_status_id, new_status.value_id,
-        current_user.user_id, status_update.change_reason
+        current_user.user_id, status_update.change_reason,
+        additional_context=json.dumps(admin_sendback_snapshot) if admin_sendback_snapshot else None
     )
 
     # Create audit log
@@ -3399,6 +3571,39 @@ def update_validation_request_status(
                 )
                 db.add(model_audit)
 
+        # Reset all traditional approvals (Global/Regional) unconditionally
+        traditional_approvals = db.query(ValidationApproval).filter(
+            ValidationApproval.request_id == request_id,
+            ValidationApproval.approval_type.in_(["Global", "Regional"]),
+            ValidationApproval.voided_by_id.is_(None)
+        ).all()
+
+        for approval in traditional_approvals:
+            old_approval_status = approval.approval_status
+            approval.approval_status = "Pending"
+            approval.approved_at = None
+            approval.comments = None
+
+            reset_audit = AuditLog(
+                entity_type="ValidationApproval",
+                entity_id=approval.approval_id,
+                action="RESET",
+                user_id=current_user.user_id,
+                changes={
+                    "reason": (
+                        "Admin sent validation back to In Progress "
+                        f"(major rework required): {status_update.change_reason or 'No reason provided'}"
+                    ),
+                    "old_approval_status": old_approval_status,
+                    "new_approval_status": "Pending",
+                    "approval_type": approval.approval_type,
+                    "request_id": request_id,
+                    "reset_type": "unconditional"
+                },
+                timestamp=utc_now()
+            )
+            db.add(reset_audit)
+
     # ===== RESUBMISSION FROM REVISION - CONDITIONAL APPROVAL RESET =====
     # When resubmitting from REVISION to PENDING_APPROVAL, conditionally reset approvals
     if old_status_code == "REVISION" and new_status_code == "PENDING_APPROVAL":
@@ -3408,7 +3613,10 @@ def update_validation_request_status(
         # Find the most recent revision snapshot (entry into REVISION status)
         last_revision_entry = db.query(ValidationStatusHistory).filter(
             ValidationStatusHistory.request_id == request_id,
-            ValidationStatusHistory.additional_context.isnot(None)
+            ValidationStatusHistory.additional_context.isnot(None),
+            ValidationStatusHistory.additional_context.contains(
+                '"context_type": "revision_sendback"'
+            )
         ).order_by(desc(ValidationStatusHistory.changed_at)).first()
 
         if last_revision_entry and last_revision_entry.additional_context:
@@ -3498,6 +3706,78 @@ def update_validation_request_status(
                 timestamp=utc_now()
             )
             db.add(resubmit_audit)
+
+    # ===== RETURN FROM ADMIN IN_PROGRESS SENDBACK (AUDIT ONLY) =====
+    if new_status_code == "PENDING_APPROVAL" and old_status_code in ("IN_PROGRESS", "REVIEW"):
+        from app.models.recommendation import Recommendation
+        from app.models.limitation import ModelLimitation
+
+        last_sendback_entry = db.query(ValidationStatusHistory).filter(
+            ValidationStatusHistory.request_id == request_id,
+            ValidationStatusHistory.additional_context.isnot(None),
+            ValidationStatusHistory.additional_context.contains(
+                '"context_type": "admin_in_progress_sendback"'
+            )
+        ).order_by(desc(ValidationStatusHistory.changed_at)).first()
+
+        if last_sendback_entry and last_sendback_entry.additional_context:
+            snapshot = json.loads(last_sendback_entry.additional_context)
+
+            current_rating = None
+            if validation_request.scorecard_result:
+                current_rating = validation_request.scorecard_result.overall_rating
+
+            current_rec_ids = set(
+                r.recommendation_id for r in db.query(Recommendation.recommendation_id).filter(
+                    Recommendation.validation_request_id == request_id
+                ).all()
+            )
+
+            current_lim_ids = set(
+                l.limitation_id for l in db.query(ModelLimitation.limitation_id).filter(
+                    ModelLimitation.validation_request_id == request_id
+                ).all()
+            )
+
+            snapshot_rating = snapshot.get("overall_rating")
+            snapshot_rec_ids = set(snapshot.get("recommendation_ids", []))
+            snapshot_lim_ids = set(snapshot.get("limitation_ids", []))
+
+            material_change = (
+                current_rating != snapshot_rating or
+                current_rec_ids != snapshot_rec_ids or
+                current_lim_ids != snapshot_lim_ids
+            )
+
+            audit_log = AuditLog(
+                entity_type="ValidationRequest",
+                entity_id=request_id,
+                action="RETURN_FROM_IN_PROGRESS_SENDBACK",
+                user_id=current_user.user_id,
+                changes={
+                    "material_change_detected": material_change,
+                    "change_details": {
+                        "rating_changed": current_rating != snapshot_rating,
+                        "recommendations_changed": current_rec_ids != snapshot_rec_ids,
+                        "limitations_changed": current_lim_ids != snapshot_lim_ids
+                    },
+                    "note": "Approvals were reset when sent to In Progress; this audit is for transparency only.",
+                    "reason": status_update.change_reason
+                },
+                timestamp=utc_now()
+            )
+            db.add(audit_log)
+
+            if status_history_entry:
+                status_history_entry.additional_context = json.dumps({
+                    "context_type": "admin_in_progress_sendback_audit",
+                    "material_change_detected": material_change,
+                    "change_details": {
+                        "rating_changed": current_rating != snapshot_rating,
+                        "recommendations_changed": current_rec_ids != snapshot_rec_ids,
+                        "limitations_changed": current_lim_ids != snapshot_lim_ids
+                    }
+                })
 
     # Auto-update linked model version statuses based on validation status
     update_version_statuses_for_validation(
@@ -4960,6 +5240,7 @@ def submit_approval(
         if validation_request:
             # Create snapshot of current state for comparison on resubmission
             snapshot = create_revision_snapshot(db, validation_request)
+            snapshot["context_type"] = "revision_sendback"
             snapshot["sent_back_by_approval_id"] = approval.approval_id
             snapshot["sent_back_by_role"] = approval.approver_role
 

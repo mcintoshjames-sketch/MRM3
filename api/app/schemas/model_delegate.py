@@ -8,6 +8,7 @@ class ModelDelegateBase(BaseModel):
     """Base model delegate schema."""
     can_submit_changes: bool = Field(False, description="Can submit model changes (create versions)")
     can_manage_regional: bool = Field(False, description="Can manage regional configurations")
+    can_attest: bool = Field(False, description="Can submit attestations on behalf of model owner")
 
 
 class ModelDelegateCreate(ModelDelegateBase):
@@ -19,6 +20,7 @@ class ModelDelegateUpdate(BaseModel):
     """Schema for updating a model delegation (primarily for revoking)."""
     can_submit_changes: Optional[bool] = None
     can_manage_regional: Optional[bool] = None
+    can_attest: Optional[bool] = None
 
 
 class ModelDelegateResponse(ModelDelegateBase):
@@ -47,6 +49,7 @@ class BatchDelegateRequest(BaseModel):
     delegate_user_id: int = Field(..., description="User to grant delegation to")
     can_submit_changes: bool = Field(True, description="Can submit model changes (create versions)")
     can_manage_regional: bool = Field(True, description="Can manage regional configurations")
+    can_attest: bool = Field(False, description="Can submit attestations on behalf of model owner")
     replace_existing: bool = Field(False, description="If true, revoke all other delegates for each model")
 
 

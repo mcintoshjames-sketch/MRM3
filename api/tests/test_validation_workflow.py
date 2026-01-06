@@ -3,6 +3,7 @@ import pytest
 import json
 from datetime import date, datetime, timedelta
 from decimal import Decimal
+from typing import Optional
 from sqlalchemy import text
 from app.models.taxonomy import Taxonomy, TaxonomyValue
 from app.core.roles import RoleCode
@@ -11,6 +12,9 @@ from app.models.validation import (
     ValidationRequest, ValidationStatusHistory, ValidationAssignment,
     ValidationOutcome, ValidationApproval
 )
+from app.models.scorecard import ValidationScorecardResult
+from app.models.recommendation import Recommendation
+from app.models.limitation import ModelLimitation
 from app.models.model import Model
 from app.models.validation_grouping import ValidationGroupingMemory
 from app.models.region import Region
@@ -156,6 +160,89 @@ def create_active_validation_request(
     return request
 
 
+def get_or_create_taxonomy_value(
+    db_session,
+    taxonomy_name: str,
+    code: str,
+    label: str,
+    sort_order: int = 1
+) -> TaxonomyValue:
+    taxonomy = db_session.query(Taxonomy).filter(Taxonomy.name == taxonomy_name).first()
+    if not taxonomy:
+        taxonomy = Taxonomy(name=taxonomy_name, is_system=True)
+        db_session.add(taxonomy)
+        db_session.flush()
+
+    value = db_session.query(TaxonomyValue).filter(
+        TaxonomyValue.taxonomy_id == taxonomy.taxonomy_id,
+        TaxonomyValue.code == code
+    ).first()
+    if value:
+        return value
+
+    value = TaxonomyValue(
+        taxonomy_id=taxonomy.taxonomy_id,
+        code=code,
+        label=label,
+        sort_order=sort_order
+    )
+    db_session.add(value)
+    db_session.flush()
+    return value
+
+
+def create_recommendation(
+    db_session,
+    model_id: int,
+    request_id: int,
+    user_id: int,
+    priority_id: int,
+    status_id: int,
+    category_id: Optional[int],
+    code_suffix: str
+) -> Recommendation:
+    recommendation = Recommendation(
+        recommendation_code=f"REC-{request_id}-{code_suffix}",
+        model_id=model_id,
+        validation_request_id=request_id,
+        title=f"Test Recommendation {code_suffix}",
+        description="Test recommendation description",
+        priority_id=priority_id,
+        category_id=category_id,
+        current_status_id=status_id,
+        created_by_id=user_id,
+        assigned_to_id=user_id,
+        original_target_date=date.today(),
+        current_target_date=date.today()
+    )
+    db_session.add(recommendation)
+    db_session.flush()
+    return recommendation
+
+
+def create_limitation(
+    db_session,
+    model_id: int,
+    request_id: int,
+    user_id: int,
+    category_id: int
+) -> ModelLimitation:
+    limitation = ModelLimitation(
+        model_id=model_id,
+        validation_request_id=request_id,
+        significance="Non-Critical",
+        category_id=category_id,
+        description="Test limitation description",
+        impact_assessment="Test limitation impact",
+        conclusion="Accept",
+        conclusion_rationale="Test conclusion rationale",
+        created_by_id=user_id
+    )
+    db_session.add(limitation)
+    db_session.flush()
+    return limitation
+
+
 @pytest.fixture
 def qualitative_factors(db_session):
     """Create the 4 standard qualitative risk factors with guidance."""
@@ -266,6 +353,37 @@ class TestValidationRequestCRUD:
         assert data["current_status"]["label"] == "Intake"
         assert data["priority"]["label"] == "Standard"
         assert "request_id" in data
+
+    def test_create_initial_blocked_with_prior_full_validation(
+        self, client, db_session, admin_headers, admin_user, sample_model, workflow_taxonomies
+    ):
+        """Initial validations are blocked if a model already has a full validation."""
+        create_active_validation_request(
+            db_session,
+            workflow_taxonomies,
+            admin_user.user_id,
+            sample_model.model_id,
+            validation_type_key="comprehensive",
+            status_key="approved"
+        )
+
+        target_date = (date.today() + timedelta(days=30)).isoformat()
+        response = client.post(
+            "/validation-workflow/requests/",
+            headers=admin_headers,
+            json={
+                "model_ids": [sample_model.model_id],
+                "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
+                "target_completion_date": target_date,
+                "trigger_reason": "Attempt initial after full validation"
+            }
+        )
+
+        assert response.status_code == 400
+        detail = response.json()["detail"]
+        assert "Initial validations are only allowed" in detail
+        assert sample_model.model_name in detail
 
     def test_create_request_without_auth(self, client, sample_model, workflow_taxonomies):
         """Test that unauthenticated requests are rejected."""
@@ -2424,6 +2542,32 @@ class TestRegionalScopeIntelligence:
         region_codes = {r["code"] for r in data["suggested_regions"]}
         assert region_codes == {"US", "APAC"}
 
+    def test_create_validation_request_rejects_invalid_region_scope(
+        self, client, admin_headers, workflow_taxonomies, models_with_regions, regions
+    ):
+        """Selected region scope must be valid for all models."""
+        payload = {
+            "model_ids": [
+                models_with_regions["us_only"].model_id,
+                models_with_regions["eu_only"].model_id
+            ],
+            "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
+            "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
+            "target_completion_date": (date.today() + timedelta(days=30)).isoformat(),
+            "trigger_reason": "Region scope validation test",
+            "region_ids": [regions["us"].region_id]
+        }
+
+        response = client.post(
+            "/validation-workflow/requests/",
+            headers=admin_headers,
+            json=payload
+        )
+
+        assert response.status_code == 400
+        assert "Selected region scope includes regions where one or more models are not deployed" in response.json()["detail"]
+        assert models_with_regions["eu_only"].model_name in response.json()["detail"]
+
     def test_preview_regions_model_without_regions(
         self, client, admin_headers, models_with_regions
     ):
@@ -3892,6 +4036,555 @@ class TestSendBackWorkflow:
         assert approval.approved_at is None
 
 
+class TestSendBackMaterialChangeResets:
+    """Tests for material change detection during REVISION resubmission."""
+
+    def _setup_revision_request(
+        self,
+        db_session,
+        workflow_taxonomies,
+        sample_model,
+        admin_user,
+        initial_rating: str = "Green",
+        include_recommendation: bool = False,
+        include_limitation: bool = False
+    ):
+        validation_req = ValidationRequest(
+            requestor_id=admin_user.user_id,
+            validation_type_id=workflow_taxonomies["type"]["initial"].value_id,
+            priority_id=workflow_taxonomies["priority"]["medium"].value_id,
+            current_status_id=workflow_taxonomies["status"]["revision"].value_id,
+            target_completion_date=date.today() + timedelta(days=30),
+            created_at=datetime.now(),
+            updated_at=datetime.now()
+        )
+        validation_req.models = [sample_model]
+        db_session.add(validation_req)
+        db_session.flush()
+
+        outcome = ValidationOutcome(
+            request_id=validation_req.request_id,
+            overall_rating_id=workflow_taxonomies["rating"]["fit_for_purpose"].value_id,
+            executive_summary="Test validation summary",
+            effective_date=date.today(),
+            created_at=datetime.now(),
+            updated_at=datetime.now()
+        )
+        db_session.add(outcome)
+        db_session.flush()
+
+        assignment = ValidationAssignment(
+            request_id=validation_req.request_id,
+            validator_id=admin_user.user_id,
+            is_primary=True,
+            assignment_date=date.today(),
+            created_at=datetime.now()
+        )
+        db_session.add(assignment)
+        db_session.flush()
+
+        scorecard_result = ValidationScorecardResult(
+            request_id=validation_req.request_id,
+            overall_rating=initial_rating
+        )
+        db_session.add(scorecard_result)
+        db_session.flush()
+
+        sender_approval = ValidationApproval(
+            request_id=validation_req.request_id,
+            approver_id=admin_user.user_id,
+            approver_role="Global Approver",
+            approval_type="Global",
+            is_required=True,
+            approval_status="Sent Back",
+            approved_at=datetime.now(),
+            created_at=datetime.now()
+        )
+        approved_approval = ValidationApproval(
+            request_id=validation_req.request_id,
+            approver_id=admin_user.user_id,
+            approver_role="Regional Approver",
+            approval_type="Regional",
+            is_required=True,
+            approval_status="Approved",
+            approved_at=datetime.now(),
+            created_at=datetime.now()
+        )
+        sent_back_approval = ValidationApproval(
+            request_id=validation_req.request_id,
+            approver_id=admin_user.user_id,
+            approver_role="Secondary Approver",
+            approval_type="Global",
+            is_required=True,
+            approval_status="Sent Back",
+            approved_at=datetime.now(),
+            created_at=datetime.now()
+        )
+        db_session.add_all([sender_approval, approved_approval, sent_back_approval])
+        db_session.flush()
+
+        rec_ids = []
+        lim_ids = []
+
+        if include_recommendation:
+            priority_value = get_or_create_taxonomy_value(
+                db_session, "Recommendation Priority", "HIGH", "High"
+            )
+            status_value = get_or_create_taxonomy_value(
+                db_session, "Recommendation Status", "OPEN", "Open"
+            )
+            category_value = get_or_create_taxonomy_value(
+                db_session, "Recommendation Category", "DATA", "Data"
+            )
+            rec = create_recommendation(
+                db_session,
+                model_id=sample_model.model_id,
+                request_id=validation_req.request_id,
+                user_id=admin_user.user_id,
+                priority_id=priority_value.value_id,
+                status_id=status_value.value_id,
+                category_id=category_value.value_id,
+                code_suffix="A"
+            )
+            rec_ids.append(rec.recommendation_id)
+
+        if include_limitation:
+            lim_category = get_or_create_taxonomy_value(
+                db_session, "Limitation Category", "DATA", "Data"
+            )
+            lim = create_limitation(
+                db_session,
+                model_id=sample_model.model_id,
+                request_id=validation_req.request_id,
+                user_id=admin_user.user_id,
+                category_id=lim_category.value_id
+            )
+            lim_ids.append(lim.limitation_id)
+
+        snapshot = {
+            "snapshot_at": datetime.now().isoformat(),
+            "overall_rating": initial_rating,
+            "recommendation_ids": sorted(rec_ids),
+            "limitation_ids": sorted(lim_ids),
+            "context_type": "revision_sendback",
+            "sent_back_by_approval_id": sender_approval.approval_id,
+            "sent_back_by_role": sender_approval.approver_role
+        }
+        history_entry = ValidationStatusHistory(
+            request_id=validation_req.request_id,
+            old_status_id=workflow_taxonomies["status"]["pending_approval"].value_id,
+            new_status_id=workflow_taxonomies["status"]["revision"].value_id,
+            changed_by_id=admin_user.user_id,
+            change_reason="Sent back for revisions",
+            additional_context=json.dumps(snapshot),
+            changed_at=datetime.now()
+        )
+        db_session.add(history_entry)
+        db_session.commit()
+
+        return validation_req, sender_approval, approved_approval, sent_back_approval, scorecard_result
+
+    def test_resubmit_resets_approved_on_rating_change(
+        self, client, admin_headers, db_session, workflow_taxonomies, sample_model, admin_user
+    ):
+        validation_req, sender_approval, approved_approval, sent_back_approval, scorecard_result = (
+            self._setup_revision_request(
+                db_session, workflow_taxonomies, sample_model, admin_user, initial_rating="Green"
+            )
+        )
+
+        scorecard_result.overall_rating = "Red"
+        db_session.commit()
+
+        response = client.patch(
+            f"/validation-workflow/requests/{validation_req.request_id}/status",
+            headers=admin_headers,
+            json={
+                "new_status_id": workflow_taxonomies["status"]["pending_approval"].value_id,
+                "change_reason": "Updated scorecard rating"
+            }
+        )
+        assert response.status_code == 200
+
+        db_session.refresh(sender_approval)
+        db_session.refresh(approved_approval)
+        db_session.refresh(sent_back_approval)
+
+        assert sender_approval.approval_status == "Pending"
+        assert approved_approval.approval_status == "Pending"
+        assert sent_back_approval.approval_status == "Pending"
+
+    def test_resubmit_resets_approved_on_recommendation_change(
+        self, client, admin_headers, db_session, workflow_taxonomies, sample_model, admin_user
+    ):
+        validation_req, sender_approval, approved_approval, sent_back_approval, _ = (
+            self._setup_revision_request(
+                db_session, workflow_taxonomies, sample_model, admin_user, include_recommendation=True
+            )
+        )
+
+        priority_value = get_or_create_taxonomy_value(
+            db_session, "Recommendation Priority", "HIGH", "High"
+        )
+        status_value = get_or_create_taxonomy_value(
+            db_session, "Recommendation Status", "OPEN", "Open"
+        )
+        category_value = get_or_create_taxonomy_value(
+            db_session, "Recommendation Category", "DATA", "Data"
+        )
+        create_recommendation(
+            db_session,
+            model_id=sample_model.model_id,
+            request_id=validation_req.request_id,
+            user_id=admin_user.user_id,
+            priority_id=priority_value.value_id,
+            status_id=status_value.value_id,
+            category_id=category_value.value_id,
+            code_suffix="B"
+        )
+        db_session.commit()
+
+        response = client.patch(
+            f"/validation-workflow/requests/{validation_req.request_id}/status",
+            headers=admin_headers,
+            json={
+                "new_status_id": workflow_taxonomies["status"]["pending_approval"].value_id,
+                "change_reason": "Added recommendation"
+            }
+        )
+        assert response.status_code == 200
+
+        db_session.refresh(sender_approval)
+        db_session.refresh(approved_approval)
+        db_session.refresh(sent_back_approval)
+
+        assert sender_approval.approval_status == "Pending"
+        assert approved_approval.approval_status == "Pending"
+        assert sent_back_approval.approval_status == "Pending"
+
+    def test_resubmit_resets_approved_on_limitation_change(
+        self, client, admin_headers, db_session, workflow_taxonomies, sample_model, admin_user
+    ):
+        validation_req, sender_approval, approved_approval, sent_back_approval, _ = (
+            self._setup_revision_request(
+                db_session, workflow_taxonomies, sample_model, admin_user, include_limitation=True
+            )
+        )
+
+        lim_category = get_or_create_taxonomy_value(
+            db_session, "Limitation Category", "DATA", "Data"
+        )
+        create_limitation(
+            db_session,
+            model_id=sample_model.model_id,
+            request_id=validation_req.request_id,
+            user_id=admin_user.user_id,
+            category_id=lim_category.value_id
+        )
+        db_session.commit()
+
+        response = client.patch(
+            f"/validation-workflow/requests/{validation_req.request_id}/status",
+            headers=admin_headers,
+            json={
+                "new_status_id": workflow_taxonomies["status"]["pending_approval"].value_id,
+                "change_reason": "Added limitation"
+            }
+        )
+        assert response.status_code == 200
+
+        db_session.refresh(sender_approval)
+        db_session.refresh(approved_approval)
+        db_session.refresh(sent_back_approval)
+
+        assert sender_approval.approval_status == "Pending"
+        assert approved_approval.approval_status == "Pending"
+        assert sent_back_approval.approval_status == "Pending"
+
+    def test_resubmit_preserves_approved_when_no_changes(
+        self, client, admin_headers, db_session, workflow_taxonomies, sample_model, admin_user
+    ):
+        validation_req, sender_approval, approved_approval, sent_back_approval, _ = (
+            self._setup_revision_request(
+                db_session,
+                workflow_taxonomies,
+                sample_model,
+                admin_user,
+                include_recommendation=True,
+                include_limitation=True
+            )
+        )
+
+        response = client.patch(
+            f"/validation-workflow/requests/{validation_req.request_id}/status",
+            headers=admin_headers,
+            json={
+                "new_status_id": workflow_taxonomies["status"]["pending_approval"].value_id,
+                "change_reason": "No material changes"
+            }
+        )
+        assert response.status_code == 200
+
+        db_session.refresh(sender_approval)
+        db_session.refresh(approved_approval)
+        db_session.refresh(sent_back_approval)
+
+        assert sender_approval.approval_status == "Pending"
+        assert approved_approval.approval_status == "Approved"
+        assert sent_back_approval.approval_status == "Pending"
+
+
+class TestAdminSendBackToInProgress:
+    """Tests for admin send-back from PENDING_APPROVAL to IN_PROGRESS."""
+
+    def _create_pending_approval_request(
+        self,
+        db_session,
+        workflow_taxonomies,
+        sample_model,
+        admin_user
+    ):
+        validation_req = ValidationRequest(
+            requestor_id=admin_user.user_id,
+            validation_type_id=workflow_taxonomies["type"]["initial"].value_id,
+            priority_id=workflow_taxonomies["priority"]["medium"].value_id,
+            current_status_id=workflow_taxonomies["status"]["pending_approval"].value_id,
+            target_completion_date=date.today() + timedelta(days=30),
+            created_at=datetime.now(),
+            updated_at=datetime.now()
+        )
+        validation_req.models = [sample_model]
+        db_session.add(validation_req)
+        db_session.flush()
+
+        assignment = ValidationAssignment(
+            request_id=validation_req.request_id,
+            validator_id=admin_user.user_id,
+            is_primary=True,
+            assignment_date=date.today(),
+            created_at=datetime.now()
+        )
+        db_session.add(assignment)
+        db_session.flush()
+
+        outcome = ValidationOutcome(
+            request_id=validation_req.request_id,
+            overall_rating_id=workflow_taxonomies["rating"]["fit_for_purpose"].value_id,
+            executive_summary="Test validation summary",
+            effective_date=date.today(),
+            created_at=datetime.now(),
+            updated_at=datetime.now()
+        )
+        db_session.add(outcome)
+        db_session.flush()
+
+        scorecard_result = ValidationScorecardResult(
+            request_id=validation_req.request_id,
+            overall_rating="Green"
+        )
+        db_session.add(scorecard_result)
+        db_session.flush()
+
+        global_approval = ValidationApproval(
+            request_id=validation_req.request_id,
+            approver_id=admin_user.user_id,
+            approver_role="Global Approver",
+            approval_type="Global",
+            is_required=True,
+            approval_status="Approved",
+            approved_at=datetime.now(),
+            comments="Approved",
+            created_at=datetime.now()
+        )
+        regional_approval = ValidationApproval(
+            request_id=validation_req.request_id,
+            approver_id=admin_user.user_id,
+            approver_role="Regional Approver",
+            approval_type="Regional",
+            is_required=True,
+            approval_status="Sent Back",
+            approved_at=datetime.now(),
+            comments="Sent back",
+            created_at=datetime.now()
+        )
+        conditional_approval = ValidationApproval(
+            request_id=validation_req.request_id,
+            approver_id=admin_user.user_id,
+            approver_role="Model Owner",
+            approval_type="Conditional",
+            is_required=True,
+            approval_status="Pending",
+            created_at=datetime.now()
+        )
+        db_session.add_all([global_approval, regional_approval, conditional_approval])
+        db_session.commit()
+
+        return validation_req, global_approval, regional_approval, conditional_approval, scorecard_result
+
+    def test_send_back_to_in_progress_requires_admin(
+        self, client, validator_headers, db_session, workflow_taxonomies, sample_model, admin_user
+    ):
+        validation_req, _, _, _, _ = self._create_pending_approval_request(
+            db_session, workflow_taxonomies, sample_model, admin_user
+        )
+
+        response = client.patch(
+            f"/validation-workflow/requests/{validation_req.request_id}/status",
+            headers=validator_headers,
+            json={
+                "new_status_id": workflow_taxonomies["status"]["in_progress"].value_id,
+                "change_reason": "Admin sendback required"
+            }
+        )
+        assert response.status_code == 403
+        assert "Only admins" in response.json()["detail"]
+
+    def test_send_back_to_in_progress_requires_reason(
+        self, client, admin_headers, db_session, workflow_taxonomies, sample_model, admin_user
+    ):
+        validation_req, _, _, _, _ = self._create_pending_approval_request(
+            db_session, workflow_taxonomies, sample_model, admin_user
+        )
+
+        response = client.patch(
+            f"/validation-workflow/requests/{validation_req.request_id}/status",
+            headers=admin_headers,
+            json={
+                "new_status_id": workflow_taxonomies["status"]["in_progress"].value_id,
+                "change_reason": "   "
+            }
+        )
+        assert response.status_code == 400
+        assert "change reason is required" in response.json()["detail"].lower()
+
+    def test_send_back_to_in_progress_resets_approvals_and_snapshot(
+        self, client, admin_headers, db_session, workflow_taxonomies, sample_model, admin_user
+    ):
+        validation_req, global_approval, regional_approval, conditional_approval, _ = (
+            self._create_pending_approval_request(
+                db_session, workflow_taxonomies, sample_model, admin_user
+            )
+        )
+
+        response = client.patch(
+            f"/validation-workflow/requests/{validation_req.request_id}/status",
+            headers=admin_headers,
+            json={
+                "new_status_id": workflow_taxonomies["status"]["in_progress"].value_id,
+                "change_reason": "Major rework required"
+            }
+        )
+        assert response.status_code == 200
+
+        db_session.refresh(global_approval)
+        db_session.refresh(regional_approval)
+        db_session.refresh(conditional_approval)
+
+        assert global_approval.approval_status == "Pending"
+        assert global_approval.approved_at is None
+        assert global_approval.comments is None
+
+        assert regional_approval.approval_status == "Pending"
+        assert regional_approval.approved_at is None
+        assert regional_approval.comments is None
+
+        assert conditional_approval.voided_by_id == admin_user.user_id
+        assert conditional_approval.voided_at is not None
+
+        history_entry = db_session.query(ValidationStatusHistory).filter(
+            ValidationStatusHistory.request_id == validation_req.request_id,
+            ValidationStatusHistory.new_status_id == workflow_taxonomies["status"]["in_progress"].value_id
+        ).order_by(ValidationStatusHistory.changed_at.desc()).first()
+        assert history_entry is not None
+        assert history_entry.additional_context is not None
+        snapshot = json.loads(history_entry.additional_context)
+        assert snapshot.get("context_type") == "admin_in_progress_sendback"
+
+    def test_return_from_in_progress_sendback_audits_changes(
+        self, client, admin_headers, db_session, workflow_taxonomies, sample_model, admin_user
+    ):
+        validation_req, _, _, _, scorecard_result = self._create_pending_approval_request(
+            db_session, workflow_taxonomies, sample_model, admin_user
+        )
+
+        sendback_response = client.patch(
+            f"/validation-workflow/requests/{validation_req.request_id}/status",
+            headers=admin_headers,
+            json={
+                "new_status_id": workflow_taxonomies["status"]["in_progress"].value_id,
+                "change_reason": "Major rework required"
+            }
+        )
+        assert sendback_response.status_code == 200
+
+        scorecard_result.overall_rating = "Red"
+        db_session.commit()
+
+        return_response = client.patch(
+            f"/validation-workflow/requests/{validation_req.request_id}/status",
+            headers=admin_headers,
+            json={
+                "new_status_id": workflow_taxonomies["status"]["pending_approval"].value_id,
+                "change_reason": "Resubmitting after rework"
+            }
+        )
+        assert return_response.status_code == 200
+
+        from app.models.audit_log import AuditLog
+        audit_log = db_session.query(AuditLog).filter(
+            AuditLog.entity_type == "ValidationRequest",
+            AuditLog.entity_id == validation_req.request_id,
+            AuditLog.action == "RETURN_FROM_IN_PROGRESS_SENDBACK"
+        ).order_by(AuditLog.timestamp.desc()).first()
+        assert audit_log is not None
+        assert audit_log.changes.get("material_change_detected") is True
+
+        history_entry = db_session.query(ValidationStatusHistory).filter(
+            ValidationStatusHistory.request_id == validation_req.request_id,
+            ValidationStatusHistory.new_status_id == workflow_taxonomies["status"]["pending_approval"].value_id
+        ).order_by(ValidationStatusHistory.changed_at.desc()).first()
+        assert history_entry is not None
+        assert history_entry.additional_context is not None
+        audit_context = json.loads(history_entry.additional_context)
+        assert audit_context.get("context_type") == "admin_in_progress_sendback_audit"
+        assert audit_context["change_details"]["rating_changed"] is True
+
+    def test_return_from_in_progress_sendback_audits_no_changes(
+        self, client, admin_headers, db_session, workflow_taxonomies, sample_model, admin_user
+    ):
+        validation_req, _, _, _, _ = self._create_pending_approval_request(
+            db_session, workflow_taxonomies, sample_model, admin_user
+        )
+
+        sendback_response = client.patch(
+            f"/validation-workflow/requests/{validation_req.request_id}/status",
+            headers=admin_headers,
+            json={
+                "new_status_id": workflow_taxonomies["status"]["in_progress"].value_id,
+                "change_reason": "Major rework required"
+            }
+        )
+        assert sendback_response.status_code == 200
+
+        return_response = client.patch(
+            f"/validation-workflow/requests/{validation_req.request_id}/status",
+            headers=admin_headers,
+            json={
+                "new_status_id": workflow_taxonomies["status"]["pending_approval"].value_id,
+                "change_reason": "Resubmitting with no changes"
+            }
+        )
+        assert return_response.status_code == 200
+
+        from app.models.audit_log import AuditLog
+        audit_log = db_session.query(AuditLog).filter(
+            AuditLog.entity_type == "ValidationRequest",
+            AuditLog.entity_id == validation_req.request_id,
+            AuditLog.action == "RETURN_FROM_IN_PROGRESS_SENDBACK"
+        ).order_by(AuditLog.timestamp.desc()).first()
+        assert audit_log is not None
+        assert audit_log.changes.get("material_change_detected") is False
+
 # ==================== SCOPE-ONLY VALIDATION PLAN TESTS ====================
 
 class TestScopeOnlyValidationPlans:
@@ -4564,6 +5257,50 @@ class TestValidationRequestModelChanges:
             ValidationRequestModelVersion.request_id == request["request_id"]
         ).count()
         assert assoc_count == 2
+
+    def test_add_model_blocked_when_prior_full_validation_exists(
+        self, client, db_session, admin_headers, admin_user, sample_model, workflow_taxonomies, usage_frequency
+    ):
+        """Initial requests cannot add models that already had a full validation."""
+        request = self._create_request(
+            client,
+            admin_headers,
+            workflow_taxonomies,
+            [sample_model.model_id]
+        )
+
+        model2 = Model(
+            model_name="Prior Full Validation Model",
+            description="Model with prior full validation",
+            status="Active",
+            development_type="In-House",
+            owner_id=admin_user.user_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+        db_session.add(model2)
+        db_session.commit()
+
+        create_active_validation_request(
+            db_session,
+            workflow_taxonomies,
+            admin_user.user_id,
+            model2.model_id,
+            validation_type_key="comprehensive",
+            status_key="approved"
+        )
+
+        response = client.patch(
+            f"/validation-workflow/requests/{request['request_id']}/models",
+            headers=admin_headers,
+            json={
+                "add_models": [{"model_id": model2.model_id}]
+            }
+        )
+
+        assert response.status_code == 400
+        detail = response.json()["detail"]
+        assert "Initial validations are only allowed" in detail
+        assert model2.model_name in detail
 
     def test_add_model_blocked_when_model_has_active_non_targeted(
         self, client, db_session, admin_headers, admin_user, sample_model,

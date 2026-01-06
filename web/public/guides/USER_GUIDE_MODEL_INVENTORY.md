@@ -42,7 +42,7 @@ This guide explains how to work with the Model Inventory in the Quantitative Met
 
 The Model Inventory provides a centralized repository for tracking all quantitative models in the organization. Each model record contains:
 
-- **Identification**: Model name, description, and unique model ID
+- **Identification**: Model name, description, unique model ID, and optional external model ID
 - **Ownership**: Model owner, developer, and associated business line
 - **Coverage**: Products, portfolios, or lines of business covered by the model
 - **Risk Profile**: Risk tier, assessment factors, and approval status
@@ -63,6 +63,7 @@ To register a new model in the inventory:
 | Field | Description | Required |
 |-------|-------------|----------|
 | **Model Name** | A unique, descriptive name for the model | Yes |
+| **External Model ID** | Optional legacy/external system identifier | No |
 | **Description** | Purpose and functionality of the model | No |
 | **Products Covered** | Products, portfolios, or lines of business covered by the model | No |
 | **Development Type** | "In-House" or "Third-Party" | Yes |
@@ -110,7 +111,7 @@ These fields can be modified by users with appropriate permissions:
 | Vendor | Third-party vendor (for vendor-developed models) |
 | Risk Tier ⚙ | Assigned risk classification (Tier 1/2/3) |
 | Status ⚙ | Current model status |
-| Model ID (External) | External reference identifier |
+| External Model ID | Optional legacy/external system identifier |
 | Usage Frequency ⚙ | Operational frequency of model use |
 | Model Users | Individuals using the model |
 | Deployed Regions | Geographic deployment locations |

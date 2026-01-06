@@ -19,6 +19,7 @@ export default function BatchDelegatesPage() {
         role: string;
         canSubmitChanges: boolean;
         canManageRegional: boolean;
+        canAttest: boolean;
         replaceExisting: boolean;
     } | null>(null);
 
@@ -30,6 +31,7 @@ export default function BatchDelegatesPage() {
     const [selectedDelegateUser, setSelectedDelegateUser] = useState<User | null>(null);
     const [canSubmitChanges, setCanSubmitChanges] = useState(true);
     const [canManageRegional, setCanManageRegional] = useState(true);
+    const [canAttest, setCanAttest] = useState(false);
     const [replaceExisting, setReplaceExisting] = useState(false);
 
     const canViewAdminDashboardFlag = canViewAdminDashboard(user);
@@ -92,6 +94,7 @@ export default function BatchDelegatesPage() {
                 delegate_user_id: selectedDelegateUser.user_id,
                 can_submit_changes: canSubmitChanges,
                 can_manage_regional: canManageRegional,
+                can_attest: canAttest,
                 replace_existing: replaceExisting,
             });
             setResult(response);
@@ -102,6 +105,7 @@ export default function BatchDelegatesPage() {
                 role: role,
                 canSubmitChanges: canSubmitChanges,
                 canManageRegional: canManageRegional,
+                canAttest: canAttest,
                 replaceExisting: replaceExisting,
             });
             // Reset form
@@ -127,6 +131,7 @@ export default function BatchDelegatesPage() {
             ['Delegate User:', lastOperation.delegateUserName],
             ['Can Submit Changes:', lastOperation.canSubmitChanges ? 'Yes' : 'No'],
             ['Can Manage Regional:', lastOperation.canManageRegional ? 'Yes' : 'No'],
+            ['Can Attest:', lastOperation.canAttest ? 'Yes' : 'No'],
             ['Replace Existing Delegates:', lastOperation.replaceExisting ? 'Yes' : 'No'],
             [''],
             ['Results:'],
@@ -399,6 +404,15 @@ export default function BatchDelegatesPage() {
                                     className="mr-2"
                                 />
                                 <span className="text-sm">Can manage regional configurations</span>
+                            </label>
+                            <label className="flex items-center">
+                                <input
+                                    type="checkbox"
+                                    checked={canAttest}
+                                    onChange={(e) => setCanAttest(e.target.checked)}
+                                    className="mr-2"
+                                />
+                                <span className="text-sm">Can submit attestations on behalf of the owner</span>
                             </label>
                         </div>
                     </div>

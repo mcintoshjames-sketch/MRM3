@@ -575,7 +575,7 @@ export default function AttestationDetailPage() {
                                                             'bg-red-100 text-red-700'
                                                 }`}>
                                                 {link.change_type === 'MODEL_EDIT' ? 'Model Edit' :
-                                                    link.change_type === 'MODEL_VERSION' ? 'Model Version' :
+                                                    link.change_type === 'MODEL_VERSION' ? 'Model Change' :
                                                         link.change_type === 'NEW_MODEL' ? 'New Model' :
                                                             'Decommission'}
                                             </span>

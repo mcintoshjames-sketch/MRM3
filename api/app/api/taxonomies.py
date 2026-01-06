@@ -25,6 +25,7 @@ router = APIRouter()
 
 SYSTEM_PROTECTED_TAXONOMY_VALUES = {
     "Recommendation Category": {"MONITORING"},
+    "Validation Type": {"INITIAL", "COMPREHENSIVE", "TARGETED", "INTERIM", "CHANGE"},
 }
 
 

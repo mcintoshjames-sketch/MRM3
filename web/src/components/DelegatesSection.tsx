@@ -20,6 +20,7 @@ const DelegatesSection: React.FC<DelegatesSectionProps> = ({ modelId, modelOwner
         user_id: 0,
         can_submit_changes: true,
         can_manage_regional: true,
+        can_attest: false,
     });
     const [error, setError] = useState<string | null>(null);
     const [userSearch, setUserSearch] = useState('');
@@ -67,9 +68,10 @@ const DelegatesSection: React.FC<DelegatesSectionProps> = ({ modelId, modelOwner
                 user_id: selectedUser.user_id,
                 can_submit_changes: formData.can_submit_changes,
                 can_manage_regional: formData.can_manage_regional,
+                can_attest: formData.can_attest,
             });
             setShowAddForm(false);
-            setFormData({ user_id: 0, can_submit_changes: true, can_manage_regional: true });
+            setFormData({ user_id: 0, can_submit_changes: true, can_manage_regional: true, can_attest: false });
             setSelectedUser(null);
             setUserSearch('');
             loadDelegates();
@@ -182,6 +184,17 @@ const DelegatesSection: React.FC<DelegatesSectionProps> = ({ modelId, modelOwner
                         <label className="flex items-center">
                             <input
                                 type="checkbox"
+                                checked={formData.can_attest}
+                                onChange={(e) => setFormData({ ...formData, can_attest: e.target.checked })}
+                                className="mr-2"
+                            />
+                            <span className="text-sm font-medium">Can submit attestations on behalf of the owner</span>
+                        </label>
+                    </div>
+                    <div className="mb-3">
+                        <label className="flex items-center">
+                            <input
+                                type="checkbox"
                                 checked={formData.can_submit_changes}
                                 onChange={(e) => setFormData({ ...formData, can_submit_changes: e.target.checked })}
                                 className="mr-2"
@@ -211,7 +224,7 @@ const DelegatesSection: React.FC<DelegatesSectionProps> = ({ modelId, modelOwner
                             type="button"
                             onClick={() => {
                                 setShowAddForm(false);
-                                setFormData({ user_id: 0, can_submit_changes: true, can_manage_regional: true });
+                                setFormData({ user_id: 0, can_submit_changes: true, can_manage_regional: true, can_attest: false });
                                 setSelectedUser(null);
                                 setUserSearch('');
                             }}
@@ -247,6 +260,11 @@ const DelegatesSection: React.FC<DelegatesSectionProps> = ({ modelId, modelOwner
                                 </td>
                                 <td className="px-4 py-3 text-sm">
                                     <div className="flex flex-col gap-1">
+                                        {delegate.can_attest && (
+                                            <span className="text-xs bg-purple-100 text-purple-800 px-2 py-0.5 rounded inline-block w-fit">
+                                                Attest
+                                            </span>
+                                        )}
                                         {delegate.can_submit_changes && (
                                             <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded inline-block w-fit">
                                                 Submit Changes

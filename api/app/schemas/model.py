@@ -60,6 +60,7 @@ class ModelRolesWithLOB(BaseModel):
 
 class ModelBase(BaseModel):
     model_name: str
+    external_model_id: Optional[str] = None
     description: Optional[str] = None
     products_covered: Optional[str] = None
     development_type: str = "In-House"
@@ -126,6 +127,7 @@ class ModelCreate(ModelBase):
     model_config = ConfigDict(protected_namespaces=())
 class ModelUpdate(BaseModel):
     model_name: Optional[str] = None
+    external_model_id: Optional[str] = None
     description: Optional[str] = None
     products_covered: Optional[str] = None
     development_type: Optional[str] = None
@@ -281,6 +283,7 @@ class ModelListResponse(BaseModel):
     """Lightweight model response for list views - optimized for performance."""
     model_id: int
     model_name: str
+    external_model_id: Optional[str] = None
     description: Optional[str] = None
     products_covered: Optional[str] = None
     development_type: str
@@ -400,6 +403,7 @@ class ModelCreateResponse(BaseModel):
     """Response for model creation with optional warnings."""
     model_id: int
     model_name: str
+    external_model_id: Optional[str] = None
     description: Optional[str] = None
     products_covered: Optional[str] = None
     development_type: str

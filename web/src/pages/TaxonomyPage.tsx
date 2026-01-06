@@ -1377,14 +1377,29 @@ export default function TaxonomyPage() {
         return value.code === 'MONITORING' || value.label === 'Monitoring';
     };
 
+    const SYSTEM_PROTECTED_VALIDATION_TYPE_CODES = new Set([
+        'INITIAL',
+        'COMPREHENSIVE',
+        'TARGETED',
+        'INTERIM',
+        'CHANGE'
+    ]);
+
+    const isValidationTypeProtected = (value: TaxonomyValue): boolean => {
+        return selectedTaxonomy?.name === 'Validation Type'
+            && SYSTEM_PROTECTED_VALIDATION_TYPE_CODES.has(value.code);
+    };
+
     const isDeleteProtectedValue = (value: TaxonomyValue): boolean => {
         return isMonitoringCategoryValue(value)
             || !!value.is_system_protected
-            || (selectedTaxonomy?.name === 'Validation Type' && value.code === 'TARGETED');
+            || isValidationTypeProtected(value);
     };
 
     const isDeactivationProtectedValue = (value: TaxonomyValue): boolean => {
-        return isMonitoringCategoryValue(value) || !!value.is_system_protected;
+        return isMonitoringCategoryValue(value)
+            || !!value.is_system_protected
+            || isValidationTypeProtected(value);
     };
 
     const isEditingDeactivationProtected = editingValue

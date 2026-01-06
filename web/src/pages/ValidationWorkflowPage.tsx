@@ -25,11 +25,21 @@ interface ValidationRequest {
     regions?: Region[];  // Support multiple regions
     created_at: string;
     updated_at: string;
+    model_compliance_status: string;
 }
 
 interface Model {
     model_id: number;
     model_name: string;
+    is_model: boolean;
+    is_mrsa: boolean;
+    regions?: ModelRegionItem[];
+}
+
+interface ModelRegionItem {
+    region_id: number;
+    region_code: string;
+    region_name: string;
 }
 
 interface ModelVersion {
@@ -120,6 +130,7 @@ export default function ValidationWorkflowPage() {
         { key: 'validation_type', label: 'Type', default: true },
         { key: 'regions', label: 'Region', default: true },
         { key: 'priority', label: 'Priority', default: true },
+        { key: 'model_compliance_status', label: 'Compliance', default: true },
         { key: 'current_status', label: 'Status', default: true },
         { key: 'days_in_status', label: 'Days in Status', default: true },
         { key: 'target_completion_date', label: 'Target Date', default: true },
@@ -316,7 +327,10 @@ export default function ValidationWorkflowPage() {
                 try {
                     setLoadingSuggestions(true);
                     const response = await api.get(`/models/${formData.model_ids[0]}/validation-suggestions`);
-                    setSuggestedModels(response.data.suggested_models || []);
+                    const eligibleSuggestions = (response.data.suggested_models || []).filter(
+                        (model: Model) => model.is_model && !model.is_mrsa
+                    );
+                    setSuggestedModels(eligibleSuggestions);
                 } catch (err) {
                     console.error('Failed to fetch grouping suggestions:', err);
                     setSuggestedModels([]);
@@ -369,7 +383,10 @@ export default function ValidationWorkflowPage() {
 
             // Fetch models for form
             const modelsRes = await api.get('/models/');
-            setModels(modelsRes.data);
+            const eligibleModels = modelsRes.data.filter(
+                (model: Model) => model.is_model && !model.is_mrsa
+            );
+            setModels(eligibleModels);
 
             // Fetch taxonomies for form
             const taxonomiesRes = await api.get('/taxonomies/');
@@ -468,6 +485,41 @@ export default function ValidationWorkflowPage() {
                     models.find(m => m.model_id === id)?.model_name || `Model ${id}`
                 ).join(', ');
                 setError(`CHANGE validations require version selection. Missing versions for: ${modelNames}`);
+                return;
+            }
+        }
+
+        if (formData.region_ids.length > 0) {
+            const regionLabelMap = new Map(
+                regions.map(region => [
+                    region.region_id,
+                    region.code || region.name || `Region ${region.region_id}`
+                ])
+            );
+            const conflicts = formData.model_ids.map(modelId => {
+                const model = models.find(m => m.model_id === modelId);
+                if (!model) {
+                    return null;
+                }
+                const deployedRegionIds = new Set(
+                    (model.regions || []).map(region => region.region_id)
+                );
+                const missingRegionIds = formData.region_ids.filter(
+                    regionId => !deployedRegionIds.has(regionId)
+                );
+                if (missingRegionIds.length === 0) {
+                    return null;
+                }
+                const missingLabels = missingRegionIds
+                    .map(regionId => regionLabelMap.get(regionId) || `Region ${regionId}`)
+                    .join(', ');
+                return `${model.model_name}: ${missingLabels}`;
+            }).filter(Boolean) as string[];
+
+            if (conflicts.length > 0) {
+                setError(
+                    `Selected region scope includes regions where one or more models are not deployed. Conflicts: ${conflicts.join('; ')}`
+                );
                 return;
             }
         }
@@ -575,6 +627,25 @@ export default function ValidationWorkflowPage() {
         }
     };
 
+    const getComplianceColor = (status: string) => {
+        switch (status) {
+            case 'Validated On Time':
+            case 'On Track':
+                return 'bg-green-100 text-green-800';
+            case 'In Grace Period':
+                return 'bg-amber-100 text-amber-800';
+            case 'At Risk':
+                return 'bg-orange-100 text-orange-800';
+            case 'Validated Late':
+            case 'Overdue':
+                return 'bg-red-100 text-red-800';
+            case 'Unknown':
+            case 'N/A':
+            default:
+                return 'bg-gray-100 text-gray-800';
+        }
+    };
+
     // Check if a validation request is overdue (target date passed and not in terminal state)
     const isOverdue = (req: ValidationRequest) => {
         const terminalStatuses = ['Approved', 'Cancelled'];
@@ -649,6 +720,16 @@ export default function ValidationWorkflowPage() {
                 </span>
             ),
             csvValue: (req) => req.priority
+        },
+        model_compliance_status: {
+            header: 'Compliance',
+            sortKey: 'model_compliance_status',
+            cell: (req) => (
+                <span className={`px-2 py-1 text-xs rounded ${getComplianceColor(req.model_compliance_status)}`}>
+                    {req.model_compliance_status}
+                </span>
+            ),
+            csvValue: (req) => req.model_compliance_status
         },
         current_status: {
             header: 'Status',

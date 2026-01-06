@@ -117,6 +117,7 @@ interface SubmissionComment {
 interface Model {
     model_id: number;
     model_name: string;
+    external_model_id: string | null;
     description: string;
     products_covered: string | null;
     development_type: string;
@@ -379,6 +380,7 @@ export default function ModelDetailsPage() {
     const [originalFormData, setOriginalFormData] = useState<typeof formData | null>(null);
     const [formData, setFormData] = useState({
         model_name: '',
+        external_model_id: '',
         description: '',
         products_covered: '',
         development_type: 'In-House',
@@ -526,6 +528,7 @@ export default function ModelDetailsPage() {
 
             const initialFormData = {
                 model_name: modelData.model_name,
+                external_model_id: modelData.external_model_id || '',
                 description: modelData.description || '',
                 products_covered: modelData.products_covered || '',
                 development_type: modelData.development_type,
@@ -734,6 +737,9 @@ export default function ModelDetailsPage() {
                 if (formData.model_name !== originalFormData.model_name) {
                     payload.model_name = formData.model_name;
                 }
+                if (formData.external_model_id !== originalFormData.external_model_id) {
+                    payload.external_model_id = formData.external_model_id || null;
+                }
                 if (formData.description !== originalFormData.description) {
                     payload.description = formData.description;
                 }
@@ -801,6 +807,7 @@ export default function ModelDetailsPage() {
                 // Fallback: send all fields if original data not available (shouldn't happen)
                 const { status, ...formDataWithoutStatus } = formData;
                 Object.assign(payload, formDataWithoutStatus, {
+                    external_model_id: formData.external_model_id || null,
                     developer_id: formData.developer_id || null,
                     vendor_id: formData.vendor_id || null,
                     risk_tier_id: formData.risk_tier_id || null,
@@ -2089,6 +2096,32 @@ export default function ModelDetailsPage() {
                     <form onSubmit={handleSubmit}>
                         <div className="grid grid-cols-2 gap-4">
                             <div className="mb-4">
+                                <label htmlFor="model_id" className="block text-sm font-medium mb-2">
+                                    Model ID
+                                </label>
+                                <input
+                                    id="model_id"
+                                    type="text"
+                                    className="input-field bg-gray-50 text-gray-700"
+                                    value={model?.model_id ?? ''}
+                                    disabled
+                                />
+                            </div>
+
+                            <div className="mb-4">
+                                <label htmlFor="external_model_id" className="block text-sm font-medium mb-2">
+                                    External Model ID (Optional)
+                                </label>
+                                <input
+                                    id="external_model_id"
+                                    type="text"
+                                    className="input-field"
+                                    value={formData.external_model_id}
+                                    onChange={(e) => setFormData({ ...formData, external_model_id: e.target.value })}
+                                />
+                            </div>
+
+                            <div className="mb-4">
                                 <label htmlFor="model_name" className="block text-sm font-medium mb-2">
                                     Model Name
                                 </label>
@@ -2654,6 +2687,10 @@ export default function ModelDetailsPage() {
                         <div>
                             <h4 className="text-sm font-medium text-gray-500 mb-1">Model ID</h4>
                             <p className="text-lg">{model.model_id}</p>
+                        </div>
+                        <div>
+                            <h4 className="text-sm font-medium text-gray-500 mb-1">External Model ID</h4>
+                            <p className="text-lg">{model.external_model_id || '-'}</p>
                         </div>
                         <div>
                             <h4 className="text-sm font-medium text-gray-500 mb-1">Status</h4>
