@@ -32,6 +32,7 @@ import ConditionalApprovalRulesPage from './pages/ConditionalApprovalRulesPage';
 import OverdueRevalidationReportPage from './pages/OverdueRevalidationReportPage';
 import NameChangesReportPage from './pages/NameChangesReportPage';
 import CriticalLimitationsReportPage from './pages/CriticalLimitationsReportPage';
+import ModelOverlaysReportPage from './pages/ModelOverlaysReportPage';
 import KPIReportPage from './pages/KPIReportPage';
 import DecommissioningRequestPage from './pages/DecommissioningRequestPage';
 import PendingDecommissioningPage from './pages/PendingDecommissioningPage';
@@ -165,6 +166,7 @@ function App() {
             <Route path="/reports/overdue-revalidation" element={user ? <OverdueRevalidationReportPage /> : <Navigate to="/login" />} />
             <Route path="/reports/name-changes" element={user ? <NameChangesReportPage /> : <Navigate to="/login" />} />
             <Route path="/reports/critical-limitations" element={user ? <CriticalLimitationsReportPage /> : <Navigate to="/login" />} />
+            <Route path="/reports/model-overlays" element={user ? <ModelOverlaysReportPage /> : <Navigate to="/login" />} />
             <Route path="/reports/kpi" element={user ? <KPIReportPage /> : <Navigate to="/login" />} />
             <Route path="/reports/my-portfolio" element={user ? <MyPortfolioReportPage /> : <Navigate to="/login" />} />
             <Route path="/reports/exceptions" element={user ? <ExceptionsReportPage /> : <Navigate to="/login" />} />

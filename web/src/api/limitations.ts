@@ -60,6 +60,14 @@ export interface LimitationDetail {
         recommendation_id: number;
         title: string;
     };
+    related_overlays?: Array<{
+        overlay_id: number;
+        overlay_kind: 'OVERLAY' | 'MANAGEMENT_JUDGEMENT';
+        description: string;
+        effective_from: string;
+        effective_to?: string | null;
+        is_retired: boolean;
+    }>;
     category?: LimitationCategory;
     created_by?: {
         user_id: number;

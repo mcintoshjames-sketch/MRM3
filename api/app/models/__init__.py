@@ -97,6 +97,7 @@ from app.models.scorecard import (
 )
 from app.models.residual_risk_map import ResidualRiskMapConfig
 from app.models.limitation import ModelLimitation
+from app.models.model_overlay import ModelOverlay
 from app.models.irp import IRP, IRPReview, IRPCertification, mrsa_irp
 from app.models.mrsa_review_policy import MRSAReviewPolicy, MRSAReviewException
 from app.models.attestation import (
@@ -233,6 +234,8 @@ __all__ = [
     "ResidualRiskMapConfig",
     # Model Limitations
     "ModelLimitation",
+    # Model Overlays & Management Judgements
+    "ModelOverlay",
     # IRP (Independent Review Process) for MRSAs
     "IRP",
     "IRPReview",

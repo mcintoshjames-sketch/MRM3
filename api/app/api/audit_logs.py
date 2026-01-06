@@ -36,6 +36,7 @@ from app.models.model_feed_dependency import ModelFeedDependency
 from app.models.lob import LOBUnit
 from app.models.irp import IRP
 from app.models.limitation import ModelLimitation
+from app.models.model_overlay import ModelOverlay
 from app.models.risk_assessment import QualitativeRiskFactor, QualitativeFactorGuidance
 from app.models.scorecard import ScorecardSection, ScorecardCriterion, ScorecardConfigVersion
 from app.models.model_change_taxonomy import ModelChangeType
@@ -155,6 +156,7 @@ def _get_entity_config():
         "ModelDelegate": (ModelDelegate, "delegation_id", lambda e: f"Delegation {e.delegation_id}"),
         "ResidualRiskMapConfig": (ResidualRiskMapConfig, "config_id", lambda e: f"Config {e.config_id}"),
         "ModelException": (ModelException, "exception_id", lambda e: e.title or f"Exception {e.exception_id}"),
+        "ModelOverlay": (ModelOverlay, "overlay_id", lambda e: (e.description[:50] + "...") if e.description and len(e.description) > 50 else (e.description or f"Overlay {e.overlay_id}")),
     }
 
 

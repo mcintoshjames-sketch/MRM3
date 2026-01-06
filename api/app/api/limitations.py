@@ -44,6 +44,7 @@ def _get_limitation_with_relations(db: Session, limitation_id: int) -> ModelLimi
         joinedload(ModelLimitation.category),
         joinedload(ModelLimitation.created_by),
         joinedload(ModelLimitation.retired_by),
+        joinedload(ModelLimitation.related_overlays),
     ).filter(ModelLimitation.limitation_id == limitation_id).first()
     if not limitation:
         raise HTTPException(status_code=404, detail="Limitation not found")

@@ -30,11 +30,14 @@ This guide explains how to work with the Model Inventory in the Quantitative Met
    - [Recording a Limitation](#recording-a-limitation)
    - [Significance Levels](#significance-levels)
    - [Managing User Awareness](#managing-user-awareness)
-8. [Model Decommissioning](#model-decommissioning)
+8. [Model Overlays & Judgements](#model-overlays--judgements)
+   - [Recording an Overlay or Judgement](#recording-an-overlay-or-judgement)
+   - [Effectiveness and Retirement](#effectiveness-and-retirement)
+9. [Model Decommissioning](#model-decommissioning)
    - [Initiating Decommissioning](#initiating-decommissioning)
    - [Approval Workflow](#approval-workflow)
    - [Decommissioning Reasons](#decommissioning-reasons)
-9. [Exporting Data](#exporting-data)
+10. [Exporting Data](#exporting-data)
 
 ---
 
@@ -87,6 +90,7 @@ The Model Details page displays comprehensive information organized into tabs:
 - **Validations** - Related validation requests
 - **Relationships** - Hierarchy and dependencies
 - **Limitations** - Documented model limitations
+- **Overlays** - Underperformance overlays and management judgements
 - **Recommendations** - Validation recommendations for this model
 - **Exceptions** - Model exceptions and compensating controls
 - **Risk Assessment** - Risk evaluation factors and ratings
@@ -388,6 +392,33 @@ When a limitation is resolved:
 1. Click **Retire** on the limitation
 2. Document the resolution in the retirement notes
 3. The limitation remains in history but is marked as inactive
+
+---
+
+## Model Overlays & Judgements
+
+Model overlays and management judgements capture **underperformance-driven adjustments** applied to models. These records provide an audit-ready view of overlays that are **currently in effect**.
+
+### Recording an Overlay or Judgement
+
+To add an overlay:
+
+1. Navigate to the **Overlays** tab
+2. Click **Add Overlay** (Admin/Validator only)
+3. Complete the details:
+   - **Kind** - Overlay or Management Judgement
+   - **Underperformance-related** - Explicit flag for regulatory reporting
+   - **Description** - What adjustment is being applied
+   - **Rationale** - Why the overlay is needed
+   - **Effective From / To** - Date window for applicability
+   - **Region** - Optional; leave blank for global overlays
+4. (Optional) Link to monitoring cycles/results, recommendations, or limitations for traceability
+
+### Effectiveness and Retirement
+
+- An overlay is **in effect** when it is **not retired** and today falls within the effective date window.
+- **Retire** overlays when they are no longer needed; provide a retirement reason.
+- Core fields are immutable once recorded; if the judgement changes, retire the old overlay and create a new one.
 
 ---
 

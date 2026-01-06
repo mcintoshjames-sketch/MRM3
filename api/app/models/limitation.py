@@ -4,7 +4,7 @@ Limitations are discovered during validation and persist at the model level.
 They capture classification, impact assessment, and conclusions about mitigation.
 """
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 from sqlalchemy import (
     String, Integer, Text, Boolean, ForeignKey, DateTime,
     CheckConstraint
@@ -124,6 +124,9 @@ class ModelLimitation(Base):
     category = relationship("TaxonomyValue", foreign_keys=[category_id])
     created_by = relationship("User", foreign_keys=[created_by_id])
     retired_by = relationship("User", foreign_keys=[retired_by_id])
+    related_overlays: Mapped[List["ModelOverlay"]] = relationship(
+        "ModelOverlay", back_populates="related_limitation"
+    )
 
     __table_args__ = (
         CheckConstraint(

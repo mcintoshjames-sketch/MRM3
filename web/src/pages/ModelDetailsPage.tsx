@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, type ReactNode } from 'react';
 import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
 import api from '../api/client';
 import Layout from '../components/Layout';
@@ -16,6 +16,7 @@ import ModelRiskAssessmentTab from '../components/ModelRiskAssessmentTab';
 import ModelMonitoringTab from '../components/ModelMonitoringTab';
 import ModelLimitationsTab from '../components/ModelLimitationsTab';
 import ModelExceptionsTab from '../components/ModelExceptionsTab';
+import ModelOverlaysTab from '../components/ModelOverlaysTab';
 import OverdueCommentaryModal, { OverdueType } from '../components/OverdueCommentaryModal';
 import { useAuth } from '../contexts/AuthContext';
 import {
@@ -312,6 +313,139 @@ interface RecommendationListItem {
     created_at: string;
 }
 
+type TabId =
+    | 'details'
+    | 'risk-assessment'
+    | 'versions'
+    | 'validations'
+    | 'relationships'
+    | 'activity'
+    | 'recommendations'
+    | 'limitations'
+    | 'overlays'
+    | 'monitoring'
+    | 'decommissioning'
+    | 'exceptions';
+
+interface TabConfig {
+    id: TabId;
+    label: string;
+    renderLabel?: () => ReactNode;
+    badgeCount?: number;
+    badgeText?: string;
+    badgeClassName?: string;
+    hasWarning?: boolean;
+}
+
+interface TabDropdownProps {
+    tabs: TabConfig[];
+    activeTab: TabId;
+    onSelect: (tabId: TabId) => void;
+    hasAlert: boolean;
+}
+
+const tabButtonBaseClass = 'py-2 px-1 border-b-2 font-medium text-sm';
+const tabButtonActiveClass = 'border-blue-500 text-blue-600';
+const tabButtonInactiveClass = 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300';
+
+const renderTabLabel = (tab: TabConfig) => {
+    const label = tab.renderLabel ? tab.renderLabel() : tab.label;
+    const badgeText = tab.badgeText?.trim();
+    const badgeCount = tab.badgeCount ?? 0;
+    const showBadge = Boolean(badgeText) || badgeCount > 0;
+
+    if (!showBadge) {
+        return label;
+    }
+
+    const badgeValue = badgeText || badgeCount;
+    const badgeClassName = tab.badgeClassName || 'ml-1 px-1.5 py-0.5 text-xs bg-gray-100 text-gray-700 rounded-full';
+
+    return (
+        <span className="inline-flex items-center">
+            <span>{label}</span>
+            <span className={badgeClassName}>{badgeValue}</span>
+        </span>
+    );
+};
+
+const TabDropdown = ({ tabs, activeTab, onSelect, hasAlert }: TabDropdownProps) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const dropdownRef = useRef<HTMLDivElement | null>(null);
+    const isActive = tabs.some((tab) => tab.id === activeTab);
+
+    useEffect(() => {
+        if (!isOpen) return;
+
+        const handleClickOutside = (event: MouseEvent) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+                setIsOpen(false);
+            }
+        };
+
+        const handleEscape = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                setIsOpen(false);
+            }
+        };
+
+        document.addEventListener('mousedown', handleClickOutside);
+        document.addEventListener('keydown', handleEscape);
+
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+            document.removeEventListener('keydown', handleEscape);
+        };
+    }, [isOpen]);
+
+    useEffect(() => {
+        setIsOpen(false);
+    }, [activeTab]);
+
+    return (
+        <div className="relative" ref={dropdownRef}>
+            <button
+                type="button"
+                onClick={() => setIsOpen((prev) => !prev)}
+                aria-haspopup="menu"
+                aria-expanded={isOpen}
+                className={`${tabButtonBaseClass} ${isActive ? tabButtonActiveClass : tabButtonInactiveClass} relative flex items-center gap-1`}
+            >
+                <span>More</span>
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+                {hasAlert && (
+                    <span className="absolute -top-0.5 -right-1 h-2 w-2 rounded-full bg-red-500" />
+                )}
+            </button>
+            {isOpen && (
+                <div
+                    role="menu"
+                    className="absolute right-0 mt-2 w-64 rounded-lg border border-gray-200 bg-white shadow-lg z-20"
+                >
+                    {tabs.map((tab) => (
+                        <button
+                            key={tab.id}
+                            type="button"
+                            role="menuitem"
+                            onClick={() => {
+                                onSelect(tab.id);
+                                setIsOpen(false);
+                            }}
+                            className={`w-full px-4 py-2 text-left text-sm hover:bg-gray-50 ${
+                                activeTab === tab.id ? 'bg-blue-50 text-blue-700' : 'text-gray-700'
+                            }`}
+                        >
+                            {renderTabLabel(tab)}
+                        </button>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
 export default function ModelDetailsPage() {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
@@ -335,7 +469,7 @@ export default function ModelDetailsPage() {
     const [decommissioningRequests, setDecommissioningRequests] = useState<DecommissioningRequestListItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [editing, setEditing] = useState(false);
-    const [activeTab, setActiveTab] = useState<'details' | 'versions' | 'validations' | 'relationships' | 'activity' | 'recommendations' | 'limitations' | 'monitoring' | 'decommissioning' | 'risk-assessment' | 'exceptions'>('details');
+    const [activeTab, setActiveTab] = useState<TabId>('details');
     const [relationshipSubTab, setRelationshipSubTab] = useState<'hierarchy' | 'dependencies' | 'applications' | 'lineage'>('hierarchy');
     const [showDelegates, setShowDelegates] = useState(false);
     const [showSubmitChangeModal, setShowSubmitChangeModal] = useState(false);
@@ -1285,6 +1419,69 @@ export default function ModelDetailsPage() {
         );
     }
 
+    const activeValidationCount = validationRequests.filter(
+        (req) => req.current_status !== 'Approved' && req.current_status !== 'Cancelled'
+    ).length;
+    const openRecommendationCount = recommendations.filter(
+        (rec) => !['REC_CLOSED', 'REC_DROPPED'].includes(rec.current_status?.code || '')
+    ).length;
+    const decommissioningStatus = decommissioningRequests.length > 0 ? decommissioningRequests[0].status : undefined;
+    const hasDecommissioningAlert = Boolean(
+        decommissioningStatus && !['APPROVED', 'REJECTED', 'WITHDRAWN'].includes(decommissioningStatus)
+    );
+    const exceptionCount = model.open_exception_count || 0;
+
+    const tabs: TabConfig[] = [
+        { id: 'details', label: 'Model Details' },
+        { id: 'versions', label: 'Versions' },
+        { id: 'risk-assessment', label: 'Risk Assessment' },
+        {
+            id: 'validations',
+            label: 'Validations',
+            renderLabel: () => `Validations (${activeValidationCount} active)`,
+        },
+        { id: 'monitoring', label: 'Monitoring' },
+        {
+            id: 'recommendations',
+            label: 'Recommendations',
+            badgeCount: openRecommendationCount,
+            badgeClassName: 'ml-1 px-1.5 py-0.5 text-xs bg-orange-100 text-orange-800 rounded-full',
+        },
+        { id: 'limitations', label: 'Limitations' },
+        { id: 'relationships', label: 'Relationships' },
+        { id: 'activity', label: 'Activity' },
+        { id: 'overlays', label: 'Overlays' },
+        {
+            id: 'decommissioning',
+            label: 'Decommissioning',
+            badgeText: hasDecommissioningAlert ? decommissioningStatus : undefined,
+            badgeClassName: 'ml-1 px-1.5 py-0.5 text-xs bg-orange-100 text-orange-800 rounded-full',
+            hasWarning: hasDecommissioningAlert,
+        },
+        {
+            id: 'exceptions',
+            label: 'Exceptions',
+            badgeCount: exceptionCount,
+            badgeClassName: 'ml-2 px-2 py-0.5 text-xs font-medium rounded-full bg-red-100 text-red-800',
+        },
+    ];
+
+    const visibleTabs = tabs.slice(0, 7);
+    const overflowTabs = tabs.slice(7);
+    const overflowHasAlert = overflowTabs.some(
+        (tab) => (tab.badgeCount ?? 0) > 0 || tab.hasWarning
+    );
+    const handleAssignMonitoringManager = () => {
+        setEditing(true);
+        setTimeout(() => {
+            const field = document.getElementById('monitoring_manager_id') as HTMLSelectElement | null;
+            if (field) {
+                field.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                field.focus();
+            }
+        }, 0);
+    };
+
     return (
         <Layout>
             <div className="flex justify-between items-center mb-6">
@@ -1718,120 +1915,21 @@ export default function ModelDetailsPage() {
                     {/* Main tabs row */}
                     <div className="border-b border-gray-200">
                         <nav className="-mb-px flex space-x-8">
-                            <button
-                                onClick={() => setActiveTab('details')}
-                                className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'details'
-                                    ? 'border-blue-500 text-blue-600'
-                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                                    }`}
-                            >
-                                Model Details
-                            </button>
-                            <button
-                                onClick={() => setActiveTab('risk-assessment')}
-                                className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'risk-assessment'
-                                    ? 'border-blue-500 text-blue-600'
-                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                                    }`}
-                            >
-                                Risk Assessment
-                            </button>
-                            <button
-                                onClick={() => setActiveTab('versions')}
-                                className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'versions'
-                                    ? 'border-blue-500 text-blue-600'
-                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                                    }`}
-                            >
-                                Versions
-                            </button>
-                            <button
-                                onClick={() => setActiveTab('validations')}
-                                className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'validations'
-                                    ? 'border-blue-500 text-blue-600'
-                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                                    }`}
-                            >
-                                Validations ({validationRequests.filter(req => req.current_status !== 'Approved' && req.current_status !== 'Cancelled').length} active)
-                            </button>
-                            <button
-                                onClick={() => setActiveTab('relationships')}
-                                className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'relationships'
-                                    ? 'border-blue-500 text-blue-600'
-                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                                    }`}
-                            >
-                                Relationships
-                            </button>
-                            <button
-                                onClick={() => setActiveTab('activity')}
-                                className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'activity'
-                                    ? 'border-blue-500 text-blue-600'
-                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                                    }`}
-                            >
-                                Activity
-                            </button>
-                            <button
-                                onClick={() => setActiveTab('recommendations')}
-                                className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'recommendations'
-                                    ? 'border-blue-500 text-blue-600'
-                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                                    }`}
-                            >
-                                Recommendations
-                                {recommendations.filter(r => !['REC_CLOSED', 'REC_DROPPED'].includes(r.current_status?.code || '')).length > 0 && (
-                                    <span className="ml-1 px-1.5 py-0.5 text-xs bg-orange-100 text-orange-800 rounded-full">
-                                        {recommendations.filter(r => !['REC_CLOSED', 'REC_DROPPED'].includes(r.current_status?.code || '')).length}
-                                    </span>
-                                )}
-                            </button>
-                            <button
-                                onClick={() => setActiveTab('limitations')}
-                                className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'limitations'
-                                    ? 'border-blue-500 text-blue-600'
-                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                                    }`}
-                            >
-                                Limitations
-                            </button>
-                            <button
-                                onClick={() => setActiveTab('monitoring')}
-                                className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'monitoring'
-                                    ? 'border-blue-500 text-blue-600'
-                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                                    }`}
-                            >
-                                Monitoring
-                            </button>
-                            <button
-                                onClick={() => setActiveTab('decommissioning')}
-                                className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'decommissioning'
-                                    ? 'border-blue-500 text-blue-600'
-                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                                    }`}
-                            >
-                                Decommissioning
-                                {decommissioningRequests.length > 0 && decommissioningRequests[0].status !== 'APPROVED' && decommissioningRequests[0].status !== 'REJECTED' && decommissioningRequests[0].status !== 'WITHDRAWN' && (
-                                    <span className="ml-1 px-1.5 py-0.5 text-xs bg-orange-100 text-orange-800 rounded-full">
-                                        {decommissioningRequests[0].status}
-                                    </span>
-                                )}
-                            </button>
-                            <button
-                                onClick={() => setActiveTab('exceptions')}
-                                className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'exceptions'
-                                    ? 'border-blue-500 text-blue-600'
-                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                                    }`}
-                            >
-                                Exceptions
-                                {model.open_exception_count > 0 && (
-                                    <span className="ml-2 px-2 py-0.5 text-xs font-medium rounded-full bg-red-100 text-red-800">
-                                        {model.open_exception_count}
-                                    </span>
-                                )}
-                            </button>
+                            {visibleTabs.map((tab) => (
+                                <button
+                                    key={tab.id}
+                                    onClick={() => setActiveTab(tab.id)}
+                                    className={`${tabButtonBaseClass} ${activeTab === tab.id ? tabButtonActiveClass : tabButtonInactiveClass}`}
+                                >
+                                    {renderTabLabel(tab)}
+                                </button>
+                            ))}
+                            <TabDropdown
+                                tabs={overflowTabs}
+                                activeTab={activeTab}
+                                onSelect={setActiveTab}
+                                hasAlert={overflowHasAlert}
+                            />
                         </nav>
                     </div>
 
@@ -3865,12 +3963,17 @@ export default function ModelDetailsPage() {
                 <div className="bg-white p-6 rounded-lg shadow-md">
                     <ModelLimitationsTab modelId={model.model_id} />
                 </div>
+            ) : activeTab === 'overlays' ? (
+                <div className="bg-white p-6 rounded-lg shadow-md">
+                    <ModelOverlaysTab modelId={model.model_id} />
+                </div>
             ) : activeTab === 'monitoring' ? (
                 <div className="bg-white p-6 rounded-lg shadow-md">
                     <ModelMonitoringTab
                         modelId={model.model_id}
                         modelName={model.model_name}
                         monitoringManager={rolesWithLOB?.monitoring_manager}
+                        onAssignMonitoringManager={handleAssignMonitoringManager}
                     />
                 </div>
             ) : activeTab === 'decommissioning' ? (

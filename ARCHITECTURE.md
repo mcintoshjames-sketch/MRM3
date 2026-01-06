@@ -54,6 +54,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - `qualitative_factors.py`: Admin-configurable qualitative risk factor management (CRUD for factors and rating guidance with weighted scoring).
   - `scorecard.py`: Validation scorecard configuration (sections, criteria, weights), ratings per validation request, computed results, and configuration versioning with publish workflow.
   - `limitations.py`: Model limitations CRUD, retirement workflow, and critical limitations report with region filtering.
+  - `model_overlays.py`: Model overlays CRUD, evidence/link updates, retirement workflow, and underperformance overlays report.
   - `attestations.py`: Full attestation workflow - cycles (create/open/close), scheduling rules (frequency, date windows), coverage targets, model-level records with submit/review/reject flow, bulk attestation submission, evidence attachments, and question configuration.
   - `residual_risk_map.py`: Residual risk map configuration - admin-configurable matrix mapping (Inherent Risk Tier × Scorecard Outcome) → Residual Risk level.
   - `fry.py`: FR Y-14 regulatory reporting structure - reports, schedules, metric groups, and line items CRUD for regulatory compliance mapping.
@@ -84,6 +85,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - Risk Assessment: `risk_assessment.py` (QualitativeRiskFactor, QualitativeFactorGuidance, ModelRiskAssessment, QualitativeFactorAssessment) - qualitative/quantitative scoring with inherent risk matrix and tier derivation.
   - Scorecard: `scorecard.py` (ScorecardSection, ScorecardCriterion, ValidationScorecardRating, ValidationScorecardResult, ScorecardConfigVersion, ScorecardSectionSnapshot, ScorecardCriterionSnapshot) - validation scorecard with configuration versioning.
   - Model Limitations: `limitation.py` (ModelLimitation) - inherent model constraints with significance classification, conclusion tracking, and retirement workflow.
+  - Model Overlays: `model_overlay.py` (ModelOverlay) - underperformance overlays and management judgements with effectiveness window, traceability links, and retirement workflow.
   - Compliance/analytics: `audit_log.py`, `export_view.py`, `saved_query.py`, `version_deployment_task.py`, `validation_grouping.py`.
   - IRP (Independent Review Process): `irp.py` (IRP, IRPReview, IRPCertification, mrsa_irp association table for many-to-many MRSA coverage).
   - MRSA review scheduling: `mrsa_review_policy.py` (MRSAReviewPolicy, MRSAReviewException) for risk-based review frequencies and approved due date overrides.
@@ -109,7 +111,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - **Recommendations**: `RecommendationsPage.tsx`, `RecommendationDetailPage.tsx`
   - **Decommissioning**: `DecommissioningRequestPage.tsx`, `PendingDecommissioningPage.tsx`
   - **Approvals**: `ApproverRolesPage.tsx`, `ConditionalApprovalRulesPage.tsx`
-  - **Reports**: `ReportsPage.tsx`, `RegionalComplianceReportPage.tsx`, `DeviationTrendsReportPage.tsx`, `OverdueRevalidationReportPage.tsx`, `CriticalLimitationsReportPage.tsx`, `NameChangesReportPage.tsx`, `KPIReportPage.tsx`, `ExceptionsReportPage.tsx`, `MyPortfolioReportPage.tsx`
+  - **Reports**: `ReportsPage.tsx`, `RegionalComplianceReportPage.tsx`, `DeviationTrendsReportPage.tsx`, `OverdueRevalidationReportPage.tsx`, `CriticalLimitationsReportPage.tsx`, `ModelOverlaysReportPage.tsx`, `NameChangesReportPage.tsx`, `KPIReportPage.tsx`, `ExceptionsReportPage.tsx`, `MyPortfolioReportPage.tsx`
   - **IRP Management**: `IRPsPage.tsx`, `IRPDetailPage.tsx`, `MyMRSAReviewsPage.tsx`
   - **Other**: `ModelChangeRecordPage.tsx`, `BatchDelegatesPage.tsx`, `RegionsPage.tsx`, `TeamsPage.tsx`, `MyDeploymentTasksPage.tsx`, `MyPendingSubmissionsPage.tsx`, `AnalyticsPage.tsx`, `ReferenceDataPage.tsx`, `FryConfigPage.tsx`
   - **DecommissioningRequestPage**: Includes downstream dependency warning (fetches outbound dependencies from model relationships API and displays amber warning banner listing consumer models before submission).
@@ -151,7 +153,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
 4. Responses serialized via Pydantic schemas; frontend renders tables/cards with sorting/export.
 
 ## Reporting & Analytics
-- Reports hub (`/reports`) lists available reports; detail pages for Regional Compliance, Deviation Trends, Overdue Revalidation, Name Changes, Critical Limitations, KPI Report, Exceptions, and My Portfolio (CSV export, refresh).
+- Reports hub (`/reports`) lists available reports; detail pages for Regional Compliance, Deviation Trends, Overdue Revalidation, Name Changes, Critical Limitations, Model Overlays, KPI Report, Exceptions, and My Portfolio (CSV export, refresh).
 - Backend report endpoints:
   - `GET /regional-compliance-report/` - Regional deployment and compliance
   - `GET /validation-workflow/compliance-report/deviation-trends` - Deviation trends
@@ -529,6 +531,25 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - **ModelLimitationsTab**: "Limitations" tab on Model Details page with table view, filters (show retired, significance), and CRUD modals
   - **CriticalLimitationsReportPage**: Report page under `/reports/critical-limitations` with summary cards, category breakdown, and CSV export
 - **Testing**: See `api/tests/test_limitations.py` for coverage of CRUD, authorization, retirement workflow, and critical limitations report.
+
+## Model Overlays & Management Judgements
+- **Purpose**: Record overlays and significant management judgements applied to models due to underperformance, with a defensible audit trail and a regulator-facing report of overlays currently in effect.
+- **Data Model**:
+  - **ModelOverlay**: overlay_id, model_id, overlay_kind (OVERLAY or MANAGEMENT_JUDGEMENT), is_underperformance_related, description, rationale, effective_from/effective_to, region_id (optional), trigger_monitoring_result_id/trigger_monitoring_cycle_id (optional), related_recommendation_id/related_limitation_id (optional), evidence_description (optional), retirement fields, created_by_id, created_at, updated_at.
+  - **Constraints**: overlay_kind enum check; effective window check (effective_to >= effective_from); retirement fields must be consistent (all set or all null).
+- **Immutability**: Core fields (kind, rationale, description, underperformance flag, effective dates, region) are immutable after creation; edits are limited to evidence and link fields. Changes require retire + recreate.
+- **Authorization**: View/list requires model access (RLS). Create/update/retire restricted to Admin and Validator roles.
+- **API Endpoints**:
+  - `GET /models/{id}/overlays` - List overlays for a model (filters: include_retired, overlay_kind, region_id, is_underperformance_related)
+  - `POST /models/{id}/overlays` - Create overlay (Admin/Validator only)
+  - `GET /overlays/{id}` - Get overlay details with relationships
+  - `PATCH /overlays/{id}` - Update evidence/link fields only (Admin/Validator only)
+  - `POST /overlays/{id}/retire` - Retire overlay with reason
+  - `GET /reports/model-overlays` - Underperformance overlays report (filters: region_id, team_id, risk_tier, overlay_kind; default Active models, optional include_pending_decommission)
+- **Frontend**:
+  - **ModelOverlaysTab**: "Overlays" tab on Model Details page with in-effect defaults, include-retired toggle, CSV export, and CRUD modals
+  - **ModelOverlaysReportPage**: Report page under `/reports/model-overlays` with filters, summary cards, and CSV export
+- **Testing**: See `api/tests/test_model_overlays.py` for overlay CRUD, authorization, retirement workflow, and report coverage.
 
 ## Validation Scorecard System
 - **Purpose**: Standardized framework for validators to assess and rate validation criteria across multiple sections, producing computed section and overall scores.

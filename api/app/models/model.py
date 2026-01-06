@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from app.models.model_hierarchy import ModelHierarchy
     from app.models.model_name_history import ModelNameHistory
     from app.models.model_pending_edit import ModelPendingEdit
+    from app.models.model_overlay import ModelOverlay
     from app.models.model_region import ModelRegion
     from app.models.model_submission_comment import ModelSubmissionComment
     from app.models.model_type_taxonomy import ModelType
@@ -299,4 +300,10 @@ class Model(Base):
     limitations: Mapped[List["ModelLimitation"]] = relationship(
         "ModelLimitation", back_populates="model", cascade="all, delete-orphan",
         order_by="desc(ModelLimitation.created_at)"
+    )
+
+    # Model overlays & management judgements
+    overlays: Mapped[List["ModelOverlay"]] = relationship(
+        "ModelOverlay", back_populates="model", cascade="all, delete-orphan",
+        order_by="desc(ModelOverlay.created_at)"
     )

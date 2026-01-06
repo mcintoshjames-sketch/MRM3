@@ -1,6 +1,6 @@
 """Model Limitations schemas."""
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from datetime import datetime
+from datetime import datetime, date
 from typing import Optional, List, Any, Literal
 from app.schemas.taxonomy import TaxonomyValueResponse
 
@@ -71,6 +71,18 @@ class RegionSummary(BaseModel):
     region_id: int
     code: str
     name: str
+
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
+
+
+class OverlaySummary(BaseModel):
+    """Minimal overlay info for limitation traceability."""
+    overlay_id: int
+    overlay_kind: str
+    description: str
+    effective_from: date
+    effective_to: Optional[date] = None
+    is_retired: bool
 
     model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
@@ -147,6 +159,7 @@ class LimitationResponse(BaseModel):
     retirement_date: Optional[datetime] = None
     retirement_reason: Optional[str] = None
     retired_by: Optional[UserSummary] = None
+    related_overlays: List[OverlaySummary] = []
     created_by: UserSummary
     created_at: datetime
     updated_at: datetime

@@ -1031,6 +1031,13 @@ const LimitationDetailModal: React.FC<LimitationDetailModalProps> = ({
     onClose,
 }) => {
     const categoryLabel = limitation.category?.label || categories.find(c => c.value_id === limitation.category_id)?.label || 'Unknown';
+    const linkedOverlays = limitation.related_overlays || [];
+    const hasTraceability = Boolean(
+        limitation.validation_request_id ||
+        limitation.model_version_id ||
+        limitation.recommendation_id ||
+        linkedOverlays.length > 0
+    );
 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -1095,7 +1102,7 @@ const LimitationDetailModal: React.FC<LimitationDetailModalProps> = ({
                     )}
 
                     {/* Traceability */}
-                    {(limitation.validation_request_id || limitation.model_version_id || limitation.recommendation_id) && (
+                    {hasTraceability && (
                         <div className="border-t pt-4">
                             <h4 className="text-sm font-medium text-gray-500 mb-2">Traceability</h4>
                             <div className="grid grid-cols-3 gap-4 text-sm">
@@ -1120,6 +1127,26 @@ const LimitationDetailModal: React.FC<LimitationDetailModalProps> = ({
                                         >
                                             {limitation.recommendation.title}
                                         </Link>
+                                    </div>
+                                )}
+                                {linkedOverlays.length > 0 && (
+                                    <div className="col-span-3">
+                                        <span className="text-gray-500">
+                                            Linked Overlay{linkedOverlays.length > 1 ? 's' : ''}:
+                                        </span>
+                                        <div className="mt-2 space-y-2">
+                                            {linkedOverlays.map((overlay) => (
+                                                <div key={overlay.overlay_id} className="text-gray-900">
+                                                    <div className="font-medium">
+                                                        {overlay.overlay_kind === 'OVERLAY' ? 'Overlay' : 'Management Judgement'} #{overlay.overlay_id}
+                                                        {overlay.is_retired && (
+                                                            <span className="ml-2 text-xs text-gray-500">(Retired)</span>
+                                                        )}
+                                                    </div>
+                                                    <div className="text-xs text-gray-500">{overlay.description}</div>
+                                                </div>
+                                            ))}
+                                        </div>
                                     </div>
                                 )}
                             </div>

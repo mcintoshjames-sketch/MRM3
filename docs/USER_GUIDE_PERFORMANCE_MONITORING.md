@@ -11,6 +11,7 @@
 7. [Understanding Metrics and Thresholds](#7-understanding-metrics-and-thresholds)
    - [Creating Recommendations from Breaches](#creating-recommendations-from-breaches)
    - [Exception Automation (Type 1)](#exception-automation-type-1-unmitigated-performance)
+   - [Recording Overlays & Management Judgements](#recording-overlays--management-judgements)
 8. [Approvals Process](#8-approvals-process)
 9. [Plan Versioning](#9-plan-versioning)
 10. [Role-Based Workflows](#10-role-based-workflows)
@@ -629,6 +630,24 @@ Once exceptions are created:
   - Source metric and result
   - Detection date
   - Status history
+
+### Recording Overlays & Management Judgements
+
+When monitoring confirms sustained underperformance and management applies an overlay or judgement, capture it in the Model Inventory for regulatory reporting.
+
+**When to Record**:
+- After the monitoring cycle is approved (or when underperformance is confirmed)
+- When an overlay/judgement changes model behavior or outputs in production
+
+**How to Record**:
+1. Navigate to **Model Details → Overlays**
+2. Click **Add Overlay**
+3. Fill out the required fields (kind, description, rationale, effective dates, underperformance flag)
+4. Link the overlay to the **monitoring cycle/result** and any **recommendation** or **limitation** for traceability
+
+**Why It Matters**:
+- The **Model Overlays Report** lists overlays currently in effect and underperformance-related
+- Retire overlays when no longer needed to keep reporting accurate
 
 ---
 

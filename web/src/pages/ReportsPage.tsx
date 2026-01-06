@@ -56,6 +56,14 @@ const adminReports: Report[] = [
         category: 'Risk'
     },
     {
+        id: 'model-overlays',
+        name: 'Model Overlays & Judgements Report',
+        description: 'Current underperformance-related overlays and management judgements in effect for active models. Filter by region, team, risk tier, and overlay kind.',
+        path: '/reports/model-overlays',
+        icon: '🧩',
+        category: 'Risk'
+    },
+    {
         id: 'kpi',
         name: 'KPI Report',
         description: 'Key Performance Indicators for model risk management including validation compliance, monitoring status, recommendations, and risk indicators. Shows decomposition of percentage metrics.',

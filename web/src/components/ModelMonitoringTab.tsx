@@ -43,9 +43,15 @@ interface ModelMonitoringTabProps {
     modelId: number;
     modelName: string;
     monitoringManager?: MonitoringManagerWithLOB | null;
+    onAssignMonitoringManager?: () => void;
 }
 
-const ModelMonitoringTab: React.FC<ModelMonitoringTabProps> = ({ modelId, modelName, monitoringManager }) => {
+const ModelMonitoringTab: React.FC<ModelMonitoringTabProps> = ({
+    modelId,
+    modelName,
+    monitoringManager,
+    onAssignMonitoringManager,
+}) => {
     const { user } = useAuth();
     const [plans, setPlans] = useState<MonitoringPlan[]>([]);
     const [allPlans, setAllPlans] = useState<AllPlan[]>([]);
@@ -268,6 +274,16 @@ const ModelMonitoringTab: React.FC<ModelMonitoringTabProps> = ({ modelId, modelN
                             <p className="text-sm text-gray-400 italic">No monitoring manager assigned</p>
                         )}
                     </div>
+                    {!monitoringManager && onAssignMonitoringManager && (
+                        <div className="flex-shrink-0">
+                            <button
+                                onClick={onAssignMonitoringManager}
+                                className="px-3 py-1.5 text-xs font-medium text-purple-700 bg-white border border-purple-200 rounded hover:bg-purple-50"
+                            >
+                                Assign Monitoring Manager
+                            </button>
+                        </div>
+                    )}
                 </div>
             </div>
 
