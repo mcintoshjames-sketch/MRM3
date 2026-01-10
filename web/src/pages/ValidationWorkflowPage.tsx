@@ -19,6 +19,8 @@ interface ValidationRequest {
     validation_type: string;
     priority: string;
     target_completion_date: string;
+    current_forecast_date?: string | null;
+    forecasted_approval_date?: string | null;
     external_project_id?: string | null;
     current_status: string;
     days_in_status: number;
@@ -137,6 +139,7 @@ export default function ValidationWorkflowPage() {
         { key: 'current_status', label: 'Status', default: true },
         { key: 'days_in_status', label: 'Days in Status', default: true },
         { key: 'target_completion_date', label: 'Target Date', default: true },
+        { key: 'forecasted_approval_date', label: 'Forecasted Approval Date', default: false },
         { key: 'updated_at', label: 'Last Modified', default: true },
         { key: 'primary_validator', label: 'Validator', default: true },
         { key: 'requestor_name', label: 'Requestor', default: false },
@@ -767,6 +770,12 @@ export default function ValidationWorkflowPage() {
             sortKey: 'target_completion_date',
             cell: (req) => req.target_completion_date,
             csvValue: (req) => req.target_completion_date
+        },
+        forecasted_approval_date: {
+            header: 'Forecasted Approval Date',
+            sortKey: 'forecasted_approval_date',
+            cell: (req) => req.forecasted_approval_date ? req.forecasted_approval_date.split('T')[0] : '-',
+            csvValue: (req) => req.forecasted_approval_date ? req.forecasted_approval_date.split('T')[0] : ''
         },
         external_project_id: {
             header: 'External Project ID',

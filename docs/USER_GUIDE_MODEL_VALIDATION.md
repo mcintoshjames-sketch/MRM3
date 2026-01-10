@@ -178,6 +178,32 @@ For periodic revalidations, the model owner must submit documentation. When rece
 3. Optionally record submission metadata (document version, external IDs)
 4. The system calculates SLA timelines based on this date
 
+**Editing Project Details**:
+Use **Edit Project Details** on the validation detail page to update:
+- External Project ID
+- Priority
+- Target Completion Date
+- Trigger Reason
+
+You can also set a **Latest Target Date Override** (with a reason):
+- If **submission has not been received**, this is a target **submission** date; the system adds lead time to compute the latest completion target.
+- If **submission has been received**, this is the validator’s target **completion** date.
+- This override can be set even when the request is not overdue and appears as **Latest Target Date** in the Project Overview.
+
+> **Availability**: Edits are allowed until the request reaches **Pending Approval** or **Approved**.
+
+**Managing Models on a Request (Intake/Planning)**:
+If you need to add or remove models after creation:
+- Open the validation detail page and click **Manage Models**
+- Add/remove models and link draft versions for **Change** validations
+- The system rechecks lead time, regional scope, approvals, and validation plan expectations
+- **Validator independence** is revalidated against the updated model list
+
+**Allow unassigning conflicting validators if needed**:
+- If any current validators become conflicted (owner/developer of a newly added model), the update is blocked by default
+- Checking this box lets the change proceed and **automatically unassigns** the conflicting validators
+- The unassignment is recorded in the audit log
+
 ---
 
 ### Stage 3: In Progress

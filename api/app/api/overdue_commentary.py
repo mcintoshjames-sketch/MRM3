@@ -7,7 +7,7 @@ from sqlalchemy import desc
 
 from app.core.database import get_db
 from app.core.deps import get_current_user
-from app.core.roles import is_admin
+from app.core.roles import is_admin, is_validator
 from app.models import (
     User, Model, ValidationRequest, ValidationRequestModelVersion,
     ValidationAssignment, OverdueRevalidationComment
@@ -105,12 +105,12 @@ def can_user_create_commentary(
     Check if a user is authorized to create/update overdue commentary.
 
     Authorization rules:
-    - Admin: Can ALWAYS submit on anyone's behalf (both PRE_SUBMISSION and VALIDATION_IN_PROGRESS)
+    - Admin/Validator: Can submit on anyone's behalf (both PRE_SUBMISSION and VALIDATION_IN_PROGRESS)
     - PRE_SUBMISSION: Model owner, developer, or delegate
     - VALIDATION_IN_PROGRESS: Assigned validator
     """
-    # Admins can always submit on anyone's behalf
-    if is_admin(user):
+    # Admins and validators can always submit on anyone's behalf
+    if is_admin(user) or is_validator(user):
         return True
 
     # Get first model from validation request

@@ -152,6 +152,20 @@ const getPrimaryModel = (models?: ModelSummary[]): ModelSummary | undefined => {
     return models.reduce((min, model) => (model.model_id < min.model_id ? model : min), models[0]);
 };
 
+const normalizeDateString = (value?: string | null): string => (value ? value.split('T')[0] : '');
+
+const formatDateInputValue = (date: Date): string => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
+
+const parseDateInputValue = (value: string): Date => {
+    const [year, month, day] = value.split('-').map(Number);
+    return new Date(year, month - 1, day);
+};
+
 interface PriorValidationSummary {
     request_id: number;
     validation_type: TaxonomyValue;
@@ -197,6 +211,7 @@ export default function ValidationRequestDetailPage() {
     const [modelChangeNotices, setModelChangeNotices] = useState<string[]>([]);
     const [activeTab, setActiveTab] = useState<TabType>('overview');
     const [actionLoading, setActionLoading] = useState(false);
+    const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
     // Ref to validation plan form for checking unsaved changes
     const validationPlanRef = useRef<ValidationPlanFormHandle>(null);
@@ -208,6 +223,17 @@ export default function ValidationRequestDetailPage() {
     const [showApprovalModal, setShowApprovalModal] = useState(false);
     const [showSubmissionModal, setShowSubmissionModal] = useState(false);
     const [showManageModelsModal, setShowManageModelsModal] = useState(false);
+    const [showEditRequestModal, setShowEditRequestModal] = useState(false);
+    const [editRequestSaving, setEditRequestSaving] = useState(false);
+    const [editRequestError, setEditRequestError] = useState<string | null>(null);
+    const [editRequestData, setEditRequestData] = useState({
+        external_project_id: '',
+        priority_id: 0,
+        target_completion_date: '',
+        trigger_reason: '',
+        override_target_date: '',
+        override_reason: ''
+    });
     // Hold/Cancel/Resume modals
     const [showHoldModal, setShowHoldModal] = useState(false);
     const [showCancelModal, setShowCancelModal] = useState(false);
@@ -224,6 +250,7 @@ export default function ValidationRequestDetailPage() {
 
     const [statusOptions, setStatusOptions] = useState<TaxonomyValue[]>([]);
     const [ratingOptions, setRatingOptions] = useState<TaxonomyValue[]>([]);
+    const [validationPriorities, setValidationPriorities] = useState<TaxonomyValue[]>([]);
     const [users, setUsers] = useState<UserSummary[]>([]);
 
     // Recommendations state
@@ -394,6 +421,130 @@ export default function ValidationRequestDetailPage() {
         }
     };
 
+    const openEditRequestModal = () => {
+        if (!request) return;
+        setEditRequestError(null);
+
+        setEditRequestData({
+            external_project_id: request.external_project_id || '',
+            priority_id: request.priority?.value_id || 0,
+            target_completion_date: normalizeDateString(request.target_completion_date),
+            trigger_reason: request.trigger_reason || '',
+            override_target_date: '',
+            override_reason: ''
+        });
+        setShowEditRequestModal(true);
+    };
+
+    const handleSaveRequestDetails = async () => {
+        if (!request) return;
+        setEditRequestSaving(true);
+        setEditRequestError(null);
+
+        const updates: Record<string, unknown> = {};
+        const externalProjectId = editRequestData.external_project_id.trim();
+        const currentExternalProjectId = request.external_project_id || '';
+        if (externalProjectId !== currentExternalProjectId) {
+            updates.external_project_id = externalProjectId || null;
+        }
+
+        const currentTargetDate = normalizeDateString(request.target_completion_date);
+        if (!editRequestData.target_completion_date) {
+            setEditRequestError('Target completion date is required.');
+            setEditRequestSaving(false);
+            return;
+        }
+        if (editRequestData.target_completion_date !== currentTargetDate) {
+            updates.target_completion_date = editRequestData.target_completion_date;
+        }
+
+        if (!editRequestData.priority_id) {
+            setEditRequestError('Priority is required.');
+            setEditRequestSaving(false);
+            return;
+        }
+        if (editRequestData.priority_id !== request.priority?.value_id) {
+            updates.priority_id = editRequestData.priority_id;
+        }
+
+        const triggerReason = editRequestData.trigger_reason.trim();
+        const currentTriggerReason = request.trigger_reason || '';
+        if (triggerReason !== currentTriggerReason) {
+            updates.trigger_reason = triggerReason || null;
+        }
+
+        const overrideDate = editRequestData.override_target_date.trim();
+        const overrideReason = editRequestData.override_reason.trim();
+        if (overrideReason && !overrideDate) {
+            setEditRequestError('New target date is required when providing a schedule justification.');
+            setEditRequestSaving(false);
+            return;
+        }
+        if (overrideDate) {
+            if (overrideReason.length < 10) {
+                setEditRequestError('Schedule justification must be at least 10 characters.');
+                setEditRequestSaving(false);
+                return;
+            }
+            const selectedDate = parseDateInputValue(overrideDate);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            if (selectedDate <= today) {
+                setEditRequestError('New target date must be in the future.');
+                setEditRequestSaving(false);
+                return;
+            }
+        }
+
+        if (Object.keys(updates).length === 0 && !overrideDate) {
+            setShowEditRequestModal(false);
+            setEditRequestSaving(false);
+            return;
+        }
+
+        try {
+            if (Object.keys(updates).length > 0) {
+                await api.patch(`/validation-workflow/requests/${request.request_id}`, updates);
+            }
+
+            if (overrideDate) {
+                const overdueType: OverdueType = request.submission_received_date
+                    ? 'VALIDATION_IN_PROGRESS'
+                    : 'PRE_SUBMISSION';
+                await overdueCommentaryApi.createForRequest(request.request_id, {
+                    overdue_type: overdueType,
+                    reason_comment: overrideReason,
+                    target_date: overrideDate
+                });
+
+                // Toast Logic
+                let toastMessage = 'Project details updated.';
+                if (overrideDate) {
+                    if (request.submission_received_date) {
+                        toastMessage = `Schedule updated. New forecasted completion: ${overrideDate}`;
+                    } else {
+                        const calculatedDate = parseDateInputValue(overrideDate);
+                        const leadTime = request.applicable_lead_time_days ?? 90;
+                        calculatedDate.setDate(calculatedDate.getDate() + leadTime);
+                        const outputDate = formatDateInputValue(calculatedDate);
+                        toastMessage = `Schedule updated. Anticipated Submission: ${overrideDate} → New Completion Target: ${outputDate}`;
+                    }
+                }
+                setToast({ message: toastMessage, type: 'success' });
+            } else {
+                setToast({ message: 'Project details updated successfully.', type: 'success' });
+            }
+
+            await fetchData();
+            await handleCommentarySuccess();
+            setShowEditRequestModal(false);
+        } catch (err: any) {
+            setEditRequestError(err.response?.data?.detail || 'Failed to update project details.');
+        } finally {
+            setEditRequestSaving(false);
+        }
+    };
+
     // Check if this validation request is overdue
     const isOverdueValidation = () => {
         if (!request) return false;
@@ -459,9 +610,11 @@ export default function ValidationRequestDetailPage() {
 
             const statusTax = taxonomies.find((t: any) => t.name === 'Validation Request Status');
             const ratingTax = taxonomies.find((t: any) => t.name === 'Overall Rating');
+            const priorityTax = taxonomies.find((t: any) => t.name === 'Validation Priority');
 
             if (statusTax) setStatusOptions(statusTax.values || []);
             if (ratingTax) setRatingOptions(ratingTax.values || []);
+            if (priorityTax) setValidationPriorities(priorityTax.values || []);
 
             // Fetch recommendation taxonomies for create modal
             const recPriorityTax = taxonomies.find((t: any) => t.name === 'Recommendation Priority');
@@ -1274,6 +1427,11 @@ export default function ValidationRequestDetailPage() {
     };
 
     const canEditRequest = canManageValidationsFlag;
+    const canEditRequestDetails = Boolean(
+        canEditRequest &&
+        request &&
+        !['PENDING_APPROVAL', 'APPROVED'].includes(request.current_status.code)
+    );
     const canEditModels = (
         canManageValidationsFlag &&
         (request?.current_status?.code === 'INTAKE' || request?.current_status?.code === 'PLANNING')
@@ -1282,6 +1440,32 @@ export default function ValidationRequestDetailPage() {
     const isPrimaryValidator = request && user && request.assignments.some(
         a => a.is_primary && a.validator.user_id === user.user_id
     );
+    const overrideMinDate = (() => {
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        return formatDateInputValue(tomorrow);
+    })();
+    const currentForecastDate = normalizeDateString(
+        overdueCommentary?.computed_completion_date || request?.target_completion_date
+    );
+    const currentForecastSource = overdueCommentary?.current_comment
+        ? `Override by ${overdueCommentary.current_comment.created_by_user.full_name}`
+        : 'Base Target Date';
+    const currentForecastText = currentForecastDate
+        ? `${currentForecastDate} (${currentForecastSource})`
+        : 'Not available';
+    const forecastedApprovalDate = (() => {
+        if (!currentForecastDate) {
+            return null;
+        }
+        const approvalDays = workflowSLA?.approval_days;
+        if (approvalDays === null || approvalDays === undefined) {
+            return null;
+        }
+        const projected = parseDateInputValue(currentForecastDate);
+        projected.setDate(projected.getDate() + approvalDays);
+        return formatDateInputValue(projected);
+    })();
 
     // Helper functions for workflow timing
     const getTimeInCurrentStage = () => {
@@ -1397,6 +1581,14 @@ export default function ValidationRequestDetailPage() {
                     </div>
                 </div>
                 <div className="flex gap-2">
+                    {canEditRequestDetails && (
+                        <button
+                            onClick={openEditRequestModal}
+                            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+                        >
+                            Edit Project Details
+                        </button>
+                    )}
                     {canEditModels && (
                         <button
                             onClick={() => setShowManageModelsModal(true)}
@@ -1805,11 +1997,10 @@ export default function ValidationRequestDetailPage() {
                                     </div>
                                     <div>
                                         <span className="text-gray-500">Rating:</span>{' '}
-                                        <span className={`font-medium ${
-                                            priorValidation.outcome?.overall_rating?.code === 'FIT_FOR_PURPOSE' ? 'text-green-700' :
-                                            priorValidation.outcome?.overall_rating?.code === 'NOT_FIT_FOR_PURPOSE' ? 'text-red-700' :
-                                            'text-gray-500'
-                                        }`}>
+                                        <span className={`font-medium ${priorValidation.outcome?.overall_rating?.code === 'FIT_FOR_PURPOSE' ? 'text-green-700' :
+                                                priorValidation.outcome?.overall_rating?.code === 'NOT_FIT_FOR_PURPOSE' ? 'text-red-700' :
+                                                    'text-gray-500'
+                                            }`}>
                                             {priorValidation.outcome?.overall_rating?.label || 'Not recorded'}
                                         </span>
                                     </div>
@@ -1906,6 +2097,22 @@ export default function ValidationRequestDetailPage() {
                                         </span>
                                     </h4>
                                     <p className="text-lg text-amber-600 font-medium">{overdueCommentary.computed_completion_date}</p>
+                                </div>
+                            )}
+                            {forecastedApprovalDate && (
+                                <div>
+                                    <h4 className="text-sm font-medium text-gray-500 mb-1 flex items-center gap-1">
+                                        Forecasted Approval Date
+                                        <span
+                                            className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-gray-300 text-white text-xs cursor-help"
+                                            title={`Current forecast + approval SLA (${workflowSLA?.approval_days ?? 0} days)`}
+                                        >
+                                            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                                                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0118 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                                            </svg>
+                                        </span>
+                                    </h4>
+                                    <p className="text-lg text-blue-700 font-medium">{forecastedApprovalDate}</p>
                                 </div>
                             )}
                             <div>
@@ -2034,8 +2241,7 @@ export default function ValidationRequestDetailPage() {
                                     return (
                                         <div key={status} className="flex items-center">
                                             <div className={`flex flex-col items-center ${index > 0 ? 'ml-4' : ''}`}>
-                                                <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold ${
-                                                    isOverdue
+                                                <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold ${isOverdue
                                                         ? 'bg-red-600 text-white ring-2 ring-red-300'
                                                         : isCurrent
                                                             ? 'bg-blue-600 text-white'
@@ -2045,9 +2251,8 @@ export default function ValidationRequestDetailPage() {
                                                     }`}>
                                                     {isCompleted && !isCurrent ? '✓' : index + 1}
                                                 </div>
-                                                <span className={`mt-2 text-xs text-center max-w-[90px] ${
-                                                    isCurrent ? 'font-bold text-blue-600' : 'text-gray-500'
-                                                }`}>
+                                                <span className={`mt-2 text-xs text-center max-w-[90px] ${isCurrent ? 'font-bold text-blue-600' : 'text-gray-500'
+                                                    }`}>
                                                     {status}
                                                 </span>
 
@@ -2063,9 +2268,8 @@ export default function ValidationRequestDetailPage() {
                                                             </div>
                                                         )}
                                                         {stageStatus.daysRemaining !== null && (
-                                                            <div className={`text-xs font-semibold mt-0.5 ${
-                                                                isOverdue ? 'text-red-600' : 'text-green-600'
-                                                            }`}>
+                                                            <div className={`text-xs font-semibold mt-0.5 ${isOverdue ? 'text-red-600' : 'text-green-600'
+                                                                }`}>
                                                                 {isOverdue
                                                                     ? `${Math.abs(stageStatus.daysRemaining!)} ${Math.abs(stageStatus.daysRemaining!) === 1 ? 'day' : 'days'} overdue`
                                                                     : `${stageStatus.daysRemaining} ${stageStatus.daysRemaining === 1 ? 'day' : 'days'} remaining`
@@ -2085,8 +2289,7 @@ export default function ValidationRequestDetailPage() {
                                                 )}
                                             </div>
                                             {index < 5 && (
-                                                <div className={`w-12 h-1 ml-4 mt-5 ${
-                                                    isCompleted && !isCurrent ? 'bg-green-600' : 'bg-gray-200'
+                                                <div className={`w-12 h-1 ml-4 mt-5 ${isCompleted && !isCurrent ? 'bg-green-600' : 'bg-gray-200'
                                                     }`} />
                                             )}
                                         </div>
@@ -2435,20 +2638,18 @@ export default function ValidationRequestDetailPage() {
                                                         {rec.model?.model_name || '-'}
                                                     </td>
                                                     <td className="px-4 py-3 text-sm">
-                                                        <span className={`px-2 py-1 rounded text-xs font-medium ${
-                                                            rec.priority?.code === 'HIGH' ? 'bg-red-100 text-red-800' :
-                                                            rec.priority?.code === 'MEDIUM' ? 'bg-yellow-100 text-yellow-800' :
-                                                            'bg-green-100 text-green-800'
-                                                        }`}>
+                                                        <span className={`px-2 py-1 rounded text-xs font-medium ${rec.priority?.code === 'HIGH' ? 'bg-red-100 text-red-800' :
+                                                                rec.priority?.code === 'MEDIUM' ? 'bg-yellow-100 text-yellow-800' :
+                                                                    'bg-green-100 text-green-800'
+                                                            }`}>
                                                             {rec.priority?.label || '-'}
                                                         </span>
                                                     </td>
                                                     <td className="px-4 py-3 text-sm">
-                                                        <span className={`px-2 py-1 rounded text-xs font-medium ${
-                                                            rec.current_status?.code === 'CLOSED' ? 'bg-green-100 text-green-800' :
-                                                            rec.current_status?.code === 'DRAFT' ? 'bg-gray-100 text-gray-800' :
-                                                            'bg-blue-100 text-blue-800'
-                                                        }`}>
+                                                        <span className={`px-2 py-1 rounded text-xs font-medium ${rec.current_status?.code === 'CLOSED' ? 'bg-green-100 text-green-800' :
+                                                                rec.current_status?.code === 'DRAFT' ? 'bg-gray-100 text-gray-800' :
+                                                                    'bg-blue-100 text-blue-800'
+                                                            }`}>
                                                             {rec.current_status?.label || '-'}
                                                         </span>
                                                     </td>
@@ -2529,11 +2730,10 @@ export default function ValidationRequestDetailPage() {
                                                     #{lim.limitation_id}
                                                 </td>
                                                 <td className="px-4 py-3 whitespace-nowrap">
-                                                    <span className={`px-2 py-1 text-xs font-medium rounded ${
-                                                        lim.significance === 'Critical'
+                                                    <span className={`px-2 py-1 text-xs font-medium rounded ${lim.significance === 'Critical'
                                                             ? 'bg-red-100 text-red-800'
                                                             : 'bg-blue-100 text-blue-800'
-                                                    }`}>
+                                                        }`}>
                                                         {lim.significance}
                                                     </span>
                                                 </td>
@@ -2548,11 +2748,10 @@ export default function ValidationRequestDetailPage() {
                                                     </div>
                                                 </td>
                                                 <td className="px-4 py-3 whitespace-nowrap">
-                                                    <span className={`px-2 py-1 text-xs font-medium rounded ${
-                                                        lim.conclusion === 'Mitigate'
+                                                    <span className={`px-2 py-1 text-xs font-medium rounded ${lim.conclusion === 'Mitigate'
                                                             ? 'bg-yellow-100 text-yellow-800'
                                                             : 'bg-green-100 text-green-800'
-                                                    }`}>
+                                                        }`}>
                                                         {lim.conclusion}
                                                     </span>
                                                 </td>
@@ -2638,113 +2837,112 @@ export default function ValidationRequestDetailPage() {
                                 {request.approvals
                                     .filter(a => a.approver_role !== 'Conditional' && !a.voided_at)
                                     .map((approval) => (
-                                    <div key={approval.approval_id} className="border rounded-lg p-4">
-                                        <div className="flex justify-between items-start">
-                                            <div>
-                                                {approval.approver ? (
-                                                    <>
-                                                        <p className="font-medium">{approval.approver.full_name}</p>
-                                                        <p className="text-sm text-gray-500">{approval.approver.email}</p>
-                                                    </>
-                                                ) : (
-                                                    <p className="font-medium text-orange-600">Pending Assignment</p>
-                                                )}
-                                                <p className="text-xs text-gray-400">
-                                                    Role: {approval.approver_role}
-                                                    {approval.is_required && ' (Required)'}
-                                                </p>
-                                            </div>
-                                            <div className="flex items-center gap-2">
-                                                <span className={`px-2 py-1 text-xs rounded ${getApprovalStatusColor(approval.approval_status)}`}>
-                                                    {approval.approval_status}
-                                                </span>
-                                                {approval.approval_status === 'Pending' && approval.approver &&
-                                                    (user?.user_id === approval.approver.user_id || canProxyApproveFlag) && (
-                                                        <button
-                                                            onClick={() => {
-                                                                const isProxyApproval = canProxyApproveFlag && user?.user_id !== approval.approver.user_id;
-                                                                setApprovalUpdate({
-                                                                    approval_id: approval.approval_id,
-                                                                    status: '',
-                                                                    comments: '',
-                                                                    isProxyApproval,
-                                                                    certificationEvidence: '',
-                                                                    proxyCertified: false
-                                                                });
-                                                                setShowApprovalModal(true);
-                                                            }}
-                                                            disabled={request?.current_status?.code !== 'PENDING_APPROVAL'}
-                                                            className={`text-xs ${
-                                                                request?.current_status?.code !== 'PENDING_APPROVAL'
-                                                                    ? 'btn-secondary opacity-50 cursor-not-allowed'
-                                                                    : 'btn-primary'
-                                                            }`}
-                                                            title={request?.current_status?.code !== 'PENDING_APPROVAL'
-                                                                ? `Cannot submit approval until request reaches 'Pending Approval' status (currently: ${request?.current_status?.label || 'Unknown'})`
-                                                                : undefined}
-                                                        >
-                                                            {canProxyApproveFlag && user?.user_id !== approval.approver.user_id ? 'Decision on Behalf' : 'Decision'}
-                                                        </button>
+                                        <div key={approval.approval_id} className="border rounded-lg p-4">
+                                            <div className="flex justify-between items-start">
+                                                <div>
+                                                    {approval.approver ? (
+                                                        <>
+                                                            <p className="font-medium">{approval.approver.full_name}</p>
+                                                            <p className="text-sm text-gray-500">{approval.approver.email}</p>
+                                                        </>
+                                                    ) : (
+                                                        <p className="font-medium text-orange-600">Pending Assignment</p>
                                                     )}
-                                                {(approval.approval_status === 'Approved' || approval.approval_status === 'Rejected') && approval.approver &&
-                                                    (user?.user_id === approval.approver.user_id || canProxyApproveFlag) && (
-                                                        <button
-                                                            onClick={async () => {
-                                                                if (window.confirm('Are you sure you want to withdraw this approval? This will reset it to Pending status.')) {
-                                                                    try {
-                                                                        await api.patch(`/validation-workflow/approvals/${approval.approval_id}`, {
-                                                                            approval_status: 'Pending',
-                                                                            comments: approval.comments
-                                                                        });
-                                                                        fetchData();
-                                                                    } catch (err: any) {
-                                                                        alert(err.response?.data?.detail || 'Failed to withdraw approval');
+                                                    <p className="text-xs text-gray-400">
+                                                        Role: {approval.approver_role}
+                                                        {approval.is_required && ' (Required)'}
+                                                    </p>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <span className={`px-2 py-1 text-xs rounded ${getApprovalStatusColor(approval.approval_status)}`}>
+                                                        {approval.approval_status}
+                                                    </span>
+                                                    {approval.approval_status === 'Pending' && approval.approver &&
+                                                        (user?.user_id === approval.approver.user_id || canProxyApproveFlag) && (
+                                                            <button
+                                                                onClick={() => {
+                                                                    const isProxyApproval = canProxyApproveFlag && user?.user_id !== approval.approver.user_id;
+                                                                    setApprovalUpdate({
+                                                                        approval_id: approval.approval_id,
+                                                                        status: '',
+                                                                        comments: '',
+                                                                        isProxyApproval,
+                                                                        certificationEvidence: '',
+                                                                        proxyCertified: false
+                                                                    });
+                                                                    setShowApprovalModal(true);
+                                                                }}
+                                                                disabled={request?.current_status?.code !== 'PENDING_APPROVAL'}
+                                                                className={`text-xs ${request?.current_status?.code !== 'PENDING_APPROVAL'
+                                                                        ? 'btn-secondary opacity-50 cursor-not-allowed'
+                                                                        : 'btn-primary'
+                                                                    }`}
+                                                                title={request?.current_status?.code !== 'PENDING_APPROVAL'
+                                                                    ? `Cannot submit approval until request reaches 'Pending Approval' status (currently: ${request?.current_status?.label || 'Unknown'})`
+                                                                    : undefined}
+                                                            >
+                                                                {canProxyApproveFlag && user?.user_id !== approval.approver.user_id ? 'Decision on Behalf' : 'Decision'}
+                                                            </button>
+                                                        )}
+                                                    {(approval.approval_status === 'Approved' || approval.approval_status === 'Rejected') && approval.approver &&
+                                                        (user?.user_id === approval.approver.user_id || canProxyApproveFlag) && (
+                                                            <button
+                                                                onClick={async () => {
+                                                                    if (window.confirm('Are you sure you want to withdraw this approval? This will reset it to Pending status.')) {
+                                                                        try {
+                                                                            await api.patch(`/validation-workflow/approvals/${approval.approval_id}`, {
+                                                                                approval_status: 'Pending',
+                                                                                comments: approval.comments
+                                                                            });
+                                                                            fetchData();
+                                                                        } catch (err: any) {
+                                                                            alert(err.response?.data?.detail || 'Failed to withdraw approval');
+                                                                        }
                                                                     }
-                                                                }
-                                                            }}
-                                                            className="text-xs px-3 py-1 border border-gray-300 rounded hover:bg-gray-50"
-                                                        >
-                                                            Withdraw
-                                                        </button>
-                                                    )}
+                                                                }}
+                                                                className="text-xs px-3 py-1 border border-gray-300 rounded hover:bg-gray-50"
+                                                            >
+                                                                Withdraw
+                                                            </button>
+                                                        )}
+                                                </div>
                                             </div>
-                                        </div>
-                                        {approval.approved_at && (
-                                            <div className="mt-2 text-sm text-gray-500">
-                                                {approval.approval_status === 'Approved' ? 'Approved' : 'Rejected'} on:{' '}
-                                                {new Date(approval.approved_at).toLocaleString()}
-                                            </div>
-                                        )}
-                                        {approval.comments && (() => {
-                                            const proxyMatch = approval.comments.match(/\[PROXY APPROVAL - Authorization Evidence: (.+?)\]/);
-                                            const regularComments = approval.comments.replace(/\[PROXY APPROVAL - Authorization Evidence: .+?\]/g, '').trim();
+                                            {approval.approved_at && (
+                                                <div className="mt-2 text-sm text-gray-500">
+                                                    {approval.approval_status === 'Approved' ? 'Approved' : 'Rejected'} on:{' '}
+                                                    {new Date(approval.approved_at).toLocaleString()}
+                                                </div>
+                                            )}
+                                            {approval.comments && (() => {
+                                                const proxyMatch = approval.comments.match(/\[PROXY APPROVAL - Authorization Evidence: (.+?)\]/);
+                                                const regularComments = approval.comments.replace(/\[PROXY APPROVAL - Authorization Evidence: .+?\]/g, '').trim();
 
-                                            return (
-                                                <>
-                                                    {proxyMatch && (
-                                                        <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded">
-                                                            <div className="text-xs font-medium text-yellow-800 flex items-center gap-1">
-                                                                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                                                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                                                                </svg>
-                                                                Proxy Approval (Submitted by Admin on behalf)
+                                                return (
+                                                    <>
+                                                        {proxyMatch && (
+                                                            <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded">
+                                                                <div className="text-xs font-medium text-yellow-800 flex items-center gap-1">
+                                                                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                                                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                                                                    </svg>
+                                                                    Proxy Approval (Submitted by Admin on behalf)
+                                                                </div>
+                                                                <div className="text-xs text-yellow-700 mt-1">
+                                                                    Authorization Evidence: {proxyMatch[1]}
+                                                                </div>
                                                             </div>
-                                                            <div className="text-xs text-yellow-700 mt-1">
-                                                                Authorization Evidence: {proxyMatch[1]}
+                                                        )}
+                                                        {regularComments && (
+                                                            <div className="mt-2 text-sm">
+                                                                <span className="text-gray-500">Comments:</span>{' '}
+                                                                <span className="text-gray-700">{regularComments}</span>
                                                             </div>
-                                                        </div>
-                                                    )}
-                                                    {regularComments && (
-                                                        <div className="mt-2 text-sm">
-                                                            <span className="text-gray-500">Comments:</span>{' '}
-                                                            <span className="text-gray-700">{regularComments}</span>
-                                                        </div>
-                                                    )}
-                                                </>
-                                            );
-                                        })()}
-                                    </div>
-                                ))}
+                                                        )}
+                                                    </>
+                                                );
+                                            })()}
+                                        </div>
+                                    ))}
 
                                 {/* Voided approvals (historical, shown collapsed) */}
                                 {request.approvals.filter(a => a.approver_role !== 'Conditional' && a.voided_at).length > 0 && (
@@ -2758,28 +2956,28 @@ export default function ValidationRequestDetailPage() {
                                             {request.approvals
                                                 .filter(a => a.approver_role !== 'Conditional' && a.voided_at)
                                                 .map((approval) => (
-                                                <div key={approval.approval_id} className="border border-gray-200 rounded-lg p-3 bg-gray-50 opacity-60">
-                                                    <div className="flex justify-between items-start">
-                                                        <div>
-                                                            <p className="font-medium text-gray-500 line-through">
-                                                                {approval.approver?.full_name || 'Unknown Approver'}
-                                                            </p>
-                                                            <p className="text-xs text-gray-400">
-                                                                Role: {approval.approver_role}
-                                                            </p>
+                                                    <div key={approval.approval_id} className="border border-gray-200 rounded-lg p-3 bg-gray-50 opacity-60">
+                                                        <div className="flex justify-between items-start">
+                                                            <div>
+                                                                <p className="font-medium text-gray-500 line-through">
+                                                                    {approval.approver?.full_name || 'Unknown Approver'}
+                                                                </p>
+                                                                <p className="text-xs text-gray-400">
+                                                                    Role: {approval.approver_role}
+                                                                </p>
+                                                            </div>
+                                                            <span className="px-2 py-1 text-xs rounded bg-gray-200 text-gray-600">
+                                                                Voided
+                                                            </span>
                                                         </div>
-                                                        <span className="px-2 py-1 text-xs rounded bg-gray-200 text-gray-600">
-                                                            Voided
-                                                        </span>
+                                                        <p className="text-xs text-gray-400 mt-2">
+                                                            {approval.void_reason || 'No reason provided'}
+                                                        </p>
+                                                        <p className="text-xs text-gray-400">
+                                                            Voided on: {approval.voided_at ? new Date(approval.voided_at).toLocaleDateString() : 'Unknown'}
+                                                        </p>
                                                     </div>
-                                                    <p className="text-xs text-gray-400 mt-2">
-                                                        {approval.void_reason || 'No reason provided'}
-                                                    </p>
-                                                    <p className="text-xs text-gray-400">
-                                                        Voided on: {approval.voided_at ? new Date(approval.voided_at).toLocaleDateString() : 'Unknown'}
-                                                    </p>
-                                                </div>
-                                            ))}
+                                                ))}
                                         </div>
                                     </details>
                                 )}
@@ -2977,11 +3175,10 @@ export default function ValidationRequestDetailPage() {
                                                         {audit.changes?.status && (
                                                             <div>
                                                                 <span className="text-gray-500">Status:</span>{' '}
-                                                                <span className={`px-2 py-1 text-xs rounded ${
-                                                                    audit.changes.status === 'Approved' ? 'bg-green-100 text-green-800' :
-                                                                    audit.changes.status === 'Rejected' ? 'bg-red-100 text-red-800' :
-                                                                    'bg-gray-100 text-gray-800'
-                                                                }`}>
+                                                                <span className={`px-2 py-1 text-xs rounded ${audit.changes.status === 'Approved' ? 'bg-green-100 text-green-800' :
+                                                                        audit.changes.status === 'Rejected' ? 'bg-red-100 text-red-800' :
+                                                                            'bg-gray-100 text-gray-800'
+                                                                    }`}>
                                                                     {audit.changes.status}
                                                                 </span>
                                                             </div>
@@ -3463,8 +3660,8 @@ export default function ValidationRequestDetailPage() {
                                         currentApproval.approver_role?.includes('Regional');
                                     return isGlobalOrRegional;
                                 })() && (
-                                    <option value="Sent Back">Send Back for Revision</option>
-                                )}
+                                        <option value="Sent Back">Send Back for Revision</option>
+                                    )}
                             </select>
                             {approvalUpdate.status === 'Sent Back' && (
                                 <div className="mt-2 p-3 bg-amber-50 border border-amber-200 rounded">
@@ -3826,6 +4023,190 @@ export default function ValidationRequestDetailPage() {
                 </div>
             )}
 
+            {showEditRequestModal && request && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-lg font-bold">Edit Project Details</h3>
+                            <button
+                                onClick={() => setShowEditRequestModal(false)}
+                                className="text-gray-500 hover:text-gray-700 text-2xl"
+                                aria-label="Close"
+                            >
+                                &times;
+                            </button>
+                        </div>
+
+                        {editRequestError && (
+                            <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
+                                {editRequestError}
+                            </div>
+                        )}
+
+                        {/* Official Project Parameters Section */}
+                        <div className="bg-gray-50 p-4 rounded-lg mb-6 border border-gray-200">
+                            <h4 className="text-sm font-bold text-gray-700 uppercase tracking-wide mb-3 flex items-center gap-2">
+                                <span className="text-blue-600">P1</span> Official Project Parameters
+                            </h4>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label htmlFor="edit_external_project_id" className="block text-sm font-medium mb-1">
+                                        External Project ID
+                                    </label>
+                                    <input
+                                        id="edit_external_project_id"
+                                        type="text"
+                                        className="input-field"
+                                        maxLength={36}
+                                        value={editRequestData.external_project_id}
+                                        onChange={(e) => setEditRequestData({ ...editRequestData, external_project_id: e.target.value })}
+                                        placeholder="Up to 36 characters"
+                                    />
+                                </div>
+                                <div>
+                                    <label htmlFor="edit_priority_id" className="block text-sm font-medium mb-1">
+                                        Priority
+                                    </label>
+                                    <select
+                                        id="edit_priority_id"
+                                        className="input-field"
+                                        value={editRequestData.priority_id}
+                                        onChange={(e) => setEditRequestData({ ...editRequestData, priority_id: parseInt(e.target.value, 10) || 0 })}
+                                        required
+                                    >
+                                        {validationPriorities.length > 0 ? (
+                                            validationPriorities.map((opt) => (
+                                                <option key={opt.value_id} value={opt.value_id}>
+                                                    {opt.label}
+                                                </option>
+                                            ))
+                                        ) : (
+                                            <option value={request.priority.value_id}>{request.priority.label}</option>
+                                        )}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label htmlFor="edit_target_completion_date" className="block text-sm font-medium mb-1">
+                                        Original Target Date
+                                    </label>
+                                    <input
+                                        id="edit_target_completion_date"
+                                        type="date"
+                                        className="input-field"
+                                        value={editRequestData.target_completion_date}
+                                        onChange={(e) => setEditRequestData({ ...editRequestData, target_completion_date: e.target.value })}
+                                        required
+                                    />
+                                </div>
+                                <div className="col-span-2">
+                                    <label htmlFor="edit_trigger_reason" className="block text-sm font-medium mb-1">
+                                        Trigger Reason
+                                    </label>
+                                    <textarea
+                                        id="edit_trigger_reason"
+                                        rows={2}
+                                        className="input-field"
+                                        value={editRequestData.trigger_reason}
+                                        onChange={(e) => setEditRequestData({ ...editRequestData, trigger_reason: e.target.value })}
+                                        placeholder="What triggered this validation project?"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Schedule Forecast Section */}
+                        <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                            <h4 className="text-sm font-bold text-gray-700 uppercase tracking-wide mb-3 flex items-center gap-2">
+                                <span className="text-blue-600">P2</span> Schedule Forecast
+                            </h4>
+                            <div className="mb-4 p-3 bg-white rounded border border-blue-200">
+                                <span className="block text-xs text-gray-500 uppercase font-semibold">Current Forecast</span>
+                                <span className="block text-lg font-bold text-blue-700">{currentForecastText}</span>
+                                {overdueCommentary?.current_comment && (
+                                    <div className="mt-2 text-xs text-gray-600">
+                                        <span className="font-semibold">Last reason:</span> {overdueCommentary.current_comment.reason_comment}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="col-span-1">
+                                    <label htmlFor="edit_override_target_date" className="block text-sm font-bold text-gray-800 mb-1">
+                                        {request.submission_received_date
+                                            ? 'Forecasted Validation Completion Date'
+                                            : 'Anticipated Model Submission Date'}
+                                    </label>
+                                    <input
+                                        id="edit_override_target_date"
+                                        type="date"
+                                        className="input-field border-blue-300 focus:ring-blue-500"
+                                        min={overrideMinDate}
+                                        value={editRequestData.override_target_date}
+                                        onChange={(e) => setEditRequestData({ ...editRequestData, override_target_date: e.target.value })}
+                                    />
+                                    <p className="text-xs text-gray-600 mt-1">
+                                        Leave blank unless changing the schedule.
+                                        {request.submission_received_date
+                                            ? ' Select the date you expect to complete validation.'
+                                            : ` Because submission is pending, the system adds ${request.applicable_lead_time_days ?? 90} days lead time.`}
+                                    </p>
+                                </div>
+
+                                <div className="col-span-1 flex items-center">
+                                    {/* Live Preview Calculation */}
+                                    {editRequestData.override_target_date && !request.submission_received_date && (
+                                        <div className="bg-white p-3 rounded border border-gray-200 w-full shadow-sm">
+                                            <span className="block text-xs text-gray-500 uppercase font-semibold">Resulting Completion Target</span>
+                                            <span className="block text-lg font-bold text-blue-700">
+                                                {(() => {
+                                                    const d = parseDateInputValue(editRequestData.override_target_date);
+                                                    d.setDate(d.getDate() + (request.applicable_lead_time_days ?? 90));
+                                                    return formatDateInputValue(d);
+                                                })()}
+                                            </span>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="col-span-2">
+                                    <label htmlFor="edit_override_reason" className="block text-sm font-medium mb-1">
+                                        Schedule Change Justification
+                                    </label>
+                                    <textarea
+                                        id="edit_override_reason"
+                                        rows={3}
+                                        className="input-field"
+                                        value={editRequestData.override_reason}
+                                        onChange={(e) => setEditRequestData({ ...editRequestData, override_reason: e.target.value })}
+                                        placeholder="Explain why this project schedule is being updated..."
+                                    />
+                                    <p className="text-xs text-gray-500 mt-1">
+                                        Required when setting a new target date (minimum 10 characters).
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="flex justify-end gap-2 mt-4">
+                            <button
+                                onClick={() => setShowEditRequestModal(false)}
+                                className="btn-secondary"
+                                disabled={editRequestSaving}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleSaveRequestDetails}
+                                className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-50"
+                                disabled={editRequestSaving}
+                            >
+                                {editRequestSaving ? 'Saving...' : 'Save Changes'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {showManageModelsModal && request && (
                 <ManageModelsModal
                     request={request}
@@ -3969,6 +4350,15 @@ export default function ValidationRequestDetailPage() {
                         fetchData();
                     }}
                 />
+            )}
+
+            {/* Toast Notification */}
+            {toast && (
+                <div className={`fixed bottom-4 right-4 px-6 py-3 rounded-lg shadow-lg text-white font-medium z-50 transition-all transform translate-y-0
+                    ${toast.type === 'error' ? 'bg-red-600' : 'bg-green-600'}`}
+                >
+                    {toast.message}
+                </div>
             )}
         </Layout>
     );

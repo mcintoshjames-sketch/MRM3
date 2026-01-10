@@ -2389,6 +2389,24 @@ def list_validation_requests(
     requests = query.order_by(desc(ValidationRequest.request_date)).offset(
         offset).limit(limit).all()
 
+    # Fetch approval SLA days (for forecasted approval date)
+    approval_days = None
+    workflow_sla = db.query(ValidationWorkflowSLA).filter(
+        ValidationWorkflowSLA.workflow_type == "Validation"
+    ).first()
+    if workflow_sla:
+        approval_days = workflow_sla.approval_days
+
+    # Fetch current overdue commentary for these requests
+    request_ids = [req.request_id for req in requests]
+    current_comments: dict[int, OverdueRevalidationComment] = {}
+    if request_ids:
+        comments = db.query(OverdueRevalidationComment).filter(
+            OverdueRevalidationComment.validation_request_id.in_(request_ids),
+            OverdueRevalidationComment.is_current == True
+        ).all()
+        current_comments = {comment.validation_request_id: comment for comment in comments}
+
     # Transform to list response format
     result = []
     for req in requests:
@@ -2396,6 +2414,21 @@ def list_validation_requests(
             (a.validator.full_name for a in req.assignments if a.is_primary),
             None
         )
+        current_comment = current_comments.get(req.request_id)
+        commentary_target_date = current_comment.target_date if current_comment else None
+        if req.submission_received_date:
+            current_forecast_date = commentary_target_date or req.target_completion_date
+        else:
+            current_forecast_date = (
+                commentary_target_date + timedelta(days=req.applicable_lead_time_days)
+                if commentary_target_date
+                else req.target_completion_date
+            )
+
+        forecasted_approval_date = None
+        if current_forecast_date and approval_days is not None:
+            forecasted_approval_date = current_forecast_date + timedelta(days=approval_days)
+
         result.append(ValidationRequestListResponse(
             request_id=req.request_id,
             model_ids=[m.model_id for m in req.models],
@@ -2405,6 +2438,8 @@ def list_validation_requests(
             validation_type=req.validation_type.label,
             priority=req.priority.label,
             target_completion_date=req.target_completion_date,
+            current_forecast_date=current_forecast_date,
+            forecasted_approval_date=forecasted_approval_date,
             external_project_id=req.external_project_id,
             current_status=req.current_status.label,
             days_in_status=calculate_days_in_status(req),

@@ -20,7 +20,7 @@ describe('ModelOverlaysReportPage', () => {
     });
 
     it('renders table from API payload', async () => {
-        mockGet.mockImplementation((url: string, options?: { params?: Record<string, unknown> }) => {
+        mockGet.mockImplementation((url: string) => {
             if (url === '/reports/model-overlays') {
                 return Promise.resolve({
                     data: {

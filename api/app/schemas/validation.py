@@ -612,6 +612,14 @@ class ValidationRequestListResponse(BaseModel):
     validation_type: str
     priority: str
     target_completion_date: date
+    current_forecast_date: Optional[date] = Field(
+        None,
+        description="Current forecast completion date (overdue commentary override or base target date)"
+    )
+    forecasted_approval_date: Optional[date] = Field(
+        None,
+        description="Current forecast completion date + approval SLA days"
+    )
     external_project_id: Optional[str] = None
     current_status: str
     days_in_status: int

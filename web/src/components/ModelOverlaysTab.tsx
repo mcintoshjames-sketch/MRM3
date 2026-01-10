@@ -255,13 +255,23 @@ const ModelOverlaysTab: React.FC<{ modelId: number }> = ({ modelId }) => {
         }
 
         const payload: Partial<ModelOverlayUpdate> = {};
-        (Object.keys(next) as (keyof typeof next)[]).forEach((key) => {
-            const initial = editInitial[key];
-            const current = next[key];
-            if ((initial || '') !== (current === null ? '' : current?.toString?.() || '')) {
-                payload[key as keyof ModelOverlayUpdate] = current as ModelOverlayUpdate[keyof ModelOverlayUpdate];
-            }
-        });
+        const formatValue = (value: string | number | null) => (value === null ? '' : value.toString());
+
+        if ((editInitial.evidence_description || '') !== formatValue(next.evidence_description)) {
+            payload.evidence_description = next.evidence_description;
+        }
+        if ((editInitial.trigger_monitoring_result_id || '') !== formatValue(next.trigger_monitoring_result_id)) {
+            payload.trigger_monitoring_result_id = next.trigger_monitoring_result_id;
+        }
+        if ((editInitial.trigger_monitoring_cycle_id || '') !== formatValue(next.trigger_monitoring_cycle_id)) {
+            payload.trigger_monitoring_cycle_id = next.trigger_monitoring_cycle_id;
+        }
+        if ((editInitial.related_recommendation_id || '') !== formatValue(next.related_recommendation_id)) {
+            payload.related_recommendation_id = next.related_recommendation_id;
+        }
+        if ((editInitial.related_limitation_id || '') !== formatValue(next.related_limitation_id)) {
+            payload.related_limitation_id = next.related_limitation_id;
+        }
 
         if (Object.keys(payload).length === 0) {
             setEditError('No changes to save.');

@@ -286,11 +286,11 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - Stale comments trigger "Update required" alerts in UI.
 - **Computed Completion Dates**:
   - PRE_SUBMISSION: target_submission_date + `applicable_lead_time_days` (per-request, MAX across all models' risk tier policies)
-  - POST_SUBMISSION: validation_request.target_completion_date
+  - POST_SUBMISSION: commentary target date when provided; otherwise validation_request.target_completion_date
 - **Authorization Rules**:
-  - Admin: Can submit on anyone's behalf for both types
+  - Admin/Validator: Can submit on anyone's behalf for both types
   - PRE_SUBMISSION: Model owner, developer, or active delegate
-  - VALIDATION_IN_PROGRESS: Assigned validator only
+  - VALIDATION_IN_PROGRESS: Assigned validator (plus Admin/Validator override)
 - **API Endpoints** (prefix: `/validation-workflow`):
   - `GET /requests/{id}/overdue-commentary` - Get current commentary with staleness check
   - `POST /requests/{id}/overdue-commentary` - Create/supersede commentary
@@ -303,6 +303,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - `OverdueCommentaryModal.tsx`: Form for submitting/updating explanations with comment history
   - `OverdueAlertBanner.tsx`: Reusable alert component for overdue status display
   - Overdue alert banners on ModelDetailsPage and ValidationRequestDetailPage show commentary status and "Provide Explanation" buttons
+  - ValidationRequestDetailPage "Edit Project Details" modal can set a Latest Target Date override by creating commentary even when not overdue
   - AdminDashboardPage enhancements:
     - "My Overdue Items" section: Personal task list showing items where the current user is responsible for providing explanations
     - Commentary status columns in Overdue Submissions and Overdue Validations tables

@@ -541,10 +541,10 @@ class TestOverdueCommentaryAPI:
         )
         assert response.status_code == 201
 
-    def test_unassigned_validator_cannot_create_in_progress(
+    def test_unassigned_validator_can_create_in_progress(
         self, client, db_session, validation_request_in_progress, lob_hierarchy
     ):
-        """Test that unassigned validator cannot create VALIDATION_IN_PROGRESS commentary."""
+        """Test that unassigned validator can create VALIDATION_IN_PROGRESS commentary."""
         validator = User(
             email="unassigned_validator@example.com",
             password_hash=get_password_hash("testpass"),
@@ -570,7 +570,7 @@ class TestOverdueCommentaryAPI:
             json=payload,
             headers=validator_headers
         )
-        assert response.status_code == 403
+        assert response.status_code == 201
 
     def test_validation_request_not_found(self, client, admin_headers):
         """Test 404 for non-existent validation request."""
