@@ -42,7 +42,7 @@ export default function ModelRegionsSection({ modelId, whollyOwnedRegionId, whol
             const [regionsData, modelRegionsData, usersData] = await Promise.all([
                 regionsApi.getRegions(),
                 regionsApi.getModelRegions(modelId),
-                api.get('/auth/users')
+                api.get(`/models/${modelId}/assignees`)
             ]);
             setRegions(regionsData);
             setModelRegions(modelRegionsData);

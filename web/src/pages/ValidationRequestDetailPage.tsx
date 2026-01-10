@@ -16,7 +16,7 @@ import ManageModelsModal from '../components/ManageModelsModal';
 import { Region } from '../api/regions';
 import PreTransitionWarningModal from '../components/PreTransitionWarningModal';
 import { validationWorkflowApi, PreTransitionWarningsResponse, ValidationRequestModelUpdateResponse } from '../api/validationWorkflow';
-import { canManageRecommendations, canManageValidations, canProxyApprove, canViewAdminDashboard, getUserRoleCode } from '../utils/roleUtils';
+import { canManageRecommendations, canManageValidations, canProxyApprove, canViewAdminDashboard } from '../utils/roleUtils';
 
 interface TaxonomyValue {
     value_id: number;
@@ -30,6 +30,14 @@ interface UserSummary {
     email: string;
     role: string;
     role_code?: string | null;
+}
+
+interface AssignableValidator {
+    user_id: number;
+    full_name: string;
+    email: string;
+    role_code: string | null;
+    role_display: string | null;
 }
 
 interface ModelSummary {
@@ -251,7 +259,9 @@ export default function ValidationRequestDetailPage() {
     const [statusOptions, setStatusOptions] = useState<TaxonomyValue[]>([]);
     const [ratingOptions, setRatingOptions] = useState<TaxonomyValue[]>([]);
     const [validationPriorities, setValidationPriorities] = useState<TaxonomyValue[]>([]);
-    const [users, setUsers] = useState<UserSummary[]>([]);
+    const [assignableValidators, setAssignableValidators] = useState<AssignableValidator[]>([]);
+    const [assignableValidatorsLoading, setAssignableValidatorsLoading] = useState(false);
+    const [assignableValidatorsError, setAssignableValidatorsError] = useState<string | null>(null);
 
     // Recommendations state
     const [recommendations, setRecommendations] = useState<RecommendationListItem[]>([]);
@@ -321,6 +331,21 @@ export default function ValidationRequestDetailPage() {
     const [pendingTransitionAction, setPendingTransitionAction] = useState<'complete_work' | 'status_update' | 'resubmit' | null>(null);
     const [pendingResubmitResponse, setPendingResubmitResponse] = useState<string>('');
 
+    const fetchAssignableValidators = async () => {
+        try {
+            setAssignableValidatorsLoading(true);
+            setAssignableValidatorsError(null);
+            const response = await api.get('/validation-workflow/assignable-validators');
+            setAssignableValidators(response.data);
+        } catch (err: any) {
+            console.error('Failed to fetch assignable validators:', err);
+            setAssignableValidatorsError(err.response?.data?.detail || 'Unable to load validators.');
+            setAssignableValidators([]);
+        } finally {
+            setAssignableValidatorsLoading(false);
+        }
+    };
+
     useEffect(() => {
         fetchData();
     }, [id]);
@@ -388,6 +413,14 @@ export default function ValidationRequestDetailPage() {
             });
         }
     }, [showAssignmentModal, request]);
+
+    useEffect(() => {
+        if (showAssignmentModal) {
+            fetchAssignableValidators();
+        } else {
+            setAssignableValidatorsError(null);
+        }
+    }, [showAssignmentModal]);
 
     // Fetch overdue commentary when request is loaded
     useEffect(() => {
@@ -568,11 +601,10 @@ export default function ValidationRequestDetailPage() {
             setLoading(true);
             setError(null);
 
-            // Fetch request details, taxonomy options, users, assignment audit logs, approval audit logs, commentary audit logs, and SLA config in parallel
-            const [requestRes, taxonomiesRes, usersRes, assignmentAuditRes, approvalAuditRes, commentaryAuditRes, slaRes] = await Promise.all([
+            // Fetch request details, taxonomy options, audit logs, and SLA config in parallel
+            const [requestRes, taxonomiesRes, assignmentAuditRes, approvalAuditRes, commentaryAuditRes, slaRes] = await Promise.all([
                 api.get(`/validation-workflow/requests/${id}`),
                 api.get('/taxonomies/'),
-                api.get('/auth/users'),
                 api.get(`/audit-logs/?entity_type=ValidationAssignment&entity_id=${id}&limit=100`),
                 api.get(`/audit-logs/?entity_type=ValidationApproval&entity_id=${id}&limit=100`),
                 api.get(`/audit-logs/?entity_type=ValidationRequest&entity_id=${id}&limit=100`),
@@ -580,7 +612,6 @@ export default function ValidationRequestDetailPage() {
             ]);
 
             setRequest(requestRes.data);
-            setUsers(usersRes.data);
             setAssignmentAuditLogs(assignmentAuditRes.data);
             setApprovalAuditLogs(approvalAuditRes.data);
             // Filter commentary audit logs to only include overdue commentary entries
@@ -3462,23 +3493,39 @@ export default function ValidationRequestDetailPage() {
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
                     <div className="bg-white rounded-lg p-6 w-full max-w-md">
                         <h3 className="text-lg font-bold mb-4">Add Validator Assignment</h3>
+                        {assignableValidatorsError && (
+                            <div className="mb-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                                {assignableValidatorsError}
+                                <button
+                                    type="button"
+                                    onClick={fetchAssignableValidators}
+                                    className="ml-2 text-red-700 underline"
+                                >
+                                    Retry
+                                </button>
+                            </div>
+                        )}
                         <div className="mb-4">
                             <label className="block text-sm font-medium mb-2">Validator</label>
                             <select
                                 className="input-field"
                                 value={newAssignment.validator_id}
                                 onChange={(e) => setNewAssignment({ ...newAssignment, validator_id: parseInt(e.target.value) })}
+                                disabled={assignableValidatorsLoading}
                             >
                                 <option value={0}>Select Validator</option>
-                                {users.filter((u) => {
-                                    const roleCode = getUserRoleCode(u);
-                                    return roleCode === 'VALIDATOR' || roleCode === 'ADMIN';
-                                }).map((u) => (
+                                {assignableValidators.map((u) => (
                                     <option key={u.user_id} value={u.user_id}>
-                                        {u.full_name} ({u.role})
+                                        {u.full_name} ({u.role_display || u.role_code || 'Role'})
                                     </option>
                                 ))}
                             </select>
+                            {assignableValidatorsLoading && (
+                                <p className="mt-1 text-xs text-gray-500">Loading validators...</p>
+                            )}
+                            {!assignableValidatorsLoading && assignableValidators.length === 0 && !assignableValidatorsError && (
+                                <p className="mt-1 text-xs text-gray-500">No validators available.</p>
+                            )}
                         </div>
                         <div className="mb-4">
                             <label className="flex items-center gap-2">
@@ -4253,7 +4300,6 @@ export default function ValidationRequestDetailPage() {
                         }
                     }}
                     models={request.models.map(m => ({ model_id: m.model_id, model_name: m.model_name }))}
-                    users={users.map(u => ({ user_id: u.user_id, email: u.email, full_name: u.full_name }))}
                     priorities={recPriorities}
                     categories={recCategories}
                     preselectedModelId={primaryModel?.model_id}

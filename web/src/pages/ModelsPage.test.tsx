@@ -58,6 +58,14 @@ const sampleTaxonomies = [
     { name: 'Validation Type', values: [] },
     { name: 'Validation Priority', values: [] },
     { name: 'MRSA Risk Level', values: [] },
+    {
+        name: 'Model Risk Tier',
+        values: [{ value_id: 10, label: 'Tier 1', is_active: true, sort_order: 1 }],
+    },
+    {
+        name: 'Regulatory Category',
+        values: [{ value_id: 20, label: 'Regulatory A', is_active: true, sort_order: 1 }],
+    },
 ];
 
 const sampleModels = [
@@ -105,6 +113,7 @@ const setupApiMocks = (models = sampleModels) => {
         if (url === '/teams/') return Promise.resolve({ data: sampleTeams });
         if (url.startsWith('/taxonomies/by-names/')) return Promise.resolve({ data: sampleTaxonomies });
         if (url === '/model-types/categories') return Promise.resolve({ data: [] });
+        if (url === '/methodology-library/categories') return Promise.resolve({ data: [] });
         if (url === '/export-views/?entity_type=models') return Promise.resolve({ data: [] });
         if (url === '/validation-workflow/my-pending-submissions') return Promise.resolve({ data: [] });
         if (url === '/deployment-tasks/my-tasks') return Promise.resolve({ data: [] });
@@ -197,7 +206,7 @@ describe('ModelsPage', () => {
     });
 
     it('creates new model when form submitted', async () => {
-        setupApiMocks([]);
+        setupApiMocks();
         mockPost.mockResolvedValueOnce({ data: { model_id: 3, model_name: 'New Model' } });
         render(<ModelsPage />);
 
@@ -212,11 +221,13 @@ describe('ModelsPage', () => {
             target: { value: 'New model description' }
         });
         fireEvent.change(screen.getByLabelText('Owner (Required)'), {
-            target: { value: '1' }
+            target: { value: 'Test User' }
         });
+        fireEvent.click(screen.getByText('test@example.com'));
         fireEvent.change(screen.getByLabelText('Developer (Required for In-House)'), {
-            target: { value: '2' }
+            target: { value: 'Developer' }
         });
+        fireEvent.click(screen.getByText('dev@example.com'));
         fireEvent.change(screen.getByLabelText(/Typical Usage Frequency/), {
             target: { value: '1' }
         });

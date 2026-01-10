@@ -20,7 +20,8 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
 - Entry & middleware: `app/main.py` registers routers and CORS; exposes liveness/readiness probes.
 - Routing modules (`app/api/`):
   - `auth.py`: login, user CRUD, mock Microsoft Entra directory search/provisioning, self-service update (`PATCH /auth/users/me`) for safe fields.
-  - `models.py`: model CRUD, regulatory metadata, cross-references to vendors, owners/developers, regulatory categories; RLS helpers in `app/core/rls.py`.
+  - `users.py`: scoped user lookup (`GET /users/search`) for email-based search without full directory access.
+  - `models.py`: model CRUD, regulatory metadata, cross-references to vendors/owners/developers, regulatory categories; model-scoped assignee lookup; RLS helpers in `app/core/rls.py`.
   - `model_versions.py`, `model_change_taxonomy.py`: versioning, change type taxonomy, change history.
   - `model_regions.py`, `regions.py`: normalized regions and model-region assignments.
   - `model_delegates.py`: delegate assignments for models.
@@ -30,7 +31,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - `methodology.py`: methodology library management - categories and methodologies with model linkage, search/filter, and soft delete.
   - `vendors.py`: vendor CRUD.
   - `taxonomies.py`: taxonomy/category and value management.
-  - `validation_workflow.py`: end-to-end validation lifecycle (requests, status updates, assignments, outcomes, approvals, audit logging, component configurations, reports including deviation trends).
+  - `validation_workflow.py`: end-to-end validation lifecycle (requests, status updates, assignments, outcomes, approvals, audit logging, component configurations, reports including deviation trends) plus validator assignment lookup.
   - `workflow_sla.py`: SLA configuration endpoints.
   - `version_deployment_tasks.py`: deployment task tracking for model owners/approvers.
   - `approver_roles.py`: approver role/committee CRUD for additional model use approvals.

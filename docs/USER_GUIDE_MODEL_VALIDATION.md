@@ -573,6 +573,8 @@ If your organization uses the **Scorecard** feature, the validation detail page 
 
 Recommendations are used to track remediation work identified during validation. They have their own lifecycle (e.g., Open → In Progress → Closed) and are tracked independently of the overall validation outcome.
 
+**Assignee scope**: The "Assigned To" list is model-scoped (owners, developers, delegates, shared roles, and assigned validators). Use the **Search by Email** option to add other stakeholders when needed.
+
 > **Configurable**: Recommendation statuses and priorities are administrator‑configured. For details on creating and managing recommendations, see the **[Recommendations User Guide](USER_GUIDE_RECOMMENDATIONS.md)**.
 
 ### Limitations Linked to Validation

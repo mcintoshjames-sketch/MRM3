@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import api from '../api/client';
 import { recommendationsApi, TaxonomyValue } from '../api/recommendations';
 import ModelSearchSelect from './ModelSearchSelect';
@@ -44,7 +44,6 @@ interface RecommendationCreateModalProps {
     onClose: () => void;
     onCreated: () => void;
     models: Model[];
-    users: User[];
     priorities: TaxonomyValue[];
     categories: TaxonomyValue[];
     preselectedModelId?: number;
@@ -60,7 +59,6 @@ export default function RecommendationCreateModal({
     onClose,
     onCreated,
     models,
-    users,
     priorities,
     categories,
     preselectedModelId,
@@ -86,6 +84,12 @@ export default function RecommendationCreateModal({
     });
     const [assignedUserSearch, setAssignedUserSearch] = useState('');
     const [showAssignedUserDropdown, setShowAssignedUserDropdown] = useState(false);
+    const [assignees, setAssignees] = useState<User[]>([]);
+    const [assigneesLoading, setAssigneesLoading] = useState(false);
+    const [assigneesError, setAssigneesError] = useState<string | null>(null);
+    const [emailSearchResults, setEmailSearchResults] = useState<User[]>([]);
+    const [emailSearchLoading, setEmailSearchLoading] = useState(false);
+    const [emailSearchError, setEmailSearchError] = useState<string | null>(null);
 
     const [validationRequests, setValidationRequests] = useState<ValidationRequest[]>([]);
     const [monitoringCycles, setMonitoringCycles] = useState<MonitoringCycle[]>([]);
@@ -147,6 +151,34 @@ export default function RecommendationCreateModal({
         fetchMonitoringCycles();
     }, [formData.model_id, models]);
 
+    const fetchAssignees = useCallback(async (modelId: number) => {
+        setAssigneesLoading(true);
+        setAssigneesError(null);
+        try {
+            const response = await api.get(`/models/${modelId}/assignees`);
+            setAssignees(response.data);
+        } catch (err: any) {
+            console.error('Failed to fetch assignees:', err);
+            setAssigneesError(err.response?.data?.detail || 'Unable to load assignees.');
+            setAssignees([]);
+        } finally {
+            setAssigneesLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (!formData.model_id) {
+            setAssignees([]);
+            setAssigneesError(null);
+            setEmailSearchResults([]);
+            setEmailSearchError(null);
+            return;
+        }
+        setEmailSearchResults([]);
+        setEmailSearchError(null);
+        fetchAssignees(formData.model_id);
+    }, [formData.model_id, fetchAssignees]);
+
     // Calculate timeframe when model and priority are selected
     const calculateTimeframe = useCallback(async (modelId: number, priorityId: number) => {
         if (!modelId || !priorityId) {
@@ -199,6 +231,26 @@ export default function RecommendationCreateModal({
             }));
         }
     }, [formData.model_id, formData.priority_id, calculateTimeframe]);
+
+    const handleEmailSearch = async () => {
+        const query = assignedUserSearch.trim();
+        if (!query) {
+            setEmailSearchError('Enter an email address to search.');
+            return;
+        }
+        setEmailSearchLoading(true);
+        setEmailSearchError(null);
+        try {
+            const response = await api.get('/users/search', { params: { email: query } });
+            setEmailSearchResults(response.data);
+        } catch (err: any) {
+            console.error('Failed to search users by email:', err);
+            setEmailSearchError(err.response?.data?.detail || 'Unable to search by email.');
+            setEmailSearchResults([]);
+        } finally {
+            setEmailSearchLoading(false);
+        }
+    };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -254,9 +306,16 @@ export default function RecommendationCreateModal({
         }
     };
 
-    const selectedAssignedUser = users.find((u) => u.user_id === formData.assigned_to_id);
+    const availableAssignees = useMemo(() => {
+        const map = new Map<number, User>();
+        assignees.forEach((u) => map.set(u.user_id, u));
+        emailSearchResults.forEach((u) => map.set(u.user_id, u));
+        return Array.from(map.values());
+    }, [assignees, emailSearchResults]);
+
+    const selectedAssignedUser = availableAssignees.find((u) => u.user_id === formData.assigned_to_id);
     const normalizedAssignedUserSearch = assignedUserSearch.trim().toLowerCase();
-    const filteredAssignedUsers = users.filter((u) => {
+    const filteredAssignedUsers = availableAssignees.filter((u) => {
         if (!normalizedAssignedUserSearch) return true;
         return (
             u.full_name.toLowerCase().includes(normalizedAssignedUserSearch) ||
@@ -305,12 +364,17 @@ export default function RecommendationCreateModal({
                                     value={formData.model_id || null}
                                     onChange={(value) => {
                                         const nextId = typeof value === 'number' ? value : 0;
-                                        setFormData({
-                                            ...formData,
+                                        setFormData(prev => ({
+                                            ...prev,
                                             model_id: nextId,
                                             validation_request_id: null,
-                                            monitoring_cycle_id: null
-                                        });
+                                            monitoring_cycle_id: null,
+                                            assigned_to_id: 0
+                                        }));
+                                        setAssignedUserSearch('');
+                                        setShowAssignedUserDropdown(false);
+                                        setEmailSearchResults([]);
+                                        setEmailSearchError(null);
                                     }}
                                     placeholder="Type to search by model name or ID..."
                                     disabled={!!preselectedModelId}
@@ -458,21 +522,23 @@ export default function RecommendationCreateModal({
                                     <label htmlFor="assigned_to_id" className="block text-sm font-medium text-gray-700 mb-1">
                                         Assigned To <span className="text-red-500">*</span>
                                     </label>
-                                    <div className="relative">
-                                        <input
-                                            id="assigned_to_id"
-                                            type="text"
-                                            placeholder="Type to search users..."
-                                            value={assignedUserSearch}
-                                            onChange={(e) => {
-                                                const value = e.target.value;
-                                                setAssignedUserSearch(value);
-                                                setShowAssignedUserDropdown(true);
-                                                if (formData.assigned_to_id && selectedAssignedUser) {
-                                                    if (value !== selectedAssignedUser.full_name && value !== selectedAssignedUser.email) {
-                                                        setFormData({ ...formData, assigned_to_id: 0 });
-                                                    }
+                                <div className="relative">
+                                    <input
+                                        id="assigned_to_id"
+                                        type="text"
+                                        placeholder="Type to search users..."
+                                        value={assignedUserSearch}
+                                        onChange={(e) => {
+                                            const value = e.target.value;
+                                            setAssignedUserSearch(value);
+                                            setShowAssignedUserDropdown(true);
+                                            setEmailSearchResults([]);
+                                            setEmailSearchError(null);
+                                            if (formData.assigned_to_id && selectedAssignedUser) {
+                                                if (value !== selectedAssignedUser.full_name && value !== selectedAssignedUser.email) {
+                                                    setFormData({ ...formData, assigned_to_id: 0 });
                                                 }
+                                            }
                                             }}
                                             onFocus={() => setShowAssignedUserDropdown(true)}
                                             className="input-field"
@@ -500,11 +566,33 @@ export default function RecommendationCreateModal({
                                             </div>
                                         )}
                                     </div>
+                                    {assigneesLoading && (
+                                        <p className="mt-1 text-xs text-gray-500">Loading assignees...</p>
+                                    )}
+                                    {assigneesError && (
+                                        <p className="mt-1 text-xs text-red-600">{assigneesError}</p>
+                                    )}
+                                    {!assigneesLoading && !assigneesError && availableAssignees.length === 0 && (
+                                        <p className="mt-1 text-xs text-gray-500">No assignees available for this model.</p>
+                                    )}
                                     {formData.assigned_to_id > 0 && selectedAssignedUser && (
                                         <p className="mt-1 text-sm text-green-600">
                                             Selected: {selectedAssignedUser.full_name}
                                         </p>
                                     )}
+                                    <div className="mt-2 flex items-center gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={handleEmailSearch}
+                                            className="text-xs text-blue-600 hover:text-blue-800 hover:underline"
+                                            disabled={emailSearchLoading}
+                                        >
+                                            {emailSearchLoading ? 'Searching...' : 'Search by Email'}
+                                        </button>
+                                        {emailSearchError && (
+                                            <span className="text-xs text-red-600">{emailSearchError}</span>
+                                        )}
+                                    </div>
                                     <p className="text-xs text-gray-500 mt-1">
                                         The developer responsible for remediation
                                     </p>

@@ -836,7 +836,6 @@ export default function RecommendationsPage() {
                         fetchData();
                     }}
                     models={models}
-                    users={users}
                     priorities={priorities}
                     categories={categories}
                     preselectedModelId={modelFilterId || undefined}

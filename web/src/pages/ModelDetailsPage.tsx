@@ -35,7 +35,7 @@ interface User {
     user_id: number;
     email: string;
     full_name: string;
-    role: string;
+    role?: string;
 }
 
 interface Vendor {
@@ -283,6 +283,8 @@ interface PendingEdit {
     requested_at: string;
     proposed_changes: Record<string, unknown>;
     original_values: Record<string, unknown>;
+    resolved_original_values: Record<string, string>;
+    resolved_proposed_changes: Record<string, string>;
     status: string;
     reviewed_by: { user_id: number; full_name: string; email: string } | null;
     reviewed_at: string | null;
@@ -477,6 +479,28 @@ export default function ModelDetailsPage() {
     const [versionsRefreshTrigger, setVersionsRefreshTrigger] = useState(0);
     const [userSearchTerm, setUserSearchTerm] = useState('');
     const [showUserDropdown, setShowUserDropdown] = useState(false);
+    const [userLookupLoading, setUserLookupLoading] = useState(false);
+    const [userLookupError, setUserLookupError] = useState<string | null>(null);
+    const [ownerSearchTerm, setOwnerSearchTerm] = useState('');
+    const [developerSearchTerm, setDeveloperSearchTerm] = useState('');
+    const [sharedOwnerSearchTerm, setSharedOwnerSearchTerm] = useState('');
+    const [sharedDeveloperSearchTerm, setSharedDeveloperSearchTerm] = useState('');
+    const [monitoringManagerSearchTerm, setMonitoringManagerSearchTerm] = useState('');
+    const [showOwnerDropdown, setShowOwnerDropdown] = useState(false);
+    const [showDeveloperDropdown, setShowDeveloperDropdown] = useState(false);
+    const [showSharedOwnerDropdown, setShowSharedOwnerDropdown] = useState(false);
+    const [showSharedDeveloperDropdown, setShowSharedDeveloperDropdown] = useState(false);
+    const [showMonitoringManagerDropdown, setShowMonitoringManagerDropdown] = useState(false);
+    const [ownerLookupLoading, setOwnerLookupLoading] = useState(false);
+    const [ownerLookupError, setOwnerLookupError] = useState<string | null>(null);
+    const [developerLookupLoading, setDeveloperLookupLoading] = useState(false);
+    const [developerLookupError, setDeveloperLookupError] = useState<string | null>(null);
+    const [sharedOwnerLookupLoading, setSharedOwnerLookupLoading] = useState(false);
+    const [sharedOwnerLookupError, setSharedOwnerLookupError] = useState<string | null>(null);
+    const [sharedDeveloperLookupLoading, setSharedDeveloperLookupLoading] = useState(false);
+    const [sharedDeveloperLookupError, setSharedDeveloperLookupError] = useState<string | null>(null);
+    const [monitoringManagerLookupLoading, setMonitoringManagerLookupLoading] = useState(false);
+    const [monitoringManagerLookupError, setMonitoringManagerLookupError] = useState<string | null>(null);
     const [showCancelledValidations, setShowCancelledValidations] = useState(false);
     const [showApprovalActions, setShowApprovalActions] = useState(false);
     const [showResubmitForm, setShowResubmitForm] = useState(false);
@@ -539,6 +563,7 @@ export default function ModelDetailsPage() {
         mrsa_risk_rationale: ''
     });
     const [mrsaRiskLevels, setMrsaRiskLevels] = useState<TaxonomyValue[]>([]);
+    const editSearchInitialized = useRef(false);
 
     useEffect(() => {
         fetchData();
@@ -630,9 +655,9 @@ export default function ModelDetailsPage() {
     const fetchData = async () => {
         try {
             // Fetch critical model data first - these are required
-            const [modelRes, usersRes, vendorsRes, regionsRes, taxonomiesRes, modelTypesRes, methodologyCategoriesRes] = await Promise.all([
+            const [modelRes, assigneesRes, vendorsRes, regionsRes, taxonomiesRes, modelTypesRes, methodologyCategoriesRes] = await Promise.all([
                 api.get(`/models/${id}`),
-                api.get('/auth/users'),
+                api.get(`/models/${id}/assignees`),
                 api.get('/vendors/'),
                 api.get('/regions/'),
                 api.get('/taxonomies/'),
@@ -641,7 +666,7 @@ export default function ModelDetailsPage() {
             ]);
             const modelData = modelRes.data;
             setModel(modelData);
-            setUsers(usersRes.data);
+            setUsers(buildScopedUsers(assigneesRes.data || [], modelData));
             setVendors(vendorsRes.data);
             setRegions(regionsRes.data);
             setModelTypes(modelTypesRes.data);
@@ -913,9 +938,6 @@ export default function ModelDetailsPage() {
                 if (formData.usage_frequency_id !== originalFormData.usage_frequency_id) {
                     payload.usage_frequency_id = formData.usage_frequency_id;
                 }
-                if (formData.status_id !== originalFormData.status_id) {
-                    payload.status_id = formData.status_id;
-                }
                 if (formData.wholly_owned_region_id !== originalFormData.wholly_owned_region_id) {
                     payload.wholly_owned_region_id = formData.wholly_owned_region_id || null;
                 }
@@ -939,7 +961,7 @@ export default function ModelDetailsPage() {
                 }
             } else {
                 // Fallback: send all fields if original data not available (shouldn't happen)
-                const { status, ...formDataWithoutStatus } = formData;
+                const { status, status_id, ...formDataWithoutStatus } = formData;
                 Object.assign(payload, formDataWithoutStatus, {
                     external_model_id: formData.external_model_id || null,
                     developer_id: formData.developer_id || null,
@@ -1008,7 +1030,6 @@ export default function ModelDetailsPage() {
     const getRiskTierTaxonomy = () => taxonomies.find(t => t.name === 'Model Risk Tier');
     const getUsageFrequencyTaxonomy = () => taxonomies.find(t => t.name === 'Model Usage Frequency');
     const getRegulatoryCategoryTaxonomy = () => taxonomies.find(t => t.name === 'Regulatory Category');
-    const getModelStatusTaxonomy = () => taxonomies.find(t => t.name === 'Model Status');
 
     // Check for out-of-order validation conditions
     const getOutOfOrderWarnings = () => {
@@ -1051,6 +1072,124 @@ export default function ModelDetailsPage() {
         });
     };
 
+    const normalizeUser = (item?: Partial<User> | null): User | null => {
+        if (!item?.user_id || !item.full_name || !item.email) return null;
+        return {
+            user_id: item.user_id,
+            email: item.email,
+            full_name: item.full_name,
+            role: item.role ?? 'User'
+        };
+    };
+
+    const mergeUsers = (existing: User[], incoming: Array<Partial<User> | null | undefined>) => {
+        const map = new Map<number, User>();
+        existing.forEach((u) => map.set(u.user_id, u));
+        incoming.forEach((item) => {
+            const normalized = normalizeUser(item);
+            if (normalized) {
+                map.set(normalized.user_id, normalized);
+            }
+        });
+        return Array.from(map.values()).sort((a, b) => a.full_name.localeCompare(b.full_name));
+    };
+
+    const buildScopedUsers = (baseUsers: Array<Partial<User> | null | undefined>, modelData?: Model | null) => {
+        let merged = mergeUsers([], baseUsers);
+        if (modelData) {
+            merged = mergeUsers(merged, [
+                modelData.owner,
+                modelData.developer,
+                modelData.shared_owner,
+                modelData.shared_developer,
+                modelData.monitoring_manager
+            ]);
+            merged = mergeUsers(merged, modelData.users || []);
+        }
+        if (user) {
+            merged = mergeUsers(merged, [user]);
+        }
+        return merged;
+    };
+
+    const searchUsersByEmail = async (
+        query: string,
+        setLoading: (value: boolean) => void,
+        setError: (value: string | null) => void
+    ) => {
+        const trimmed = query.trim();
+        if (!trimmed) {
+            setError('Enter an email to search.');
+            return false;
+        }
+        setLoading(true);
+        setError(null);
+        try {
+            const response = await api.get('/users/search', { params: { email: trimmed } });
+            const results = (response.data || [])
+                .map((item: User) => normalizeUser(item))
+                .filter(Boolean) as User[];
+            if (results.length === 0) {
+                setError('No users found for that email.');
+                return false;
+            }
+            setUsers((prev) => mergeUsers(prev, results));
+            return true;
+        } catch (error: any) {
+            console.error('Failed to search users:', error);
+            setError(error.response?.data?.detail || 'Unable to search users.');
+            return false;
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleUserLookup = async () => {
+        const found = await searchUsersByEmail(userSearchTerm, setUserLookupLoading, setUserLookupError);
+        if (found) {
+            setShowUserDropdown(true);
+        }
+    };
+
+    const handleOwnerLookup = async () => {
+        const found = await searchUsersByEmail(ownerSearchTerm, setOwnerLookupLoading, setOwnerLookupError);
+        if (found) {
+            setShowOwnerDropdown(true);
+        }
+    };
+
+    const handleDeveloperLookup = async () => {
+        const found = await searchUsersByEmail(developerSearchTerm, setDeveloperLookupLoading, setDeveloperLookupError);
+        if (found) {
+            setShowDeveloperDropdown(true);
+        }
+    };
+
+    const handleSharedOwnerLookup = async () => {
+        const found = await searchUsersByEmail(sharedOwnerSearchTerm, setSharedOwnerLookupLoading, setSharedOwnerLookupError);
+        if (found) {
+            setShowSharedOwnerDropdown(true);
+        }
+    };
+
+    const handleSharedDeveloperLookup = async () => {
+        const found = await searchUsersByEmail(sharedDeveloperSearchTerm, setSharedDeveloperLookupLoading, setSharedDeveloperLookupError);
+        if (found) {
+            setShowSharedDeveloperDropdown(true);
+        }
+    };
+
+    const handleMonitoringManagerLookup = async () => {
+        const found = await searchUsersByEmail(
+            monitoringManagerSearchTerm,
+            setMonitoringManagerLookupLoading,
+            setMonitoringManagerLookupError
+        );
+        if (found) {
+            setShowMonitoringManagerDropdown(true);
+        }
+    };
+
     const addUserToModel = (userId: number) => {
         if (!formData.user_ids.includes(userId)) {
             setFormData(prev => ({
@@ -1059,6 +1198,7 @@ export default function ModelDetailsPage() {
             }));
         }
         setUserSearchTerm('');
+        setUserLookupError(null);
         setShowUserDropdown(false);
     };
 
@@ -1069,13 +1209,59 @@ export default function ModelDetailsPage() {
         }));
     };
 
-    const filteredUsersForSearch = users.filter(u =>
-        !formData.user_ids.includes(u.user_id) &&
-        (u.full_name.toLowerCase().includes(userSearchTerm.toLowerCase()) ||
-            u.email.toLowerCase().includes(userSearchTerm.toLowerCase()))
-    );
+    const filterUsersBySearch = (query: string, excludedIds: number[] = []) => {
+        const normalized = query.trim().toLowerCase();
+        if (!normalized) return [];
+        const excluded = new Set(excludedIds);
+        return users.filter(u =>
+            !excluded.has(u.user_id) &&
+            (u.full_name.toLowerCase().includes(normalized) ||
+                u.email.toLowerCase().includes(normalized))
+        ).slice(0, 50);
+    };
 
+    const filteredUsersForSearch = filterUsersBySearch(userSearchTerm, formData.user_ids);
     const selectedUsers = users.filter(u => formData.user_ids.includes(u.user_id));
+    const selectedOwner = users.find((u) => u.user_id === formData.owner_id);
+    const selectedDeveloper = users.find((u) => u.user_id === formData.developer_id);
+    const selectedSharedOwner = users.find((u) => u.user_id === formData.shared_owner_id);
+    const selectedSharedDeveloper = users.find((u) => u.user_id === formData.shared_developer_id);
+    const selectedMonitoringManager = users.find((u) => u.user_id === formData.monitoring_manager_id);
+    const ownerMatches = filterUsersBySearch(ownerSearchTerm);
+    const developerMatches = filterUsersBySearch(developerSearchTerm);
+    const sharedOwnerMatches = filterUsersBySearch(
+        sharedOwnerSearchTerm,
+        formData.owner_id ? [formData.owner_id] : []
+    );
+    const sharedDeveloperMatches = filterUsersBySearch(
+        sharedDeveloperSearchTerm,
+        formData.developer_id ? [formData.developer_id] : []
+    );
+    const monitoringManagerMatches = filterUsersBySearch(monitoringManagerSearchTerm);
+
+    useEffect(() => {
+        if (!editing) {
+            editSearchInitialized.current = false;
+            return;
+        }
+        if (editSearchInitialized.current || users.length === 0) {
+            return;
+        }
+        setOwnerSearchTerm(selectedOwner?.full_name || '');
+        setDeveloperSearchTerm(selectedDeveloper?.full_name || '');
+        setSharedOwnerSearchTerm(selectedSharedOwner?.full_name || '');
+        setSharedDeveloperSearchTerm(selectedSharedDeveloper?.full_name || '');
+        setMonitoringManagerSearchTerm(selectedMonitoringManager?.full_name || '');
+        editSearchInitialized.current = true;
+    }, [
+        editing,
+        users.length,
+        selectedOwner,
+        selectedDeveloper,
+        selectedSharedOwner,
+        selectedSharedDeveloper,
+        selectedMonitoringManager
+    ]);
 
     const handleDelete = async () => {
         if (!confirm('Are you sure you want to delete this model?')) return;
@@ -1201,85 +1387,6 @@ export default function ModelDetailsPage() {
             .replace(/_/g, ' ')
             .replace(/\b\w/g, l => l.toUpperCase())
             .replace(/\bIds\b/g, 'IDs'); // Ensure "IDs" is capitalized correctly
-    };
-
-    // Resolve lookup IDs to human-readable labels for pending edit review
-    const resolveLookupValue = (field: string, value: unknown): string => {
-        if (value == null) return '';
-
-        // Handle array fields (regulatory_category_ids, user_ids)
-        if (Array.isArray(value)) {
-            if (value.length === 0) return '';
-
-            switch (field) {
-                case 'regulatory_category_ids': {
-                    const regCatTax = taxonomies.find(t => t.name === 'Regulatory Category');
-                    if (!regCatTax) return value.join(', ');
-                    const labels = value.map(id => {
-                        const catValue = regCatTax.values.find(v => v.value_id === id);
-                        return catValue ? catValue.label : String(id);
-                    });
-                    return labels.join(', ');
-                }
-                case 'user_ids': {
-                    const names = value.map(id => {
-                        const user = users.find(u => u.user_id === id);
-                        return user ? user.full_name : String(id);
-                    });
-                    return names.join(', ');
-                }
-                default:
-                    return value.join(', ');
-            }
-        }
-
-        const numValue = typeof value === 'number' ? value : parseInt(String(value), 10);
-        if (isNaN(numValue)) return String(value);
-
-        switch (field) {
-            case 'owner_id':
-            case 'developer_id': {
-                const user = users.find(u => u.user_id === numValue);
-                return user ? user.full_name : String(value);
-            }
-            case 'vendor_id': {
-                const vendor = vendors.find(v => v.vendor_id === numValue);
-                return vendor ? vendor.name : String(value);
-            }
-            case 'risk_tier_id': {
-                const riskTierTax = taxonomies.find(t => t.name === 'Model Risk Tier');
-                const tierValue = riskTierTax?.values.find(v => v.value_id === numValue);
-                return tierValue ? tierValue.label : String(value);
-            }
-            case 'validation_type_id': {
-                const valTypeTax = taxonomies.find(t => t.name === 'Validation Type');
-                const typeValue = valTypeTax?.values.find(v => v.value_id === numValue);
-                return typeValue ? typeValue.label : String(value);
-            }
-            case 'status_id': {
-                const statusTax = taxonomies.find(t => t.name === 'Model Status');
-                const statusValue = statusTax?.values.find(v => v.value_id === numValue);
-                return statusValue ? statusValue.label : String(value);
-            }
-            case 'usage_frequency_id': {
-                const usageFreqTax = taxonomies.find(t => t.name === 'Model Usage Frequency');
-                const usageFreqValue = usageFreqTax?.values.find(v => v.value_id === numValue);
-                return usageFreqValue ? usageFreqValue.label : String(value);
-            }
-            case 'model_type_id': {
-                for (const category of modelTypes) {
-                    const modelType = category.model_types.find(t => t.type_id === numValue);
-                    if (modelType) return modelType.name;
-                }
-                return String(value);
-            }
-            case 'wholly_owned_region_id': {
-                const region = regions.find(r => r.region_id === numValue);
-                return region ? region.name : String(value);
-            }
-            default:
-                return String(value);
-        }
     };
 
     // Check if two values are different (for showing "Changed" badge)
@@ -1474,7 +1581,7 @@ export default function ModelDetailsPage() {
     const handleAssignMonitoringManager = () => {
         setEditing(true);
         setTimeout(() => {
-            const field = document.getElementById('monitoring_manager_id') as HTMLSelectElement | null;
+            const field = document.getElementById('monitoring_manager_id') as HTMLInputElement | null;
             if (field) {
                 field.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 field.focus();
@@ -1806,6 +1913,9 @@ export default function ModelDetailsPage() {
                                             <tbody className="divide-y divide-gray-200">
                                                 {Object.entries(edit.proposed_changes).map(([field, newValue]) => {
                                                     const isChanged = valuesAreDifferent(edit.original_values[field], newValue);
+                                                    // Use resolved values from API (already human-readable)
+                                                    const resolvedOriginal = edit.resolved_original_values?.[field];
+                                                    const resolvedProposed = edit.resolved_proposed_changes?.[field];
                                                     return (
                                                         <tr key={field} className={isChanged ? 'bg-amber-50/50' : ''}>
                                                             <td className="px-4 py-2 text-sm font-medium text-gray-900">
@@ -1819,13 +1929,13 @@ export default function ModelDetailsPage() {
                                                                 </div>
                                                             </td>
                                                             <td className="px-4 py-2 text-sm text-gray-500">
-                                                                {edit.original_values[field] != null
-                                                                    ? resolveLookupValue(field, edit.original_values[field])
+                                                                {resolvedOriginal
+                                                                    ? resolvedOriginal
                                                                     : <span className="text-gray-400 italic">empty</span>}
                                                             </td>
                                                             <td className="px-4 py-2 text-sm text-green-700 font-medium">
-                                                                {newValue != null
-                                                                    ? resolveLookupValue(field, newValue)
+                                                                {resolvedProposed
+                                                                    ? resolvedProposed
                                                                     : <span className="text-gray-400 italic">empty</span>}
                                                             </td>
                                                         </tr>
@@ -2358,105 +2468,329 @@ export default function ModelDetailsPage() {
                                 <label htmlFor="owner_id" className="block text-sm font-medium mb-2">
                                     Owner
                                 </label>
-                                <select
-                                    id="owner_id"
-                                    className="input-field"
-                                    value={formData.owner_id}
-                                    onChange={(e) => setFormData({ ...formData, owner_id: parseInt(e.target.value) })}
-                                    required
-                                >
-                                    <option value="">Select Owner</option>
-                                    {users.map(u => (
-                                        <option key={u.user_id} value={u.user_id}>{u.full_name}</option>
-                                    ))}
-                                </select>
+                                <div className="relative">
+                                    <input
+                                        id="owner_id"
+                                        type="text"
+                                        placeholder='Type to search owners, or enter an email and click "Search by Email"...'
+                                        value={ownerSearchTerm}
+                                        onChange={(e) => {
+                                            const value = e.target.value;
+                                            setOwnerSearchTerm(value);
+                                            setOwnerLookupError(null);
+                                            setShowOwnerDropdown(true);
+                                            if (!value.trim()) {
+                                                setFormData({ ...formData, owner_id: 0 });
+                                            }
+                                        }}
+                                        onFocus={() => setShowOwnerDropdown(true)}
+                                        className="input-field"
+                                        required
+                                    />
+                                    {showOwnerDropdown && ownerSearchTerm.length > 0 && ownerMatches.length > 0 && (
+                                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                                            {ownerMatches.map((u) => (
+                                                <div
+                                                    key={u.user_id}
+                                                    className="px-4 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                                                    onClick={() => {
+                                                        setFormData({ ...formData, owner_id: u.user_id });
+                                                        setOwnerSearchTerm(u.full_name);
+                                                        setShowOwnerDropdown(false);
+                                                    }}
+                                                >
+                                                    <div className="font-medium">{u.full_name}</div>
+                                                    <div className="text-xs text-gray-500">{u.email}</div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                                {showOwnerDropdown && ownerSearchTerm.length > 0 && ownerMatches.length === 0 && (
+                                    <p className="mt-1 text-sm text-gray-500">No users found. Use Search by Email below.</p>
+                                )}
+                                {selectedOwner && (
+                                    <p className="mt-1 text-sm text-green-600">Selected: {selectedOwner.full_name}</p>
+                                )}
+                                <div className="mt-2 flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={handleOwnerLookup}
+                                        className="btn-secondary px-3 py-1 text-xs"
+                                        disabled={ownerLookupLoading || !ownerSearchTerm.trim()}
+                                    >
+                                        {ownerLookupLoading ? 'Searching...' : 'Search by Email'}
+                                    </button>
+                                    {ownerLookupError && (
+                                        <span className="text-xs text-red-600">{ownerLookupError}</span>
+                                    )}
+                                </div>
+                                <p className="mt-1 text-xs text-gray-500">
+                                    Email lookup checks the directory for owners not listed.
+                                </p>
                             </div>
 
                             <div className="mb-4">
                                 <label htmlFor="developer_id" className="block text-sm font-medium mb-2">
                                     Developer
                                 </label>
-                                <select
-                                    id="developer_id"
-                                    className="input-field"
-                                    value={formData.developer_id || ''}
-                                    onChange={(e) => setFormData({
-                                        ...formData,
-                                        developer_id: e.target.value ? parseInt(e.target.value) : null
-                                    })}
-                                >
-                                    <option value="">None</option>
-                                    {users.map(u => (
-                                        <option key={u.user_id} value={u.user_id}>{u.full_name}</option>
-                                    ))}
-                                </select>
+                                <div className="relative">
+                                    <input
+                                        id="developer_id"
+                                        type="text"
+                                        placeholder='Type to search developers, or enter an email and click "Search by Email"...'
+                                        value={developerSearchTerm}
+                                        onChange={(e) => {
+                                            const value = e.target.value;
+                                            setDeveloperSearchTerm(value);
+                                            setDeveloperLookupError(null);
+                                            setShowDeveloperDropdown(true);
+                                            if (!value.trim()) {
+                                                setFormData({ ...formData, developer_id: null });
+                                            }
+                                        }}
+                                        onFocus={() => setShowDeveloperDropdown(true)}
+                                        className="input-field"
+                                    />
+                                    {showDeveloperDropdown && developerSearchTerm.length > 0 && developerMatches.length > 0 && (
+                                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                                            {developerMatches.map((u) => (
+                                                <div
+                                                    key={u.user_id}
+                                                    className="px-4 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                                                    onClick={() => {
+                                                        setFormData({ ...formData, developer_id: u.user_id });
+                                                        setDeveloperSearchTerm(u.full_name);
+                                                        setShowDeveloperDropdown(false);
+                                                    }}
+                                                >
+                                                    <div className="font-medium">{u.full_name}</div>
+                                                    <div className="text-xs text-gray-500">{u.email}</div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                                {showDeveloperDropdown && developerSearchTerm.length > 0 && developerMatches.length === 0 && (
+                                    <p className="mt-1 text-sm text-gray-500">No users found. Use Search by Email below.</p>
+                                )}
+                                {selectedDeveloper && (
+                                    <p className="mt-1 text-sm text-green-600">Selected: {selectedDeveloper.full_name}</p>
+                                )}
+                                <div className="mt-2 flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={handleDeveloperLookup}
+                                        className="btn-secondary px-3 py-1 text-xs"
+                                        disabled={developerLookupLoading || !developerSearchTerm.trim()}
+                                    >
+                                        {developerLookupLoading ? 'Searching...' : 'Search by Email'}
+                                    </button>
+                                    {developerLookupError && (
+                                        <span className="text-xs text-red-600">{developerLookupError}</span>
+                                    )}
+                                </div>
+                                <p className="mt-1 text-xs text-gray-500">
+                                    Email lookup checks the directory for developers not listed.
+                                </p>
                             </div>
 
                             <div className="mb-4">
                                 <label htmlFor="shared_owner_id" className="block text-sm font-medium mb-2">
                                     Shared Owner (Co-Owner)
                                 </label>
-                                <select
-                                    id="shared_owner_id"
-                                    className="input-field"
-                                    value={formData.shared_owner_id || ''}
-                                    onChange={(e) => setFormData({
-                                        ...formData,
-                                        shared_owner_id: e.target.value ? parseInt(e.target.value) : null
-                                    })}
-                                >
-                                    <option value="">None</option>
-                                    {users
-                                        .filter(u => u.user_id !== formData.owner_id)
-                                        .map(u => (
-                                            <option key={u.user_id} value={u.user_id}>{u.full_name}</option>
-                                        ))}
-                                </select>
+                                <div className="relative">
+                                    <input
+                                        id="shared_owner_id"
+                                        type="text"
+                                        placeholder='Type to search shared owners, or enter an email and click "Search by Email"...'
+                                        value={sharedOwnerSearchTerm}
+                                        onChange={(e) => {
+                                            const value = e.target.value;
+                                            setSharedOwnerSearchTerm(value);
+                                            setSharedOwnerLookupError(null);
+                                            setShowSharedOwnerDropdown(true);
+                                            if (!value.trim()) {
+                                                setFormData({ ...formData, shared_owner_id: null });
+                                            }
+                                        }}
+                                        onFocus={() => setShowSharedOwnerDropdown(true)}
+                                        className="input-field"
+                                    />
+                                    {showSharedOwnerDropdown && sharedOwnerSearchTerm.length > 0 && sharedOwnerMatches.length > 0 && (
+                                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                                            {sharedOwnerMatches.map((u) => (
+                                                <div
+                                                    key={u.user_id}
+                                                    className="px-4 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                                                    onClick={() => {
+                                                        setFormData({ ...formData, shared_owner_id: u.user_id });
+                                                        setSharedOwnerSearchTerm(u.full_name);
+                                                        setShowSharedOwnerDropdown(false);
+                                                    }}
+                                                >
+                                                    <div className="font-medium">{u.full_name}</div>
+                                                    <div className="text-xs text-gray-500">{u.email}</div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                                {showSharedOwnerDropdown && sharedOwnerSearchTerm.length > 0 && sharedOwnerMatches.length === 0 && (
+                                    <p className="mt-1 text-sm text-gray-500">No users found. Use Search by Email below.</p>
+                                )}
+                                {selectedSharedOwner && (
+                                    <p className="mt-1 text-sm text-green-600">Selected: {selectedSharedOwner.full_name}</p>
+                                )}
+                                <div className="mt-2 flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={handleSharedOwnerLookup}
+                                        className="btn-secondary px-3 py-1 text-xs"
+                                        disabled={sharedOwnerLookupLoading || !sharedOwnerSearchTerm.trim()}
+                                    >
+                                        {sharedOwnerLookupLoading ? 'Searching...' : 'Search by Email'}
+                                    </button>
+                                    {sharedOwnerLookupError && (
+                                        <span className="text-xs text-red-600">{sharedOwnerLookupError}</span>
+                                    )}
+                                </div>
                                 <p className="text-xs text-gray-500 mt-1">Optional co-owner for shared ownership scenarios</p>
+                                <p className="mt-1 text-xs text-gray-500">
+                                    Email lookup checks the directory for shared owners not listed.
+                                </p>
                             </div>
 
                             <div className="mb-4">
                                 <label htmlFor="shared_developer_id" className="block text-sm font-medium mb-2">
                                     Shared Developer (Co-Developer)
                                 </label>
-                                <select
-                                    id="shared_developer_id"
-                                    className="input-field"
-                                    value={formData.shared_developer_id || ''}
-                                    onChange={(e) => setFormData({
-                                        ...formData,
-                                        shared_developer_id: e.target.value ? parseInt(e.target.value) : null
-                                    })}
-                                >
-                                    <option value="">None</option>
-                                    {users
-                                        .filter(u => u.user_id !== formData.developer_id)
-                                        .map(u => (
-                                            <option key={u.user_id} value={u.user_id}>{u.full_name}</option>
-                                        ))}
-                                </select>
+                                <div className="relative">
+                                    <input
+                                        id="shared_developer_id"
+                                        type="text"
+                                        placeholder='Type to search shared developers, or enter an email and click "Search by Email"...'
+                                        value={sharedDeveloperSearchTerm}
+                                        onChange={(e) => {
+                                            const value = e.target.value;
+                                            setSharedDeveloperSearchTerm(value);
+                                            setSharedDeveloperLookupError(null);
+                                            setShowSharedDeveloperDropdown(true);
+                                            if (!value.trim()) {
+                                                setFormData({ ...formData, shared_developer_id: null });
+                                            }
+                                        }}
+                                        onFocus={() => setShowSharedDeveloperDropdown(true)}
+                                        className="input-field"
+                                    />
+                                    {showSharedDeveloperDropdown && sharedDeveloperSearchTerm.length > 0 && sharedDeveloperMatches.length > 0 && (
+                                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                                            {sharedDeveloperMatches.map((u) => (
+                                                <div
+                                                    key={u.user_id}
+                                                    className="px-4 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                                                    onClick={() => {
+                                                        setFormData({ ...formData, shared_developer_id: u.user_id });
+                                                        setSharedDeveloperSearchTerm(u.full_name);
+                                                        setShowSharedDeveloperDropdown(false);
+                                                    }}
+                                                >
+                                                    <div className="font-medium">{u.full_name}</div>
+                                                    <div className="text-xs text-gray-500">{u.email}</div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                                {showSharedDeveloperDropdown && sharedDeveloperSearchTerm.length > 0 && sharedDeveloperMatches.length === 0 && (
+                                    <p className="mt-1 text-sm text-gray-500">No users found. Use Search by Email below.</p>
+                                )}
+                                {selectedSharedDeveloper && (
+                                    <p className="mt-1 text-sm text-green-600">Selected: {selectedSharedDeveloper.full_name}</p>
+                                )}
+                                <div className="mt-2 flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={handleSharedDeveloperLookup}
+                                        className="btn-secondary px-3 py-1 text-xs"
+                                        disabled={sharedDeveloperLookupLoading || !sharedDeveloperSearchTerm.trim()}
+                                    >
+                                        {sharedDeveloperLookupLoading ? 'Searching...' : 'Search by Email'}
+                                    </button>
+                                    {sharedDeveloperLookupError && (
+                                        <span className="text-xs text-red-600">{sharedDeveloperLookupError}</span>
+                                    )}
+                                </div>
                                 <p className="text-xs text-gray-500 mt-1">Optional co-developer for shared development scenarios</p>
+                                <p className="mt-1 text-xs text-gray-500">
+                                    Email lookup checks the directory for shared developers not listed.
+                                </p>
                             </div>
 
                             <div className="mb-4">
                                 <label htmlFor="monitoring_manager_id" className="block text-sm font-medium mb-2">
                                     Monitoring Manager
                                 </label>
-                                <select
-                                    id="monitoring_manager_id"
-                                    className="input-field"
-                                    value={formData.monitoring_manager_id || ''}
-                                    onChange={(e) => setFormData({
-                                        ...formData,
-                                        monitoring_manager_id: e.target.value ? parseInt(e.target.value) : null
-                                    })}
-                                >
-                                    <option value="">None</option>
-                                    {users.map(u => (
-                                        <option key={u.user_id} value={u.user_id}>{u.full_name}</option>
-                                    ))}
-                                </select>
+                                <div className="relative">
+                                    <input
+                                        id="monitoring_manager_id"
+                                        type="text"
+                                        placeholder='Type to search monitoring managers, or enter an email and click "Search by Email"...'
+                                        value={monitoringManagerSearchTerm}
+                                        onChange={(e) => {
+                                            const value = e.target.value;
+                                            setMonitoringManagerSearchTerm(value);
+                                            setMonitoringManagerLookupError(null);
+                                            setShowMonitoringManagerDropdown(true);
+                                            if (!value.trim()) {
+                                                setFormData({ ...formData, monitoring_manager_id: null });
+                                            }
+                                        }}
+                                        onFocus={() => setShowMonitoringManagerDropdown(true)}
+                                        className="input-field"
+                                    />
+                                    {showMonitoringManagerDropdown && monitoringManagerSearchTerm.length > 0 && monitoringManagerMatches.length > 0 && (
+                                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                                            {monitoringManagerMatches.map((u) => (
+                                                <div
+                                                    key={u.user_id}
+                                                    className="px-4 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                                                    onClick={() => {
+                                                        setFormData({ ...formData, monitoring_manager_id: u.user_id });
+                                                        setMonitoringManagerSearchTerm(u.full_name);
+                                                        setShowMonitoringManagerDropdown(false);
+                                                    }}
+                                                >
+                                                    <div className="font-medium">{u.full_name}</div>
+                                                    <div className="text-xs text-gray-500">{u.email}</div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                                {showMonitoringManagerDropdown && monitoringManagerSearchTerm.length > 0 && monitoringManagerMatches.length === 0 && (
+                                    <p className="mt-1 text-sm text-gray-500">No users found. Use Search by Email below.</p>
+                                )}
+                                {selectedMonitoringManager && (
+                                    <p className="mt-1 text-sm text-green-600">Selected: {selectedMonitoringManager.full_name}</p>
+                                )}
+                                <div className="mt-2 flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={handleMonitoringManagerLookup}
+                                        className="btn-secondary px-3 py-1 text-xs"
+                                        disabled={monitoringManagerLookupLoading || !monitoringManagerSearchTerm.trim()}
+                                    >
+                                        {monitoringManagerLookupLoading ? 'Searching...' : 'Search by Email'}
+                                    </button>
+                                    {monitoringManagerLookupError && (
+                                        <span className="text-xs text-red-600">{monitoringManagerLookupError}</span>
+                                    )}
+                                </div>
                                 <p className="text-xs text-gray-500 mt-1">User responsible for ongoing model monitoring</p>
+                                <p className="mt-1 text-xs text-gray-500">
+                                    Email lookup checks the directory for monitoring managers not listed.
+                                </p>
                             </div>
 
                             {formData.development_type === 'Third-Party' && (
@@ -2478,31 +2812,6 @@ export default function ModelDetailsPage() {
                                         {vendors.map(v => (
                                             <option key={v.vendor_id} value={v.vendor_id}>{v.name}</option>
                                         ))}
-                                    </select>
-                                </div>
-                            )}
-
-                            {getModelStatusTaxonomy() && (
-                                <div className="mb-4">
-                                    <label htmlFor="status_id" className="block text-sm font-medium mb-2">
-                                        Status
-                                    </label>
-                                    <select
-                                        id="status_id"
-                                        className="input-field"
-                                        value={formData.status_id || ''}
-                                        onChange={(e) => setFormData({
-                                            ...formData,
-                                            status_id: e.target.value ? parseInt(e.target.value) : null
-                                        })}
-                                    >
-                                        <option value="">Select Status</option>
-                                        {getModelStatusTaxonomy()?.values
-                                            .filter(v => v.is_active)
-                                            .sort((a, b) => a.sort_order - b.sort_order)
-                                            .map(v => (
-                                                <option key={v.value_id} value={v.value_id}>{v.label}</option>
-                                            ))}
                                     </select>
                                 </div>
                             )}
@@ -2682,6 +2991,7 @@ export default function ModelDetailsPage() {
                                     value={userSearchTerm}
                                     onChange={(e) => {
                                         setUserSearchTerm(e.target.value);
+                                        setUserLookupError(null);
                                         setShowUserDropdown(e.target.value.length > 0);
                                     }}
                                     onFocus={() => userSearchTerm.length > 0 && setShowUserDropdown(true)}
@@ -2702,12 +3012,28 @@ export default function ModelDetailsPage() {
                                         ))}
                                     </div>
                                 )}
-                                {showUserDropdown && userSearchTerm && filteredUsersForSearch.length === 0 && (
-                                    <div className="absolute z-10 w-full mt-1 bg-white border rounded-md shadow-lg p-3 text-gray-500 text-sm">
-                                        No users found matching "{userSearchTerm}"
-                                    </div>
+                            </div>
+                            {showUserDropdown && userSearchTerm && filteredUsersForSearch.length === 0 && (
+                                <p className="mt-1 text-sm text-gray-500">
+                                    No users found. Use Search by Email below.
+                                </p>
+                            )}
+                            <div className="mt-2 flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={handleUserLookup}
+                                    className="btn-secondary px-3 py-1 text-xs"
+                                    disabled={userLookupLoading || !userSearchTerm.trim()}
+                                >
+                                    {userLookupLoading ? 'Searching...' : 'Search by Email'}
+                                </button>
+                                {userLookupError && (
+                                    <span className="text-xs text-red-600">{userLookupError}</span>
                                 )}
                             </div>
+                            <p className="text-xs text-gray-500 mt-1">
+                                Email lookup checks the directory for users not listed.
+                            </p>
 
                             {/* Selected users subform */}
                             <div className="border rounded bg-gray-50 p-3">

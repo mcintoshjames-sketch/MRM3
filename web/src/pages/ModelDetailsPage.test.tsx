@@ -114,7 +114,7 @@ const sampleTaxonomyDetails = {
 const setupApiMocks = (modelData = sampleModel) => {
     mockGet.mockImplementation((url: string) => {
         if (url === '/models/1') return Promise.resolve({ data: modelData });
-        if (url === '/auth/users') return Promise.resolve({ data: sampleUsers });
+        if (url === '/models/1/assignees') return Promise.resolve({ data: sampleUsers });
         if (url === '/vendors/') return Promise.resolve({ data: sampleVendors });
         if (url === '/regions/') return Promise.resolve({ data: [] });
         if (url === '/models/1/regions') return Promise.resolve({ data: [] });
@@ -308,7 +308,7 @@ describe('ModelDetailsPage', () => {
     it('displays model not found when model fetch fails', async () => {
         mockGet.mockImplementation((url: string) => {
             if (url === '/models/1') return Promise.reject(new Error('Not found'));
-            if (url === '/auth/users') return Promise.resolve({ data: sampleUsers });
+            if (url === '/models/1/assignees') return Promise.resolve({ data: sampleUsers });
             if (url === '/vendors/') return Promise.resolve({ data: sampleVendors });
             if (url === '/taxonomies/') return Promise.resolve({ data: sampleTaxonomies });
             return Promise.reject(new Error(`Unknown URL: ${url}`));

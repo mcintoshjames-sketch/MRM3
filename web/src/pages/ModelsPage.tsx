@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
-import { canManageModels } from '../utils/roleUtils';
+import { canManageModels, canManageUsers } from '../utils/roleUtils';
 import Layout from '../components/Layout';
 import { useTableSort } from '../hooks/useTableSort';
 import MultiSelectDropdown from '../components/MultiSelectDropdown';
@@ -16,7 +16,7 @@ interface User {
     user_id: number;
     email: string;
     full_name: string;
-    role: string;
+    role?: string;
 }
 
 interface Vendor {
@@ -60,6 +60,8 @@ interface TaxonomyValue {
     label: string;
     code?: string;
     requires_irp?: boolean;  // For MRSA Risk Level taxonomy
+    is_active?: boolean;
+    sort_order?: number;
 }
 
 interface IRPContactUser {
@@ -92,10 +94,23 @@ interface MRSAReviewStatus {
 
 interface Methodology {
     methodology_id: number;
+    category_id?: number;
     name: string;
+    description?: string | null;
+    variants?: string | null;
+    sort_order?: number;
+    is_active?: boolean;
     category?: {
         name: string;
     };
+}
+
+interface MethodologyCategory {
+    category_id: number;
+    code: string;
+    name: string;
+    sort_order: number;
+    methodologies: Methodology[];
 }
 
 interface UserWithLOB extends User {
@@ -183,6 +198,7 @@ export default function ModelsPage() {
     const [searchParams, setSearchParams] = useSearchParams();
     const { user } = useAuth();
     const canManageModelsFlag = canManageModels(user);
+    const canManageUsersFlag = canManageUsers(user);
     const [models, setModels] = useState<Model[]>([]);
     const [users, setUsers] = useState<User[]>([]);
     const [vendors, setVendors] = useState<Vendor[]>([]);
@@ -220,6 +236,7 @@ export default function ModelsPage() {
             setKpiDrillDownActive(false);
         }
     }, [searchParams, setSearchParams]);
+
     const [formData, setFormData] = useState({
         model_name: '',
         external_model_id: '',
@@ -228,13 +245,19 @@ export default function ModelsPage() {
         development_type: 'In-House',
         owner_id: 0,
         developer_id: null as number | null,
+        shared_owner_id: null as number | null,
+        shared_developer_id: null as number | null,
+        monitoring_manager_id: null as number | null,
         vendor_id: null as number | null,
         wholly_owned_region_id: null as number | null,
+        risk_tier_id: null as number | null,
         model_type_id: null as number | null,
+        methodology_id: null as number | null,
         usage_frequency_id: 0,
         status: 'In Development',
         user_ids: [] as number[],
         region_ids: [] as number[],
+        regulatory_category_ids: [] as number[],
         initial_version_number: '' as string,
         initial_implementation_date: '' as string,
         is_model: true,
@@ -253,9 +276,70 @@ export default function ModelsPage() {
     // View mode: 'models' = Models only, 'mrsas' = MRSAs only, 'all' = All entities
     const [viewMode, setViewMode] = useState<'models' | 'mrsas' | 'all'>('models');
     const [userSearchTerm, setUserSearchTerm] = useState('');
+    const [userLookupLoading, setUserLookupLoading] = useState(false);
+    const [userLookupError, setUserLookupError] = useState<string | null>(null);
+    const [ownerSearchTerm, setOwnerSearchTerm] = useState('');
+    const [showOwnerDropdown, setShowOwnerDropdown] = useState(false);
+    const [ownerLookupLoading, setOwnerLookupLoading] = useState(false);
+    const [ownerLookupError, setOwnerLookupError] = useState<string | null>(null);
+    const [developerSearchTerm, setDeveloperSearchTerm] = useState('');
+    const [showDeveloperDropdown, setShowDeveloperDropdown] = useState(false);
+    const [developerLookupLoading, setDeveloperLookupLoading] = useState(false);
+    const [developerLookupError, setDeveloperLookupError] = useState<string | null>(null);
+    const [sharedOwnerSearchTerm, setSharedOwnerSearchTerm] = useState('');
+    const [showSharedOwnerDropdown, setShowSharedOwnerDropdown] = useState(false);
+    const [sharedOwnerLookupLoading, setSharedOwnerLookupLoading] = useState(false);
+    const [sharedOwnerLookupError, setSharedOwnerLookupError] = useState<string | null>(null);
+    const [sharedDeveloperSearchTerm, setSharedDeveloperSearchTerm] = useState('');
+    const [showSharedDeveloperDropdown, setShowSharedDeveloperDropdown] = useState(false);
+    const [sharedDeveloperLookupLoading, setSharedDeveloperLookupLoading] = useState(false);
+    const [sharedDeveloperLookupError, setSharedDeveloperLookupError] = useState<string | null>(null);
+    const [monitoringManagerSearchTerm, setMonitoringManagerSearchTerm] = useState('');
+    const [showMonitoringManagerDropdown, setShowMonitoringManagerDropdown] = useState(false);
+    const [monitoringManagerLookupLoading, setMonitoringManagerLookupLoading] = useState(false);
+    const [monitoringManagerLookupError, setMonitoringManagerLookupError] = useState<string | null>(null);
     const [validationTypes, setValidationTypes] = useState<any[]>([]);
     const [validationPriorities, setValidationPriorities] = useState<any[]>([]);
     const [usageFrequencies, setUsageFrequencies] = useState<any[]>([]);
+    const [riskTiers, setRiskTiers] = useState<TaxonomyValue[]>([]);
+    const [regulatoryCategories, setRegulatoryCategories] = useState<TaxonomyValue[]>([]);
+    const [methodologyCategories, setMethodologyCategories] = useState<MethodologyCategory[]>([]);
+
+    useEffect(() => {
+        if (userLookupError) {
+            setUserLookupError(null);
+        }
+    }, [userSearchTerm]);
+
+    useEffect(() => {
+        if (ownerLookupError) {
+            setOwnerLookupError(null);
+        }
+    }, [ownerSearchTerm]);
+
+    useEffect(() => {
+        if (developerLookupError) {
+            setDeveloperLookupError(null);
+        }
+    }, [developerSearchTerm]);
+
+    useEffect(() => {
+        if (sharedOwnerLookupError) {
+            setSharedOwnerLookupError(null);
+        }
+    }, [sharedOwnerSearchTerm]);
+
+    useEffect(() => {
+        if (sharedDeveloperLookupError) {
+            setSharedDeveloperLookupError(null);
+        }
+    }, [sharedDeveloperSearchTerm]);
+
+    useEffect(() => {
+        if (monitoringManagerLookupError) {
+            setMonitoringManagerLookupError(null);
+        }
+    }, [monitoringManagerSearchTerm]);
 
     // Check if form has unsaved changes
     const formIsDirty = showForm && (
@@ -265,12 +349,18 @@ export default function ModelsPage() {
         formData.products_covered !== '' ||
         formData.owner_id !== 0 ||
         formData.developer_id !== null ||
+        formData.shared_owner_id !== null ||
+        formData.shared_developer_id !== null ||
+        formData.monitoring_manager_id !== null ||
         formData.vendor_id !== null ||
         formData.wholly_owned_region_id !== null ||
+        formData.risk_tier_id !== null ||
         formData.model_type_id !== null ||
+        formData.methodology_id !== null ||
         formData.usage_frequency_id !== 0 ||
         formData.user_ids.length > 0 ||
         formData.region_ids.length > 0 ||
+        formData.regulatory_category_ids.length > 0 ||
         formData.initial_version_number !== '' ||
         formData.initial_implementation_date !== '' ||
         formData.auto_create_validation ||
@@ -305,13 +395,19 @@ export default function ModelsPage() {
             development_type: 'In-House',
             owner_id: 0,
             developer_id: null,
+            shared_owner_id: null,
+            shared_developer_id: null,
+            monitoring_manager_id: null,
             vendor_id: null,
             wholly_owned_region_id: null,
+            risk_tier_id: null,
             model_type_id: null,
+            methodology_id: null,
             usage_frequency_id: 0,
             status: 'In Development',
             user_ids: [],
             region_ids: [],
+            regulatory_category_ids: [],
             initial_version_number: '',
             initial_implementation_date: '',
             is_model: true,
@@ -324,6 +420,23 @@ export default function ModelsPage() {
             validation_request_target_date: '',
             validation_request_trigger_reason: ''
         });
+        setOwnerSearchTerm('');
+        setDeveloperSearchTerm('');
+        setSharedOwnerSearchTerm('');
+        setSharedDeveloperSearchTerm('');
+        setMonitoringManagerSearchTerm('');
+        setUserSearchTerm('');
+        setShowOwnerDropdown(false);
+        setShowDeveloperDropdown(false);
+        setShowSharedOwnerDropdown(false);
+        setShowSharedDeveloperDropdown(false);
+        setShowMonitoringManagerDropdown(false);
+        setUserLookupError(null);
+        setOwnerLookupError(null);
+        setDeveloperLookupError(null);
+        setSharedOwnerLookupError(null);
+        setSharedDeveloperLookupError(null);
+        setMonitoringManagerLookupError(null);
     };
     const [showExportModal, setShowExportModal] = useState(false);
     const [showColumnsModal, setShowColumnsModal] = useState(false);
@@ -611,7 +724,7 @@ export default function ModelsPage() {
 
         fetchData(modelIdsToFetch);
         loadExportViews();
-    }, [kpiDrillDownIds, searchParams]);
+    }, [kpiDrillDownIds, searchParams, user, canManageUsersFlag]);
 
     // Refetch models when include_sub_models filter changes
     useEffect(() => {
@@ -664,9 +777,19 @@ export default function ModelsPage() {
             }
 
             // Build taxonomy query string (axios serializes arrays as names[] but FastAPI expects names=v1&names=v2)
-            const taxonomyNames = ['Validation Type', 'Validation Priority', 'Model Usage Frequency', 'MRSA Risk Level'];
+            const taxonomyNames = [
+                'Validation Type',
+                'Validation Priority',
+                'Model Usage Frequency',
+                'MRSA Risk Level',
+                'Model Risk Tier',
+                'Regulatory Category'
+            ];
             const taxonomyQueryString = taxonomyNames.map(n => `names=${encodeURIComponent(n)}`).join('&');
 
+            const usersPromise = canManageUsersFlag
+                ? api.get('/auth/users')
+                : Promise.resolve({ data: [] });
             const [
                 modelsRes,
                 usersRes,
@@ -675,15 +798,17 @@ export default function ModelsPage() {
                 teamsRes,
                 taxonomiesRes,
                 modelTypesRes,
+                methodologyCategoriesRes,
                 mrsaReviewRes
             ] = await Promise.all([
                 api.get(`/models/?${params.toString()}`),
-                api.get('/auth/users'),
+                usersPromise,
                 api.get('/vendors/'),
                 api.get('/regions/'),
                 getTeams(),
                 api.get(`/taxonomies/by-names/?${taxonomyQueryString}`),
                 api.get('/model-types/categories'),
+                api.get('/methodology-library/categories'),
                 api.get('/irps/mrsa-review-status').catch(() => ({ data: [] }))
             ]);
             const mrsaReviewMap = new Map<number, MRSAReviewStatus>(
@@ -714,11 +839,21 @@ export default function ModelsPage() {
                 };
             });
             setModels(enrichedModels);
-            setUsers(usersRes.data);
+            if (canManageUsersFlag) {
+                setUsers((usersRes.data || []).map((item: User) => ({
+                    user_id: item.user_id,
+                    email: item.email,
+                    full_name: item.full_name,
+                    role: item.role ?? 'User'
+                })));
+            } else {
+                setUsers(buildScopedUsers(modelsRes.data));
+            }
             setVendors(vendorsRes.data);
             setRegions(regionsRes.data);
             setTeams(teamsRes.data);
             setModelTypes(modelTypesRes.data);
+            setMethodologyCategories(methodologyCategoriesRes.data || []);
 
             // Extract taxonomy values from batch response
             const taxonomies = taxonomiesRes.data;
@@ -726,6 +861,8 @@ export default function ModelsPage() {
             const valPriority = taxonomies.find((t: any) => t.name === 'Validation Priority');
             const usageFreq = taxonomies.find((t: any) => t.name === 'Model Usage Frequency');
             const mrsaRiskLevel = taxonomies.find((t: any) => t.name === 'MRSA Risk Level');
+            const riskTier = taxonomies.find((t: any) => t.name === 'Model Risk Tier');
+            const regulatoryCategory = taxonomies.find((t: any) => t.name === 'Regulatory Category');
 
             if (valType) {
                 setValidationTypes(valType.values || []);
@@ -739,6 +876,12 @@ export default function ModelsPage() {
             if (mrsaRiskLevel) {
                 setMrsaRiskLevels(mrsaRiskLevel.values || []);
             }
+            if (riskTier) {
+                setRiskTiers(riskTier.values || []);
+            }
+            if (regulatoryCategory) {
+                setRegulatoryCategories(regulatoryCategory.values || []);
+            }
         } catch (error) {
             console.error('Failed to fetch data:', error);
         } finally {
@@ -750,6 +893,10 @@ export default function ModelsPage() {
         e.preventDefault();
 
         // Validate required fields
+        if (!formData.owner_id) {
+            alert('Please select an Owner.');
+            return;
+        }
         if (!formData.usage_frequency_id || formData.usage_frequency_id === 0) {
             alert('Please select a Usage Frequency.');
             return;
@@ -795,12 +942,18 @@ export default function ModelsPage() {
             const payload = {
                 ...formData,
                 developer_id: formData.developer_id || null,
+                shared_owner_id: formData.shared_owner_id || null,
+                shared_developer_id: formData.shared_developer_id || null,
+                monitoring_manager_id: formData.monitoring_manager_id || null,
                 vendor_id: formData.vendor_id || null,
                 wholly_owned_region_id: formData.wholly_owned_region_id || null,
+                risk_tier_id: formData.risk_tier_id || null,
                 model_type_id: formData.model_type_id || null,
+                methodology_id: formData.methodology_id || null,
                 usage_frequency_id: formData.usage_frequency_id,
                 user_ids: formData.user_ids.length > 0 ? formData.user_ids : null,
                 region_ids: formData.region_ids.length > 0 ? formData.region_ids : null,
+                regulatory_category_ids: formData.regulatory_category_ids.length > 0 ? formData.regulatory_category_ids : null,
                 initial_version_number: formData.initial_version_number || null,
                 initial_implementation_date: formData.initial_implementation_date || null,
                 external_model_id: formData.external_model_id || null,
@@ -845,13 +998,19 @@ export default function ModelsPage() {
                 development_type: 'In-House',
                 owner_id: 0,
                 developer_id: null,
+                shared_owner_id: null,
+                shared_developer_id: null,
+                monitoring_manager_id: null,
                 vendor_id: null,
                 wholly_owned_region_id: null,
+                risk_tier_id: null,
                 model_type_id: null,
+                methodology_id: null,
                 usage_frequency_id: 0,
                 status: 'In Development',
                 user_ids: [],
                 region_ids: [],
+                regulatory_category_ids: [],
                 initial_version_number: '',
                 initial_implementation_date: '',
                 is_model: true,
@@ -864,6 +1023,23 @@ export default function ModelsPage() {
                 validation_request_target_date: '',
                 validation_request_trigger_reason: ''
             });
+            setOwnerSearchTerm('');
+            setDeveloperSearchTerm('');
+            setSharedOwnerSearchTerm('');
+            setSharedDeveloperSearchTerm('');
+            setMonitoringManagerSearchTerm('');
+            setUserSearchTerm('');
+            setShowOwnerDropdown(false);
+            setShowDeveloperDropdown(false);
+            setShowSharedOwnerDropdown(false);
+            setShowSharedDeveloperDropdown(false);
+            setShowMonitoringManagerDropdown(false);
+            setUserLookupError(null);
+            setOwnerLookupError(null);
+            setDeveloperLookupError(null);
+            setSharedOwnerLookupError(null);
+            setSharedDeveloperLookupError(null);
+            setMonitoringManagerLookupError(null);
             fetchData();
         } catch (error: any) {
             console.error('Failed to create model:', error);
@@ -880,6 +1056,56 @@ export default function ModelsPage() {
         } catch (error) {
             console.error('Failed to delete model:', error);
         }
+    };
+
+    const normalizeUser = (item?: Partial<User> | null): User | null => {
+        if (!item?.user_id || !item.full_name || !item.email) return null;
+        return {
+            user_id: item.user_id,
+            email: item.email,
+            full_name: item.full_name,
+            role: item.role ?? 'User'
+        };
+    };
+
+    const mergeUsers = (existing: User[], incoming: User[]) => {
+        const map = new Map<number, User>();
+        existing.forEach((u) => map.set(u.user_id, u));
+        incoming.forEach((u) => map.set(u.user_id, u));
+        return Array.from(map.values()).sort((a, b) => a.full_name.localeCompare(b.full_name));
+    };
+
+    const filterUsersBySearch = (query: string, excludedIds: number[] = []) => {
+        const normalized = query.trim().toLowerCase();
+        if (!normalized) return [];
+        const excluded = new Set(excludedIds);
+        return users.filter(u =>
+            !excluded.has(u.user_id) &&
+            (u.full_name.toLowerCase().includes(normalized) ||
+                u.email.toLowerCase().includes(normalized))
+        ).slice(0, 50);
+    };
+
+    const buildScopedUsers = (modelsData: Model[]) => {
+        const map = new Map<number, User>();
+        const addUser = (item?: Partial<User> | null) => {
+            const normalized = normalizeUser(item);
+            if (normalized) {
+                map.set(normalized.user_id, normalized);
+            }
+        };
+
+        addUser(user);
+        modelsData.forEach((model) => {
+            addUser(model.owner);
+            addUser(model.developer);
+            addUser(model.shared_owner);
+            addUser(model.shared_developer);
+            addUser(model.monitoring_manager);
+            model.users?.forEach((modelUser) => addUser(modelUser));
+        });
+
+        return Array.from(map.values()).sort((a, b) => a.full_name.localeCompare(b.full_name));
     };
 
     const addUserToModel = (userId: number) => {
@@ -899,13 +1125,102 @@ export default function ModelsPage() {
         }));
     };
 
+    const toggleRegulatoryCategory = (valueId: number) => {
+        setFormData(prev => {
+            const ids = prev.regulatory_category_ids;
+            if (ids.includes(valueId)) {
+                return { ...prev, regulatory_category_ids: ids.filter(id => id !== valueId) };
+            }
+            return { ...prev, regulatory_category_ids: [...ids, valueId] };
+        });
+    };
+
     const getFilteredUsers = () => {
-        if (!userSearchTerm) return [];
+        const query = userSearchTerm.trim();
+        if (!query) return [];
         return users.filter(u =>
             !formData.user_ids.includes(u.user_id) &&
-            (u.full_name.toLowerCase().includes(userSearchTerm.toLowerCase()) ||
-                u.email.toLowerCase().includes(userSearchTerm.toLowerCase()))
+            (u.full_name.toLowerCase().includes(query.toLowerCase()) ||
+                u.email.toLowerCase().includes(query.toLowerCase()))
         );
+    };
+
+    const searchUsersByEmail = async (
+        query: string,
+        setLoading: (value: boolean) => void,
+        setError: (value: string | null) => void
+    ) => {
+        const trimmed = query.trim();
+        if (!trimmed) {
+            setError('Enter an email to search.');
+            return false;
+        }
+        setLoading(true);
+        setError(null);
+        try {
+            const response = await api.get('/users/search', { params: { email: trimmed } });
+            const results = (response.data || []).map((item: User) => ({
+                user_id: item.user_id,
+                email: item.email,
+                full_name: item.full_name,
+                role: item.role ?? 'User'
+            }));
+            if (results.length === 0) {
+                setError('No users found for that email.');
+                return false;
+            }
+            setUsers((prev) => mergeUsers(prev, results));
+            return true;
+        } catch (error: any) {
+            console.error('Failed to search users:', error);
+            setError(error.response?.data?.detail || 'Unable to search users.');
+            return false;
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleUserLookup = async () => {
+        await searchUsersByEmail(userSearchTerm, setUserLookupLoading, setUserLookupError);
+    };
+
+    const handleOwnerLookup = async () => {
+        const found = await searchUsersByEmail(ownerSearchTerm, setOwnerLookupLoading, setOwnerLookupError);
+        if (found) {
+            setShowOwnerDropdown(true);
+        }
+    };
+
+    const handleDeveloperLookup = async () => {
+        const found = await searchUsersByEmail(developerSearchTerm, setDeveloperLookupLoading, setDeveloperLookupError);
+        if (found) {
+            setShowDeveloperDropdown(true);
+        }
+    };
+
+    const handleSharedOwnerLookup = async () => {
+        const found = await searchUsersByEmail(sharedOwnerSearchTerm, setSharedOwnerLookupLoading, setSharedOwnerLookupError);
+        if (found) {
+            setShowSharedOwnerDropdown(true);
+        }
+    };
+
+    const handleSharedDeveloperLookup = async () => {
+        const found = await searchUsersByEmail(sharedDeveloperSearchTerm, setSharedDeveloperLookupLoading, setSharedDeveloperLookupError);
+        if (found) {
+            setShowSharedDeveloperDropdown(true);
+        }
+    };
+
+    const handleMonitoringManagerLookup = async () => {
+        const found = await searchUsersByEmail(
+            monitoringManagerSearchTerm,
+            setMonitoringManagerLookupLoading,
+            setMonitoringManagerLookupError
+        );
+        if (found) {
+            setShowMonitoringManagerDropdown(true);
+        }
     };
 
     const toggleColumn = (columnKey: string) => {
@@ -938,6 +1253,23 @@ export default function ModelsPage() {
         if (!value) return '-';
         return value.split('T')[0];
     };
+
+    const selectedOwner = users.find((u) => u.user_id === formData.owner_id);
+    const selectedDeveloper = users.find((u) => u.user_id === formData.developer_id);
+    const selectedSharedOwner = users.find((u) => u.user_id === formData.shared_owner_id);
+    const selectedSharedDeveloper = users.find((u) => u.user_id === formData.shared_developer_id);
+    const selectedMonitoringManager = users.find((u) => u.user_id === formData.monitoring_manager_id);
+    const ownerMatches = ownerSearchTerm.trim() ? filterUsersBySearch(ownerSearchTerm) : [];
+    const developerMatches = developerSearchTerm.trim() ? filterUsersBySearch(developerSearchTerm) : [];
+    const sharedOwnerMatches = sharedOwnerSearchTerm.trim()
+        ? filterUsersBySearch(sharedOwnerSearchTerm, formData.owner_id ? [formData.owner_id] : [])
+        : [];
+    const sharedDeveloperMatches = sharedDeveloperSearchTerm.trim()
+        ? filterUsersBySearch(sharedDeveloperSearchTerm, formData.developer_id ? [formData.developer_id] : [])
+        : [];
+    const monitoringManagerMatches = monitoringManagerSearchTerm.trim()
+        ? filterUsersBySearch(monitoringManagerSearchTerm)
+        : [];
 
     // Column renderers: define how each column renders in table and CSV
     const columnRenderers: Record<string, {
@@ -1871,18 +2203,67 @@ export default function ModelsPage() {
 
                                 <div className="mb-4">
                                     <label htmlFor="owner_id" className="block text-sm font-medium mb-2">Owner (Required)</label>
-                                    <select
-                                        id="owner_id"
-                                        className="input-field"
-                                        value={formData.owner_id || ''}
-                                        onChange={(e) => setFormData({ ...formData, owner_id: e.target.value ? parseInt(e.target.value) : 0 })}
-                                        required
-                                    >
-                                        <option value="">Select Owner</option>
-                                        {users.map(u => (
-                                            <option key={u.user_id} value={u.user_id}>{u.full_name}</option>
-                                        ))}
-                                    </select>
+                                    <div className="relative">
+                                        <input
+                                            id="owner_id"
+                                            type="text"
+                                            placeholder='Type to search owners, or enter an email and click "Search by Email"...'
+                                            value={ownerSearchTerm}
+                                            onChange={(e) => {
+                                                const value = e.target.value;
+                                                setOwnerSearchTerm(value);
+                                                setShowOwnerDropdown(true);
+                                                if (formData.owner_id && selectedOwner) {
+                                                    if (value !== selectedOwner.full_name && value !== selectedOwner.email) {
+                                                        setFormData({ ...formData, owner_id: 0 });
+                                                    }
+                                                }
+                                            }}
+                                            onFocus={() => setShowOwnerDropdown(true)}
+                                            className="input-field"
+                                            required
+                                        />
+                                        {showOwnerDropdown && ownerSearchTerm.length > 0 && ownerMatches.length > 0 && (
+                                            <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                                                {ownerMatches.map((u) => (
+                                                    <div
+                                                        key={u.user_id}
+                                                        className="px-4 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                                                        onClick={() => {
+                                                            setFormData({ ...formData, owner_id: u.user_id });
+                                                            setOwnerSearchTerm(u.full_name);
+                                                            setShowOwnerDropdown(false);
+                                                        }}
+                                                    >
+                                                        <div className="font-medium">{u.full_name}</div>
+                                                        <div className="text-xs text-gray-500">{u.email}</div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                    {showOwnerDropdown && ownerSearchTerm.length > 0 && ownerMatches.length === 0 && (
+                                        <p className="mt-1 text-sm text-gray-500">No users found. Use Search by Email below.</p>
+                                    )}
+                                    {selectedOwner && (
+                                        <p className="mt-1 text-sm text-green-600">Selected: {selectedOwner.full_name}</p>
+                                    )}
+                                    <div className="mt-2 flex items-center gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={handleOwnerLookup}
+                                            className="btn-secondary px-3 py-1 text-xs"
+                                            disabled={ownerLookupLoading || !ownerSearchTerm.trim()}
+                                        >
+                                            {ownerLookupLoading ? 'Searching...' : 'Search by Email'}
+                                        </button>
+                                        {ownerLookupError && (
+                                            <span className="text-xs text-red-600">{ownerLookupError}</span>
+                                        )}
+                                    </div>
+                                    <p className="mt-1 text-xs text-gray-500">
+                                        Email lookup checks the directory for owners not listed.
+                                    </p>
                                 </div>
 
                                 <div className="mb-4">
@@ -1891,21 +2272,268 @@ export default function ModelsPage() {
                                             ? 'Developer (Required for In-House)'
                                             : 'Developer (Optional)'}
                                     </label>
-                                    <select
-                                        id="developer_id"
-                                        className="input-field"
-                                        value={formData.developer_id || ''}
-                                        onChange={(e) => setFormData({
-                                            ...formData,
-                                            developer_id: e.target.value ? parseInt(e.target.value) : null
-                                        })}
-                                        required={formData.development_type === 'In-House'}
-                                    >
-                                        <option value="">None</option>
-                                        {users.map(u => (
-                                            <option key={u.user_id} value={u.user_id}>{u.full_name}</option>
-                                        ))}
-                                    </select>
+                                    <div className="relative">
+                                        <input
+                                            id="developer_id"
+                                            type="text"
+                                            placeholder='Type to search developers, or enter an email and click "Search by Email"...'
+                                            value={developerSearchTerm}
+                                            onChange={(e) => {
+                                                const value = e.target.value;
+                                                setDeveloperSearchTerm(value);
+                                                setShowDeveloperDropdown(true);
+                                                if (formData.developer_id && selectedDeveloper) {
+                                                    if (value !== selectedDeveloper.full_name && value !== selectedDeveloper.email) {
+                                                        setFormData({ ...formData, developer_id: null });
+                                                    }
+                                                }
+                                            }}
+                                            onFocus={() => setShowDeveloperDropdown(true)}
+                                            className="input-field"
+                                            required={formData.development_type === 'In-House'}
+                                        />
+                                        {showDeveloperDropdown && developerSearchTerm.length > 0 && developerMatches.length > 0 && (
+                                            <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                                                {developerMatches.map((u) => (
+                                                    <div
+                                                        key={u.user_id}
+                                                        className="px-4 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                                                        onClick={() => {
+                                                            setFormData({ ...formData, developer_id: u.user_id });
+                                                            setDeveloperSearchTerm(u.full_name);
+                                                            setShowDeveloperDropdown(false);
+                                                        }}
+                                                    >
+                                                        <div className="font-medium">{u.full_name}</div>
+                                                        <div className="text-xs text-gray-500">{u.email}</div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                    {showDeveloperDropdown && developerSearchTerm.length > 0 && developerMatches.length === 0 && (
+                                        <p className="mt-1 text-sm text-gray-500">No users found. Use Search by Email below.</p>
+                                    )}
+                                    {selectedDeveloper && (
+                                        <p className="mt-1 text-sm text-green-600">Selected: {selectedDeveloper.full_name}</p>
+                                    )}
+                                    <div className="mt-2 flex items-center gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={handleDeveloperLookup}
+                                            className="btn-secondary px-3 py-1 text-xs"
+                                            disabled={developerLookupLoading || !developerSearchTerm.trim()}
+                                        >
+                                            {developerLookupLoading ? 'Searching...' : 'Search by Email'}
+                                        </button>
+                                        {developerLookupError && (
+                                            <span className="text-xs text-red-600">{developerLookupError}</span>
+                                        )}
+                                    </div>
+                                    <p className="mt-1 text-xs text-gray-500">
+                                        Email lookup checks the directory for developers not listed.
+                                    </p>
+                                </div>
+
+                                <div className="mb-4">
+                                    <label htmlFor="shared_owner_id" className="block text-sm font-medium mb-2">
+                                        Shared Owner (Co-Owner)
+                                    </label>
+                                    <div className="relative">
+                                        <input
+                                            id="shared_owner_id"
+                                            type="text"
+                                            placeholder='Type to search shared owners, or enter an email and click "Search by Email"...'
+                                            value={sharedOwnerSearchTerm}
+                                            onChange={(e) => {
+                                                const value = e.target.value;
+                                                setSharedOwnerSearchTerm(value);
+                                                setShowSharedOwnerDropdown(true);
+                                                if (formData.shared_owner_id && selectedSharedOwner) {
+                                                    if (value !== selectedSharedOwner.full_name && value !== selectedSharedOwner.email) {
+                                                        setFormData({ ...formData, shared_owner_id: null });
+                                                    }
+                                                }
+                                            }}
+                                            onFocus={() => setShowSharedOwnerDropdown(true)}
+                                            className="input-field"
+                                        />
+                                        {showSharedOwnerDropdown && sharedOwnerSearchTerm.length > 0 && sharedOwnerMatches.length > 0 && (
+                                            <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                                                {sharedOwnerMatches.map((u) => (
+                                                    <div
+                                                        key={u.user_id}
+                                                        className="px-4 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                                                        onClick={() => {
+                                                            setFormData({ ...formData, shared_owner_id: u.user_id });
+                                                            setSharedOwnerSearchTerm(u.full_name);
+                                                            setShowSharedOwnerDropdown(false);
+                                                        }}
+                                                    >
+                                                        <div className="font-medium">{u.full_name}</div>
+                                                        <div className="text-xs text-gray-500">{u.email}</div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                    {showSharedOwnerDropdown && sharedOwnerSearchTerm.length > 0 && sharedOwnerMatches.length === 0 && (
+                                        <p className="mt-1 text-sm text-gray-500">No users found. Use Search by Email below.</p>
+                                    )}
+                                    {selectedSharedOwner && (
+                                        <p className="mt-1 text-sm text-green-600">Selected: {selectedSharedOwner.full_name}</p>
+                                    )}
+                                    <div className="mt-2 flex items-center gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={handleSharedOwnerLookup}
+                                            className="btn-secondary px-3 py-1 text-xs"
+                                            disabled={sharedOwnerLookupLoading || !sharedOwnerSearchTerm.trim()}
+                                        >
+                                            {sharedOwnerLookupLoading ? 'Searching...' : 'Search by Email'}
+                                        </button>
+                                        {sharedOwnerLookupError && (
+                                            <span className="text-xs text-red-600">{sharedOwnerLookupError}</span>
+                                        )}
+                                    </div>
+                                    <p className="text-xs text-gray-500 mt-1">Optional co-owner for shared ownership scenarios</p>
+                                    <p className="mt-1 text-xs text-gray-500">
+                                        Email lookup checks the directory for shared owners not listed.
+                                    </p>
+                                </div>
+
+                                <div className="mb-4">
+                                    <label htmlFor="shared_developer_id" className="block text-sm font-medium mb-2">
+                                        Shared Developer (Co-Developer)
+                                    </label>
+                                    <div className="relative">
+                                        <input
+                                            id="shared_developer_id"
+                                            type="text"
+                                            placeholder='Type to search shared developers, or enter an email and click "Search by Email"...'
+                                            value={sharedDeveloperSearchTerm}
+                                            onChange={(e) => {
+                                                const value = e.target.value;
+                                                setSharedDeveloperSearchTerm(value);
+                                                setShowSharedDeveloperDropdown(true);
+                                                if (formData.shared_developer_id && selectedSharedDeveloper) {
+                                                    if (value !== selectedSharedDeveloper.full_name && value !== selectedSharedDeveloper.email) {
+                                                        setFormData({ ...formData, shared_developer_id: null });
+                                                    }
+                                                }
+                                            }}
+                                            onFocus={() => setShowSharedDeveloperDropdown(true)}
+                                            className="input-field"
+                                        />
+                                        {showSharedDeveloperDropdown && sharedDeveloperSearchTerm.length > 0 && sharedDeveloperMatches.length > 0 && (
+                                            <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                                                {sharedDeveloperMatches.map((u) => (
+                                                    <div
+                                                        key={u.user_id}
+                                                        className="px-4 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                                                        onClick={() => {
+                                                            setFormData({ ...formData, shared_developer_id: u.user_id });
+                                                            setSharedDeveloperSearchTerm(u.full_name);
+                                                            setShowSharedDeveloperDropdown(false);
+                                                        }}
+                                                    >
+                                                        <div className="font-medium">{u.full_name}</div>
+                                                        <div className="text-xs text-gray-500">{u.email}</div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                    {showSharedDeveloperDropdown && sharedDeveloperSearchTerm.length > 0 && sharedDeveloperMatches.length === 0 && (
+                                        <p className="mt-1 text-sm text-gray-500">No users found. Use Search by Email below.</p>
+                                    )}
+                                    {selectedSharedDeveloper && (
+                                        <p className="mt-1 text-sm text-green-600">Selected: {selectedSharedDeveloper.full_name}</p>
+                                    )}
+                                    <div className="mt-2 flex items-center gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={handleSharedDeveloperLookup}
+                                            className="btn-secondary px-3 py-1 text-xs"
+                                            disabled={sharedDeveloperLookupLoading || !sharedDeveloperSearchTerm.trim()}
+                                        >
+                                            {sharedDeveloperLookupLoading ? 'Searching...' : 'Search by Email'}
+                                        </button>
+                                        {sharedDeveloperLookupError && (
+                                            <span className="text-xs text-red-600">{sharedDeveloperLookupError}</span>
+                                        )}
+                                    </div>
+                                    <p className="text-xs text-gray-500 mt-1">Optional co-developer for shared development scenarios</p>
+                                    <p className="mt-1 text-xs text-gray-500">
+                                        Email lookup checks the directory for shared developers not listed.
+                                    </p>
+                                </div>
+
+                                <div className="mb-4">
+                                    <label htmlFor="monitoring_manager_id" className="block text-sm font-medium mb-2">
+                                        Monitoring Manager (Optional)
+                                    </label>
+                                    <div className="relative">
+                                        <input
+                                            id="monitoring_manager_id"
+                                            type="text"
+                                            placeholder='Type to search monitoring managers, or enter an email and click "Search by Email"...'
+                                            value={monitoringManagerSearchTerm}
+                                            onChange={(e) => {
+                                                const value = e.target.value;
+                                                setMonitoringManagerSearchTerm(value);
+                                                setShowMonitoringManagerDropdown(true);
+                                                if (formData.monitoring_manager_id && selectedMonitoringManager) {
+                                                    if (value !== selectedMonitoringManager.full_name && value !== selectedMonitoringManager.email) {
+                                                        setFormData({ ...formData, monitoring_manager_id: null });
+                                                    }
+                                                }
+                                            }}
+                                            onFocus={() => setShowMonitoringManagerDropdown(true)}
+                                            className="input-field"
+                                        />
+                                        {showMonitoringManagerDropdown && monitoringManagerSearchTerm.length > 0 && monitoringManagerMatches.length > 0 && (
+                                            <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                                                {monitoringManagerMatches.map((u) => (
+                                                    <div
+                                                        key={u.user_id}
+                                                        className="px-4 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                                                        onClick={() => {
+                                                            setFormData({ ...formData, monitoring_manager_id: u.user_id });
+                                                            setMonitoringManagerSearchTerm(u.full_name);
+                                                            setShowMonitoringManagerDropdown(false);
+                                                        }}
+                                                    >
+                                                        <div className="font-medium">{u.full_name}</div>
+                                                        <div className="text-xs text-gray-500">{u.email}</div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                    {showMonitoringManagerDropdown && monitoringManagerSearchTerm.length > 0 && monitoringManagerMatches.length === 0 && (
+                                        <p className="mt-1 text-sm text-gray-500">No users found. Use Search by Email below.</p>
+                                    )}
+                                    {selectedMonitoringManager && (
+                                        <p className="mt-1 text-sm text-green-600">Selected: {selectedMonitoringManager.full_name}</p>
+                                    )}
+                                    <div className="mt-2 flex items-center gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={handleMonitoringManagerLookup}
+                                            className="btn-secondary px-3 py-1 text-xs"
+                                            disabled={monitoringManagerLookupLoading || !monitoringManagerSearchTerm.trim()}
+                                        >
+                                            {monitoringManagerLookupLoading ? 'Searching...' : 'Search by Email'}
+                                        </button>
+                                        {monitoringManagerLookupError && (
+                                            <span className="text-xs text-red-600">{monitoringManagerLookupError}</span>
+                                        )}
+                                    </div>
+                                    <p className="text-xs text-gray-500 mt-1">User responsible for ongoing model monitoring</p>
+                                    <p className="mt-1 text-xs text-gray-500">
+                                        Email lookup checks the directory for monitoring managers not listed.
+                                    </p>
                                 </div>
 
                                 {formData.development_type === 'Third-Party' && (
@@ -1954,6 +2582,34 @@ export default function ModelsPage() {
                                         ))}
                                     </select>
                                 </div>
+
+                                {methodologyCategories.length > 0 && (
+                                    <div className="mb-4">
+                                        <label htmlFor="methodology_id" className="block text-sm font-medium mb-2">
+                                            Methodology
+                                        </label>
+                                        <select
+                                            id="methodology_id"
+                                            className="input-field"
+                                            value={formData.methodology_id || ''}
+                                            onChange={(e) => setFormData({
+                                                ...formData,
+                                                methodology_id: e.target.value ? parseInt(e.target.value) : null
+                                            })}
+                                        >
+                                            <option value="">Select Methodology</option>
+                                            {methodologyCategories.map(category => (
+                                                <optgroup key={category.category_id} label={category.name}>
+                                                    {category.methodologies.map(methodology => (
+                                                        <option key={methodology.methodology_id} value={methodology.methodology_id}>
+                                                            {methodology.name}
+                                                        </option>
+                                                    ))}
+                                                </optgroup>
+                                            ))}
+                                        </select>
+                                    </div>
+                                )}
 
                                 <div className="mb-4">
                                     <label htmlFor="wholly_owned_region_id" className="block text-sm font-medium mb-2">
@@ -2026,6 +2682,31 @@ export default function ModelsPage() {
                                         How often is this model typically used in production?
                                     </p>
                                 </div>
+
+                                {riskTiers.length > 0 && (
+                                    <div className="mb-4">
+                                        <label htmlFor="risk_tier_id" className="block text-sm font-medium mb-2">
+                                            Risk Tier
+                                        </label>
+                                        <select
+                                            id="risk_tier_id"
+                                            className="input-field"
+                                            value={formData.risk_tier_id || ''}
+                                            onChange={(e) => setFormData({
+                                                ...formData,
+                                                risk_tier_id: e.target.value ? parseInt(e.target.value) : null
+                                            })}
+                                        >
+                                            <option value="">Select Risk Tier</option>
+                                            {riskTiers
+                                                .filter(v => v.is_active ?? true)
+                                                .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+                                                .map((v) => (
+                                                    <option key={v.value_id} value={v.value_id}>{v.label}</option>
+                                                ))}
+                                        </select>
+                                    </div>
+                                )}
 
                                 <div className="mb-4">
                                     <label htmlFor="status" className="block text-sm font-medium mb-2">Status</label>
@@ -2106,6 +2787,9 @@ export default function ModelsPage() {
                                 <label className="block text-sm font-medium mb-2">
                                     Model Users ({formData.user_ids.length} selected)
                                 </label>
+                                <p className="text-xs text-gray-500 mb-2">
+                                    Search this list first, then use the email lookup to add people who are not listed.
+                                </p>
                                 <div className="relative">
                                     <input
                                         type="text"
@@ -2125,10 +2809,26 @@ export default function ModelsPage() {
                                                 >
                                                     {u.full_name} ({u.email})
                                                 </button>
-                                            ))}
+                                    ))}
                                         </div>
                                     )}
                                 </div>
+                                <div className="mt-2 flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={handleUserLookup}
+                                        className="btn-secondary px-3 py-1 text-xs"
+                                        disabled={userLookupLoading || !userSearchTerm.trim()}
+                                    >
+                                        {userLookupLoading ? 'Searching...' : 'Search by Email'}
+                                    </button>
+                                    {userLookupError && (
+                                        <span className="text-xs text-red-600">{userLookupError}</span>
+                                    )}
+                                </div>
+                                <p className="text-xs text-gray-500 mt-1">
+                                    Use email search to add people who are not already listed.
+                                </p>
                                 {formData.user_ids.length > 0 && (
                                     <div className="mt-2 flex flex-wrap gap-2">
                                         {formData.user_ids.map(uid => {
@@ -2149,6 +2849,32 @@ export default function ModelsPage() {
                                     </div>
                                 )}
                             </div>
+
+                            {regulatoryCategories.length > 0 && (
+                                <div className="mb-4">
+                                    <label className="block text-sm font-medium mb-2">
+                                        Regulatory Categories ({formData.regulatory_category_ids.length} selected)
+                                    </label>
+                                    <div className="border rounded bg-gray-50 p-3 max-h-48 overflow-y-auto">
+                                        <div className="space-y-1">
+                                            {regulatoryCategories
+                                                .filter(v => v.is_active ?? true)
+                                                .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+                                                .map(v => (
+                                                    <label key={v.value_id} className="flex items-start gap-2 cursor-pointer hover:bg-white p-1 rounded">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={formData.regulatory_category_ids.includes(v.value_id)}
+                                                            onChange={() => toggleRegulatoryCategory(v.value_id)}
+                                                            className="mt-1"
+                                                        />
+                                                        <span className="text-sm">{v.label}</span>
+                                                    </label>
+                                                ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
 
                             {/* Auto-create Validation Project Section */}
                             <div className="mb-4 border-t pt-4">

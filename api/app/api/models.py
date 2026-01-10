@@ -51,6 +51,7 @@ from app.schemas.model import (
     ModelListResponse, UserListItem, VendorListItem, TaxonomyListItem, MethodologyListItem,
     ModelTypeListItem, ModelRegionListItem
 )
+from app.schemas.user_lookup import ModelAssigneeResponse
 from app.core.lob_utils import get_user_lob_rollup_name
 from app.core.team_utils import build_lob_team_map
 from app.schemas.submission_action import SubmissionAction, SubmissionFeedback, SubmissionCommentCreate
@@ -1485,6 +1486,82 @@ def get_model(
     return model_dict
 
 
+@router.get("/{model_id}/assignees", response_model=List[ModelAssigneeResponse])
+def get_model_assignees(
+    model_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Return model-scoped recommendation assignees and assigned validators."""
+    from app.core.rls import can_access_model
+    from app.models.model_delegate import ModelDelegate
+    from app.models.validation import ValidationAssignment, ValidationRequestModelVersion
+
+    if not can_access_model(model_id, current_user, db):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
+
+    model = db.query(Model).options(
+        joinedload(Model.owner),
+        joinedload(Model.developer),
+        joinedload(Model.shared_owner),
+        joinedload(Model.shared_developer)
+    ).filter(Model.model_id == model_id).first()
+
+    if not model:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
+
+    assignees: dict[int, User] = {}
+
+    def add_user(user: User | None) -> None:
+        if user and user.user_id not in assignees:
+            assignees[user.user_id] = user
+
+    add_user(model.owner)
+    add_user(model.developer)
+    add_user(model.shared_owner)
+    add_user(model.shared_developer)
+
+    delegates = db.query(ModelDelegate).options(
+        joinedload(ModelDelegate.user)
+    ).filter(
+        ModelDelegate.model_id == model_id,
+        ModelDelegate.revoked_at == None
+    ).all()
+    for delegate in delegates:
+        add_user(delegate.user)
+
+    shared_region_owners = db.query(ModelRegion).options(
+        joinedload(ModelRegion.shared_model_owner)
+    ).filter(
+        ModelRegion.model_id == model_id,
+        ModelRegion.shared_model_owner_id.isnot(None)
+    ).all()
+    for region_link in shared_region_owners:
+        add_user(region_link.shared_model_owner)
+
+    assignments = db.query(ValidationAssignment).options(
+        joinedload(ValidationAssignment.validator)
+    ).join(
+        ValidationRequestModelVersion,
+        ValidationAssignment.request_id == ValidationRequestModelVersion.request_id
+    ).filter(
+        ValidationRequestModelVersion.model_id == model_id
+    ).all()
+    for assignment in assignments:
+        add_user(assignment.validator)
+
+    return sorted(
+        assignees.values(),
+        key=lambda u: (u.full_name or "").lower()
+    )
+
+
 @router.get("/{model_id}/roles-with-lob", response_model=ModelRolesWithLOB)
 def get_model_roles_with_lob(
     model_id: int,
@@ -2797,6 +2874,7 @@ def get_model_activity_timeline(
     - Monitoring cycles (created/submitted/completed/approvals)
     - Risk assessment changes
     - Model exceptions (detected/acknowledged/closed)
+    - Pending edits (submitted/approved/rejected)
     """
     from app.core.rls import can_access_model
     from app.models.model_delegate import ModelDelegate
@@ -3347,6 +3425,58 @@ def get_model_activity_timeline(
                 icon="✅"
             ))
 
+    # 12. Model pending edits (edit requests and their outcomes)
+    from app.models.model_pending_edit import ModelPendingEdit
+
+    pending_edits = db.query(ModelPendingEdit).options(
+        joinedload(ModelPendingEdit.requested_by),
+        joinedload(ModelPendingEdit.reviewed_by)
+    ).filter(
+        ModelPendingEdit.model_id == model_id
+    ).all()
+
+    for pe in pending_edits:
+        # Pending edit submitted
+        if pe.requested_at:
+            # Summarize the fields being changed
+            changed_fields = list((pe.proposed_changes or {}).keys())
+            field_summary = ", ".join(changed_fields[:3])
+            if len(changed_fields) > 3:
+                field_summary += f" (+{len(changed_fields) - 3} more)"
+
+            activities.append(ActivityTimelineItem(
+                timestamp=pe.requested_at,
+                activity_type="pending_edit_submitted",
+                title="Model edit submitted for approval",
+                description=f"Proposed changes to: {field_summary}" if field_summary else None,
+                user_name=pe.requested_by.full_name if pe.requested_by else None,
+                user_id=pe.requested_by.user_id if pe.requested_by else None,
+                entity_type="ModelPendingEdit",
+                entity_id=pe.pending_edit_id,
+                icon="📝"
+            ))
+
+        # Pending edit reviewed (approved or rejected)
+        if pe.reviewed_at and pe.status in ("approved", "rejected"):
+            if pe.status == "approved":
+                title = "Model edit approved and applied"
+                icon = "✅"
+            else:
+                title = "Model edit rejected"
+                icon = "❌"
+
+            activities.append(ActivityTimelineItem(
+                timestamp=pe.reviewed_at,
+                activity_type=f"pending_edit_{pe.status}",
+                title=title,
+                description=pe.review_comment,
+                user_name=pe.reviewed_by.full_name if pe.reviewed_by else None,
+                user_id=pe.reviewed_by.user_id if pe.reviewed_by else None,
+                entity_type="ModelPendingEdit",
+                entity_id=pe.pending_edit_id,
+                icon=icon
+            ))
+
     # Sort all activities by timestamp (newest first)
     activities.sort(key=lambda x: x.timestamp, reverse=True)
 
@@ -3487,6 +3617,132 @@ def list_all_pending_edits(
     return results
 
 
+def _resolve_pending_edit_values(
+    db: Session,
+    values: Dict[str, Any]
+) -> Dict[str, str]:
+    """
+    Resolve ID values in pending edit to human-readable labels.
+    Returns a dict mapping field names to resolved string values.
+    """
+    from app.models.model_type_taxonomy import ModelType
+
+    if not values:
+        return {}
+
+    resolved: Dict[str, str] = {}
+
+    # Collect all user IDs to fetch in one query
+    user_id_fields = ['owner_id', 'developer_id', 'shared_owner_id', 'shared_developer_id', 'monitoring_manager_id']
+    user_ids_to_fetch = set()
+    for field in user_id_fields:
+        if field in values and values[field] is not None:
+            user_ids_to_fetch.add(values[field])
+    if 'user_ids' in values and values['user_ids']:
+        user_ids_to_fetch.update(values['user_ids'])
+
+    # Fetch users in bulk
+    user_map: Dict[int, str] = {}
+    if user_ids_to_fetch:
+        users = db.query(User).filter(User.user_id.in_(user_ids_to_fetch)).all()
+        user_map = {u.user_id: u.full_name for u in users}
+
+    # Resolve user ID fields
+    for field in user_id_fields:
+        if field in values:
+            val = values[field]
+            if val is None:
+                resolved[field] = ""
+            else:
+                resolved[field] = user_map.get(val, str(val))
+
+    # Resolve user_ids array
+    if 'user_ids' in values:
+        user_ids = values['user_ids']
+        if user_ids:
+            names = [user_map.get(uid, str(uid)) for uid in user_ids]
+            resolved['user_ids'] = ", ".join(names)
+        else:
+            resolved['user_ids'] = ""
+
+    # Vendor lookup
+    if 'vendor_id' in values:
+        val = values['vendor_id']
+        if val is None:
+            resolved['vendor_id'] = ""
+        else:
+            vendor = db.query(Vendor).filter(Vendor.vendor_id == val).first()
+            resolved['vendor_id'] = vendor.name if vendor else str(val)
+
+    # Region lookup
+    if 'wholly_owned_region_id' in values:
+        val = values['wholly_owned_region_id']
+        if val is None:
+            resolved['wholly_owned_region_id'] = ""
+        else:
+            region = db.query(Region).filter(Region.region_id == val).first()
+            resolved['wholly_owned_region_id'] = region.name if region else str(val)
+
+    # Model type lookup
+    if 'model_type_id' in values:
+        val = values['model_type_id']
+        if val is None:
+            resolved['model_type_id'] = ""
+        else:
+            model_type = db.query(ModelType).filter(ModelType.type_id == val).first()
+            resolved['model_type_id'] = model_type.name if model_type else str(val)
+
+    # Taxonomy value lookups
+    taxonomy_fields = {
+        'risk_tier_id': 'Model Risk Tier',
+        'validation_type_id': 'Validation Type',
+        'status_id': 'Model Status',
+        'usage_frequency_id': 'Model Usage Frequency',
+    }
+
+    taxonomy_ids_to_fetch = set()
+    for field in taxonomy_fields:
+        if field in values and values[field] is not None:
+            taxonomy_ids_to_fetch.add(values[field])
+    if 'regulatory_category_ids' in values and values['regulatory_category_ids']:
+        taxonomy_ids_to_fetch.update(values['regulatory_category_ids'])
+
+    # Fetch taxonomy values in bulk
+    tax_value_map: Dict[int, str] = {}
+    if taxonomy_ids_to_fetch:
+        tax_values = db.query(TaxonomyValue).filter(TaxonomyValue.value_id.in_(taxonomy_ids_to_fetch)).all()
+        tax_value_map = {tv.value_id: tv.label for tv in tax_values}
+
+    for field in taxonomy_fields:
+        if field in values:
+            val = values[field]
+            if val is None:
+                resolved[field] = ""
+            else:
+                resolved[field] = tax_value_map.get(val, str(val))
+
+    # Regulatory category IDs array
+    if 'regulatory_category_ids' in values:
+        cat_ids = values['regulatory_category_ids']
+        if cat_ids:
+            labels = [tax_value_map.get(cid, str(cid)) for cid in cat_ids]
+            resolved['regulatory_category_ids'] = ", ".join(labels)
+        else:
+            resolved['regulatory_category_ids'] = ""
+
+    # Pass through non-ID fields as strings
+    for field, val in values.items():
+        if field not in resolved:
+            if val is None:
+                resolved[field] = ""
+            elif isinstance(val, bool):
+                resolved[field] = "Yes" if val else "No"
+            else:
+                resolved[field] = str(val)
+
+    return resolved
+
+
 @router.get("/{model_id}/pending-edits", response_model=List[dict])
 def list_model_pending_edits(
     model_id: int,
@@ -3498,6 +3754,8 @@ def list_model_pending_edits(
     List pending edits for a specific model.
 
     Accessible by model owners, developers, delegates, and admins.
+    Includes resolved_original_values and resolved_proposed_changes
+    with human-readable labels for ID fields.
     """
     from app.core.rls import can_access_model
     from app.models.model_pending_edit import ModelPendingEdit
@@ -3522,6 +3780,13 @@ def list_model_pending_edits(
     for pe in pending_edits:
         requested_at = cast(Optional[datetime], pe.requested_at)
         reviewed_at = cast(Optional[datetime], pe.reviewed_at)
+
+        # Resolve ID values to human-readable labels
+        original_values = pe.original_values or {}
+        proposed_changes = pe.proposed_changes or {}
+        resolved_original = _resolve_pending_edit_values(db, original_values)
+        resolved_proposed = _resolve_pending_edit_values(db, proposed_changes)
+
         results.append({
             "pending_edit_id": pe.pending_edit_id,
             "model_id": pe.model_id,
@@ -3531,8 +3796,10 @@ def list_model_pending_edits(
                 "email": pe.requested_by.email
             },
             "requested_at": requested_at.isoformat() if requested_at else None,
-            "proposed_changes": pe.proposed_changes,
-            "original_values": pe.original_values,
+            "proposed_changes": proposed_changes,
+            "original_values": original_values,
+            "resolved_original_values": resolved_original,
+            "resolved_proposed_changes": resolved_proposed,
             "status": pe.status,
             "reviewed_by": {
                 "user_id": pe.reviewed_by.user_id,

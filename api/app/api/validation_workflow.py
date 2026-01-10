@@ -56,6 +56,7 @@ from app.schemas.validation import (
     RiskMismatchItem, RiskMismatchReportResponse,
     PreTransitionWarning, PreTransitionWarningsResponse
 )
+from app.schemas.user_lookup import AssignableValidatorResponse
 from app.schemas.conditional_approval import (
     ConditionalApprovalsEvaluationResponse,
     SubmitConditionalApprovalRequest,
@@ -1953,6 +1954,23 @@ def get_models_needing_revalidation(
                  if x["next_submission_due"] else date.max)
 
     return results
+
+
+# ==================== USER LOOKUP ENDPOINTS ====================
+
+@router.get("/assignable-validators", response_model=List[AssignableValidatorResponse])
+def get_assignable_validators(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """List users eligible for validator assignments (Admin/Validator only)."""
+    check_validator_or_admin(current_user)
+    validators = db.query(User).options(
+        joinedload(User.role_ref)
+    ).filter(
+        User.role_code.in_([RoleCode.ADMIN.value, RoleCode.VALIDATOR.value])
+    ).order_by(User.full_name.asc()).all()
+    return validators
 
 
 # ==================== VALIDATION REQUEST ENDPOINTS ====================

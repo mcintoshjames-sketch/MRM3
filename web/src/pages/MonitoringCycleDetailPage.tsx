@@ -262,7 +262,6 @@ const MonitoringCycleDetailPage: React.FC = () => {
     // Recommendation create modal state (triggered from breach panel)
     const [showRecModal, setShowRecModal] = useState(false);
     const [recModalData, setRecModalData] = useState<{
-        users: { user_id: number; email: string; full_name: string }[];
         priorities: { value_id: number; code: string; label: string }[];
         categories: { value_id: number; code: string; label: string }[];
     } | null>(null);
@@ -734,11 +733,7 @@ const MonitoringCycleDetailPage: React.FC = () => {
         setBreachPanelOpen(false);
 
         try {
-            // Fetch required data for the modal in parallel
-            const [usersResp, taxonomiesResp] = await Promise.all([
-                api.get('/auth/users'),
-                api.get('/taxonomies/')
-            ]);
+            const taxonomiesResp = await api.get('/taxonomies/');
 
             // Find priority and category taxonomies
             const priorityTaxonomy = taxonomiesResp.data.find((t: any) => t.name === 'Recommendation Priority');
@@ -751,7 +746,6 @@ const MonitoringCycleDetailPage: React.FC = () => {
             ]);
 
             setRecModalData({
-                users: usersResp.data.filter((u: any) => u.is_active !== false),
                 priorities: (prioritiesResp.data.values || []).filter((v: any) => v.is_active),
                 categories: (categoriesResp.data.values || []).filter((v: any) => v.is_active)
             });
@@ -1548,7 +1542,6 @@ const MonitoringCycleDetailPage: React.FC = () => {
                     onClose={handleRecModalClose}
                     onCreated={handleRecCreated}
                     models={scopeModels}
-                    users={recModalData.users}
                     priorities={recModalData.priorities}
                     categories={recModalData.categories}
                     preselectedModelId={breachPanelCellIds.modelId}

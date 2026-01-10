@@ -89,17 +89,17 @@ Prefer to encapsulate assignee fetching inside `RecommendationCreateModal` so it
    - Encapsulate recommendation assignee fetching inside `RecommendationCreateModal` (or update props to carry assignees + selected model state if parent-managed).
 3. **Broader Remediation (Other Pages)**
    - Replace `/auth/users` on pages accessible to non-admins with scoped endpoints or lazy modal fetches:
-     - `web/src/pages/ModelsPage.tsx`
-     - `web/src/pages/ModelDetailsPage.tsx`
-     - `web/src/pages/RecommendationsPage.tsx`
-     - `web/src/pages/ValidationRequestDetailPage.tsx`
-     - `web/src/pages/AuditPage.tsx`
-     - `web/src/components/ModelRegionsSection.tsx`
+     - [x] `web/src/pages/ModelsPage.tsx`
+     - [x] `web/src/pages/ModelDetailsPage.tsx`
+     - [ ] `web/src/pages/RecommendationsPage.tsx`
+     - [x] `web/src/pages/ValidationRequestDetailPage.tsx`
+     - [ ] `web/src/pages/AuditPage.tsx`
+     - [x] `web/src/components/ModelRegionsSection.tsx`
    - For modal-only calls (non-fatal but still privileged), use scoped endpoints or fetch-on-open:
-     - `web/src/components/ModelLimitationsTab.tsx`
-     - `web/src/components/RecommendationEditModal.tsx`
-     - `web/src/pages/RecommendationDetailPage.tsx`
-     - `web/src/pages/MonitoringCycleDetailPage.tsx`
+     - [ ] `web/src/components/ModelLimitationsTab.tsx`
+     - [ ] `web/src/components/RecommendationEditModal.tsx`
+     - [ ] `web/src/pages/RecommendationDetailPage.tsx`
+     - [x] `web/src/pages/MonitoringCycleDetailPage.tsx`
 4. **Docs**
    - Update USER_GUIDE_MODEL_VALIDATION.md to mention assignee list is model-scoped (if implemented).
 
