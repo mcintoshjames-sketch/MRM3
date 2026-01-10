@@ -3,13 +3,21 @@ from typing import List, Any
 from datetime import date
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import or_
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.user import User
 from app.models.model import Model
 from app.models.model_submission_comment import ModelSubmissionComment
 from app.models.decommissioning import DecommissioningStatusHistory, DecommissioningRequest
-from app.models.monitoring import MonitoringCycle, MonitoringCycleApproval, MonitoringPlan, monitoring_plan_models
+from app.models.monitoring import (
+    MonitoringCycle,
+    MonitoringCycleApproval,
+    MonitoringCycleModelScope,
+    MonitoringPlanModelSnapshot,
+    MonitoringResult,
+)
+from app.core.monitoring_scope import get_cycle_scope_models
 from app.models.validation import (
     ValidationApproval, ValidationRequest, validation_request_models,
     ValidationStatusHistory
@@ -107,20 +115,28 @@ def get_news_feed(
         })
 
     # Get recent monitoring cycle completions for accessible models
-    # Query cycles via the monitoring_plan_models association table
+    accessible_model_id_set = set(accessible_model_ids)
+    scope_exists = db.query(MonitoringCycleModelScope.cycle_id).filter(
+        MonitoringCycleModelScope.cycle_id == MonitoringCycle.cycle_id,
+        MonitoringCycleModelScope.model_id.in_(accessible_model_ids)
+    ).exists()
+    snapshot_exists = db.query(MonitoringPlanModelSnapshot.snapshot_id).filter(
+        MonitoringPlanModelSnapshot.version_id == MonitoringCycle.plan_version_id,
+        MonitoringPlanModelSnapshot.model_id.in_(accessible_model_ids)
+    ).exists()
+    result_exists = db.query(MonitoringResult.result_id).filter(
+        MonitoringResult.cycle_id == MonitoringCycle.cycle_id,
+        MonitoringResult.model_id.in_(accessible_model_ids)
+    ).exists()
+
     monitoring_cycles = db.query(MonitoringCycle).options(
-        joinedload(MonitoringCycle.plan).joinedload(MonitoringPlan.models),
+        joinedload(MonitoringCycle.plan),
         joinedload(MonitoringCycle.submitted_by),
         joinedload(MonitoringCycle.completed_by),
         joinedload(MonitoringCycle.approvals).joinedload(MonitoringCycleApproval.approver),
         joinedload(MonitoringCycle.approvals).joinedload(MonitoringCycleApproval.region)
-    ).join(
-        MonitoringPlan, MonitoringCycle.plan_id == MonitoringPlan.plan_id
-    ).join(
-        monitoring_plan_models,
-        MonitoringPlan.plan_id == monitoring_plan_models.c.plan_id
     ).filter(
-        monitoring_plan_models.c.model_id.in_(accessible_model_ids)
+        or_(scope_exists, snapshot_exists, result_exists)
     ).order_by(MonitoringCycle.updated_at.desc()).limit(50).all()
 
     # Add monitoring activity to feed
@@ -129,9 +145,13 @@ def get_news_feed(
         period_text = f"{cycle.period_start_date} to {cycle.period_end_date}"
 
         # Get model names for context (may be multiple models in a plan)
-        model_names = [m.model_name for m in cycle.plan.models if m.model_id in accessible_model_ids]
-        model_context = model_names[0] if len(model_names) == 1 else f"{len(model_names)} models"
-        first_model_id = next((m.model_id for m in cycle.plan.models if m.model_id in accessible_model_ids), None)
+        scope_models = [
+            entry for entry in get_cycle_scope_models(db, cycle)
+            if entry["model_id"] in accessible_model_id_set
+        ]
+        model_names = [entry["model_name"] for entry in scope_models if entry.get("model_name")]
+        model_context = model_names[0] if len(model_names) == 1 else f"{len(scope_models)} models"
+        first_model_id = scope_models[0]["model_id"] if scope_models else None
 
         # Add completed/approved cycles
         if cycle.status == "APPROVED" and cycle.completed_at:

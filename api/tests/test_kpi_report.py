@@ -3,11 +3,25 @@
 These tests use real in-memory SQLite database with actual data fixtures.
 NO MOCKING - tests the actual endpoint logic end-to-end.
 """
+# Run (from api/): DATABASE_URL=sqlite:///:memory: SECRET_KEY=dev-test-key python3 -m pytest tests/test_kpi_report.py
+from datetime import date, timedelta
+
 import pytest
+from app.core.monitoring_membership import MonitoringMembershipService
+from app.core.time import utc_now
 from app.api.kpi_report import METRIC_DEFINITIONS
+from app.models.kpm import KpmCategory, Kpm
 from app.models import Model, ModelVersion
 from app.models.region import Region
 from app.models.model_region import ModelRegion
+from app.models.monitoring import (
+    MonitoringPlan,
+    MonitoringPlanMetric,
+    MonitoringCycle,
+    MonitoringResult,
+    MonitoringFrequency,
+    MonitoringCycleStatus,
+)
 
 
 @pytest.fixture
@@ -234,3 +248,132 @@ class TestKPIReportRegionFiltering:
         assert "region_name" in data
         assert data["region_id"] is None
         assert data["region_name"] == "All Regions"
+
+
+class TestKPIReportMonitoringTransfer:
+    """Regression tests for monitoring metrics after plan transfer."""
+
+    def test_monitoring_metrics_unchanged_after_transfer(
+        self,
+        client,
+        admin_headers,
+        admin_user,
+        usage_frequency,
+        db_session,
+    ):
+        model = Model(
+            model_name="Monitoring KPI Model",
+            status="Active",
+            owner_id=admin_user.user_id,
+            development_type="In-House",
+            usage_frequency_id=usage_frequency["daily"].value_id,
+            row_approval_status=None,
+            submitted_by_user_id=admin_user.user_id,
+        )
+        db_session.add(model)
+        db_session.flush()
+
+        plan_a = MonitoringPlan(
+            name="Monitoring KPI Plan A",
+            description="Plan before transfer",
+            frequency=MonitoringFrequency.QUARTERLY,
+            data_submission_lead_days=10,
+            reporting_lead_days=20,
+            next_submission_due_date=date.today(),
+            next_report_due_date=date.today() + timedelta(days=20),
+            is_active=True,
+        )
+        plan_b = MonitoringPlan(
+            name="Monitoring KPI Plan B",
+            description="Plan after transfer",
+            frequency=MonitoringFrequency.QUARTERLY,
+            data_submission_lead_days=10,
+            reporting_lead_days=20,
+            next_submission_due_date=date.today(),
+            next_report_due_date=date.today() + timedelta(days=20),
+            is_active=True,
+        )
+        db_session.add_all([plan_a, plan_b])
+        db_session.flush()
+
+        MonitoringMembershipService(db_session).replace_plan_models(
+            plan_a.plan_id,
+            [model.model_id],
+            changed_by_user_id=admin_user.user_id,
+            reason="KPI monitoring setup",
+        )
+
+        category = KpmCategory(
+            code="KPI_MON",
+            name="Monitoring KPI",
+            sort_order=1,
+        )
+        db_session.add(category)
+        db_session.flush()
+        kpm = Kpm(
+            category_id=category.category_id,
+            name="KPI Metric",
+            sort_order=1,
+        )
+        db_session.add(kpm)
+        db_session.flush()
+        metric = MonitoringPlanMetric(
+            plan_id=plan_a.plan_id,
+            kpm_id=kpm.kpm_id,
+            sort_order=1,
+            is_active=True,
+        )
+        db_session.add(metric)
+        db_session.flush()
+
+        cycle = MonitoringCycle(
+            plan_id=plan_a.plan_id,
+            period_start_date=date.today() - timedelta(days=90),
+            period_end_date=date.today() - timedelta(days=1),
+            submission_due_date=date.today(),
+            report_due_date=date.today() + timedelta(days=7),
+            status=MonitoringCycleStatus.APPROVED.value,
+            submitted_at=utc_now(),
+            submitted_by_user_id=admin_user.user_id,
+            completed_at=utc_now(),
+            completed_by_user_id=admin_user.user_id,
+        )
+        db_session.add(cycle)
+        db_session.flush()
+
+        result = MonitoringResult(
+            cycle_id=cycle.cycle_id,
+            plan_metric_id=metric.metric_id,
+            model_id=model.model_id,
+            numeric_value=0.4,
+            calculated_outcome="RED",
+            entered_by_user_id=admin_user.user_id,
+        )
+        db_session.add(result)
+        db_session.commit()
+
+        resp_before = client.get("/kpi-report/", headers=admin_headers)
+        assert resp_before.status_code == 200
+        metrics_before = {
+            m["metric_id"]: m for m in resp_before.json().get("metrics", [])
+        }
+
+        MonitoringMembershipService(db_session).transfer_model(
+            model_id=model.model_id,
+            to_plan_id=plan_b.plan_id,
+            changed_by_user_id=admin_user.user_id,
+            reason="KPI transfer",
+        )
+        db_session.commit()
+
+        resp_after = client.get("/kpi-report/", headers=admin_headers)
+        assert resp_after.status_code == 200
+        metrics_after = {
+            m["metric_id"]: m for m in resp_after.json().get("metrics", [])
+        }
+
+        for metric_id in ["4.10", "4.11"]:
+            before = metrics_before[metric_id]["ratio_value"]
+            after = metrics_after[metric_id]["ratio_value"]
+            assert before["numerator"] == after["numerator"]
+            assert before["denominator"] == after["denominator"]

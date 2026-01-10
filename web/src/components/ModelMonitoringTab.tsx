@@ -39,6 +39,21 @@ interface MonitoringManagerWithLOB {
     lob_rollup_name: string | null;
 }
 
+interface MonitoringPlanMembership {
+    membership_id: number;
+    model_id: number;
+    plan_id: number;
+    plan_name: string | null;
+    effective_from: string;
+    effective_to?: string | null;
+    reason?: string | null;
+    changed_by?: {
+        user_id: number;
+        email: string;
+        full_name: string;
+    } | null;
+}
+
 interface ModelMonitoringTabProps {
     modelId: number;
     modelName: string;
@@ -57,6 +72,9 @@ const ModelMonitoringTab: React.FC<ModelMonitoringTabProps> = ({
     const [allPlans, setAllPlans] = useState<AllPlan[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [historyLoading, setHistoryLoading] = useState(false);
+    const [historyError, setHistoryError] = useState<string | null>(null);
+    const [membershipHistory, setMembershipHistory] = useState<MonitoringPlanMembership[]>([]);
     const [showAddDropdown, setShowAddDropdown] = useState(false);
     const [addingToPlan, setAddingToPlan] = useState(false);
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -86,8 +104,23 @@ const ModelMonitoringTab: React.FC<ModelMonitoringTabProps> = ({
         }
     };
 
+    const fetchMembershipHistory = async () => {
+        try {
+            setHistoryLoading(true);
+            setHistoryError(null);
+            const response = await api.get(`/models/${modelId}/monitoring-plan-memberships`);
+            setMembershipHistory(response.data || []);
+        } catch (err) {
+            console.error('Failed to fetch membership history:', err);
+            setHistoryError('Failed to load membership history');
+        } finally {
+            setHistoryLoading(false);
+        }
+    };
+
     useEffect(() => {
         fetchMonitoringPlans();
+        fetchMembershipHistory();
         if (canManageMonitoringPlansFlag) {
             fetchAllPlans();
         }
@@ -103,21 +136,15 @@ const ModelMonitoringTab: React.FC<ModelMonitoringTabProps> = ({
             setAddingToPlan(true);
             setError(null);
 
-            // First get the current plan details to get existing model_ids
-            const planResponse = await api.get(`/monitoring/plans/${planId}`);
-            const existingModelIds = planResponse.data.models?.map((m: { model_id: number }) => m.model_id) || [];
-
-            // Add the new model to the list
-            const updatedModelIds = [...existingModelIds, modelId];
-
-            // Update the plan with the new model
-            await api.patch(`/monitoring/plans/${planId}`, {
-                model_ids: updatedModelIds
+            await api.post(`/models/${modelId}/monitoring-plan-transfer`, {
+                to_plan_id: planId,
+                reason: `Assigned via model monitoring tab`,
             });
 
             // Refresh the plans list
             await fetchMonitoringPlans();
             await fetchAllPlans();
+            await fetchMembershipHistory();
 
             setShowAddDropdown(false);
             setSuccessMessage(`Successfully added "${modelName}" to the monitoring plan`);
@@ -157,6 +184,81 @@ const ModelMonitoringTab: React.FC<ModelMonitoringTabProps> = ({
         }
     };
 
+    const formatDate = (value?: string | null): string => {
+        if (!value) return 'N/A';
+        return value.split('T')[0];
+    };
+
+    const membershipHistorySection = (
+        <div className="bg-white shadow overflow-hidden rounded-lg">
+            <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
+                <h3 className="text-sm font-medium text-gray-900">Membership History</h3>
+                {historyLoading && (
+                    <span className="text-xs text-gray-500">Loading...</span>
+                )}
+            </div>
+            {historyError ? (
+                <div className="px-4 py-3 text-sm text-red-600">{historyError}</div>
+            ) : membershipHistory.length === 0 && !historyLoading ? (
+                <div className="px-4 py-6 text-sm text-gray-500 text-center">
+                    No membership history available.
+                </div>
+            ) : (
+                <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                        <tr>
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                Plan
+                            </th>
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                Effective From
+                            </th>
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                Effective To
+                            </th>
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                Changed By
+                            </th>
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                Reason
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                        {membershipHistory.map((membership) => (
+                            <tr key={membership.membership_id} className="hover:bg-gray-50">
+                                <td className="px-4 py-2 whitespace-nowrap">
+                                    <div className="text-sm font-medium text-gray-900">
+                                        {membership.plan_name || `Plan ${membership.plan_id}`}
+                                    </div>
+                                    <div className="text-xs text-gray-500">#{membership.plan_id}</div>
+                                </td>
+                                <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-700">
+                                    {formatDate(membership.effective_from)}
+                                </td>
+                                <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-700">
+                                    {membership.effective_to ? (
+                                        formatDate(membership.effective_to)
+                                    ) : (
+                                        <span className="inline-flex px-2 py-0.5 text-xs font-semibold rounded-full bg-green-100 text-green-800">
+                                            Active
+                                        </span>
+                                    )}
+                                </td>
+                                <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-700">
+                                    {membership.changed_by?.full_name || 'System'}
+                                </td>
+                                <td className="px-4 py-2 text-sm text-gray-700">
+                                    {membership.reason || 'N/A'}
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            )}
+        </div>
+    );
+
     if (loading) {
         return (
             <div className="flex items-center justify-center py-12">
@@ -183,66 +285,69 @@ const ModelMonitoringTab: React.FC<ModelMonitoringTabProps> = ({
     // Empty state
     if (plans.length === 0) {
         return (
-            <div className="bg-gray-50 border border-gray-200 rounded-lg p-8 text-center">
-                <svg
-                    className="mx-auto h-12 w-12 text-gray-400"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                >
-                    <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={1.5}
-                        d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
-                    />
-                </svg>
-                <h3 className="mt-4 text-lg font-medium text-gray-900">No Monitoring Plan</h3>
-                <p className="mt-2 text-sm text-gray-500 max-w-md mx-auto">
-                    This model is not currently included in any performance monitoring plan.
-                    Performance monitoring tracks key metrics over time to ensure the model
-                    continues to perform as expected.
-                </p>
-                {canManageMonitoringPlansFlag && (
-                    <div className="mt-6 flex flex-col sm:flex-row gap-3 justify-center">
-                        <Link
-                            to={`/monitoring-plans?model=${modelId}`}
-                            className="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                        >
-                            Create New Plan
-                        </Link>
-                        {availablePlans.length > 0 && (
-                            <div className="relative inline-block">
-                                <button
-                                    onClick={() => setShowAddDropdown(!showAddDropdown)}
-                                    className="inline-flex items-center justify-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                                >
-                                    Add to Existing Plan
-                                    <svg className="ml-2 -mr-1 h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
-                                        <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
-                                    </svg>
-                                </button>
-                                {showAddDropdown && (
-                                    <div className="absolute z-10 mt-1 w-64 bg-white rounded-md shadow-lg ring-1 ring-black ring-opacity-5">
-                                        <div className="py-1 max-h-60 overflow-auto">
-                                            {availablePlans.map(plan => (
-                                                <button
-                                                    key={plan.plan_id}
-                                                    onClick={() => handleAddToExistingPlan(plan.plan_id)}
-                                                    disabled={addingToPlan}
-                                                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50"
-                                                >
-                                                    <div className="font-medium">{plan.name}</div>
-                                                    <div className="text-xs text-gray-500">{plan.frequency}</div>
-                                                </button>
-                                            ))}
+            <div className="space-y-4">
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-8 text-center">
+                    <svg
+                        className="mx-auto h-12 w-12 text-gray-400"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                    >
+                        <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={1.5}
+                            d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+                        />
+                    </svg>
+                    <h3 className="mt-4 text-lg font-medium text-gray-900">No Monitoring Plan</h3>
+                    <p className="mt-2 text-sm text-gray-500 max-w-md mx-auto">
+                        This model is not currently included in any performance monitoring plan.
+                        Performance monitoring tracks key metrics over time to ensure the model
+                        continues to perform as expected.
+                    </p>
+                    {canManageMonitoringPlansFlag && (
+                        <div className="mt-6 flex flex-col sm:flex-row gap-3 justify-center">
+                            <Link
+                                to={`/monitoring-plans?model=${modelId}`}
+                                className="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                            >
+                                Create New Plan
+                            </Link>
+                            {availablePlans.length > 0 && (
+                                <div className="relative inline-block">
+                                    <button
+                                        onClick={() => setShowAddDropdown(!showAddDropdown)}
+                                        className="inline-flex items-center justify-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                                    >
+                                        Add to Existing Plan
+                                        <svg className="ml-2 -mr-1 h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                                        </svg>
+                                    </button>
+                                    {showAddDropdown && (
+                                        <div className="absolute z-10 mt-1 w-64 bg-white rounded-md shadow-lg ring-1 ring-black ring-opacity-5">
+                                            <div className="py-1 max-h-60 overflow-auto">
+                                                {availablePlans.map(plan => (
+                                                    <button
+                                                        key={plan.plan_id}
+                                                        onClick={() => handleAddToExistingPlan(plan.plan_id)}
+                                                        disabled={addingToPlan}
+                                                        className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+                                                    >
+                                                        <div className="font-medium">{plan.name}</div>
+                                                        <div className="text-xs text-gray-500">{plan.frequency}</div>
+                                                    </button>
+                                                ))}
+                                            </div>
                                         </div>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-                    </div>
-                )}
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+                {membershipHistorySection}
             </div>
         );
     }
@@ -419,6 +524,8 @@ const ModelMonitoringTab: React.FC<ModelMonitoringTabProps> = ({
                     </tbody>
                 </table>
             </div>
+
+            {membershipHistorySection}
 
             {/* Summary info */}
             <div className="bg-blue-50 border border-blue-100 rounded-lg p-4">

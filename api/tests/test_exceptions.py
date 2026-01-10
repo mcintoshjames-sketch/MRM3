@@ -31,6 +31,7 @@ from app.models.region import Region
 from app.models.recommendation import Recommendation
 from app.models.validation import ValidationRequest, ValidationRequestModelVersion
 from app.core.time import utc_now
+from app.core.monitoring_membership import MonitoringMembershipService
 import app.core.exception_detection as exception_detection
 from app.core.exception_detection import (
     generate_exception_code,
@@ -249,7 +250,12 @@ def monitoring_setup(db_session, sample_model, admin_user):
     db_session.flush()
 
     # Associate model with plan
-    plan.models = [sample_model]
+    MonitoringMembershipService(db_session).replace_plan_models(
+        plan.plan_id,
+        [sample_model.model_id],
+        changed_by_user_id=admin_user.user_id,
+        reason="Exception test setup",
+    )
     db_session.commit()
 
     return {

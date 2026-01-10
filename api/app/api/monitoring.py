@@ -12,9 +12,11 @@ from app.core.database import get_db
 from app.core.time import utc_now
 from app.core.deps import get_current_user
 from app.core.rls import apply_model_rls, can_access_model
-from app.core.monitoring_plan_conflicts import (
-    build_monitoring_plan_conflict_message,
-    find_monitoring_plan_frequency_conflicts,
+from app.core.monitoring_membership import MonitoringMembershipService
+from app.core.monitoring_scope import (
+    get_cycle_scope_models,
+    get_cycle_scope_model_ids,
+    materialize_cycle_scope,
 )
 from app.core.monitoring_constants import (
     QUALITATIVE_OUTCOME_TAXONOMY_NAME,
@@ -41,9 +43,9 @@ from app.models.monitoring import (
     MonitoringPlanVersion,
     MonitoringPlanMetricSnapshot,
     MonitoringPlanModelSnapshot,
+    MonitoringPlanMembership,
     MonitoringFrequency,
     monitoring_team_members,
-    monitoring_plan_models,
     MonitoringCycle,
     MonitoringCycleStatus,
     MonitoringResult,
@@ -71,6 +73,9 @@ from app.schemas.monitoring import (
     MonitoringPlanDeactivationSummary,
     MonitoringPlanDeactivateRequest,
     RegionRef,
+    MonitoringPlanMembershipResponse,
+    MonitoringPlanTransferRequest,
+    MonitoringPlanTransferResponse,
     # Component 9b lookup
     ModelMonitoringPlanResponse,
     # Phase 7: Reporting & Trends
@@ -397,6 +402,7 @@ def _can_view_cycle_as_approver(
 
 
 def _can_view_cycle(
+    db: Session,
     cycle: MonitoringCycle,
     current_user: User,
     accessible_model_ids: Optional[set[int]]
@@ -404,19 +410,26 @@ def _can_view_cycle(
     """Check if user can view a monitoring cycle."""
     if cycle.assigned_to_user_id == current_user.user_id:
         return True
-    if cycle.plan and _can_view_plan(cycle.plan, current_user, accessible_model_ids):
-        return True
     if _can_view_cycle_as_approver(cycle, current_user):
         return True
+    if cycle.plan and _can_view_plan(cycle.plan, current_user, accessible_model_ids):
+        return True
+    if accessible_model_ids is None:
+        return True
+    if accessible_model_ids:
+        cycle_model_ids = get_cycle_scope_model_ids(db, cycle)
+        if cycle_model_ids & accessible_model_ids:
+            return True
     return False
 
 
 def _require_cycle_view_access(
+    db: Session,
     cycle: MonitoringCycle,
     current_user: User,
     accessible_model_ids: Optional[set[int]]
 ) -> None:
-    if not _can_view_cycle(cycle, current_user, accessible_model_ids):
+    if not _can_view_cycle(db, cycle, current_user, accessible_model_ids):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cycle not found")
 
 
@@ -1228,20 +1241,6 @@ def create_monitoring_plan(
     )
 
     plan_frequency = MonitoringFrequency(plan_data.frequency.value)
-    if plan_data.is_active and plan_data.model_ids:
-        conflicts = find_monitoring_plan_frequency_conflicts(
-            db,
-            plan_data.model_ids,
-            plan_frequency
-        )
-        if conflicts:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=build_monitoring_plan_conflict_message(
-                    conflicts,
-                    plan_frequency
-                )
-            )
 
     if not plan_data.initial_period_end_date:
         raise HTTPException(
@@ -1273,11 +1272,14 @@ def create_monitoring_plan(
     db.add(plan)
     db.flush()
 
-    # Add models (scope)
+    # Add models (scope) via membership ledger
     if plan_data.model_ids:
-        models = db.query(Model).filter(
-            Model.model_id.in_(plan_data.model_ids)).all()
-        plan.models = models
+        MonitoringMembershipService(db).replace_plan_models(
+            plan.plan_id,
+            plan_data.model_ids,
+            changed_by_user_id=current_user.user_id,
+            reason="Created via monitoring plan",
+        )
 
     # Add metrics
     for metric_data in plan_data.metrics:
@@ -1347,19 +1349,6 @@ def update_monitoring_plan(
         )
 
     current_frequency = MonitoringFrequency(plan.frequency)
-    resulting_frequency = (
-        MonitoringFrequency(update_data.frequency.value)
-        if update_data.frequency is not None
-        else current_frequency
-    )
-    resulting_model_ids = (
-        update_data.model_ids if update_data.model_ids is not None
-        else [m.model_id for m in plan.models]
-    )
-    resulting_is_active = (
-        update_data.is_active if update_data.is_active is not None
-        else plan.is_active
-    )
     if update_data.data_submission_lead_days is not None or update_data.reporting_lead_days is not None:
         new_submission_lead = (
             update_data.data_submission_lead_days
@@ -1372,30 +1361,6 @@ def update_monitoring_plan(
             else plan.reporting_lead_days
         )
         validate_plan_lead_days(new_submission_lead, new_reporting_lead)
-    requires_conflict_check = (
-        resulting_is_active
-        and bool(resulting_model_ids)
-        and (
-            update_data.frequency is not None
-            or update_data.model_ids is not None
-            or update_data.is_active is True
-        )
-    )
-    if requires_conflict_check:
-        conflicts = find_monitoring_plan_frequency_conflicts(
-            db,
-            resulting_model_ids,
-            resulting_frequency,
-            exclude_plan_id=plan_id
-        )
-        if conflicts:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=build_monitoring_plan_conflict_message(
-                    conflicts,
-                    resulting_frequency
-                )
-            )
 
     recalculate_dates = False
 
@@ -1490,10 +1455,13 @@ def update_monitoring_plan(
         plan.is_active = update_data.is_active
 
     if update_data.model_ids is not None:
-        models = db.query(Model).filter(
-            Model.model_id.in_(update_data.model_ids)).all()
-        plan.models = models
         if set(old_model_ids) != set(update_data.model_ids):
+            MonitoringMembershipService(db).replace_plan_models(
+                plan_id,
+                update_data.model_ids,
+                changed_by_user_id=current_user.user_id,
+                reason="Updated via monitoring plan",
+            )
             changes["model_ids"] = {
                 "old": old_model_ids, "new": update_data.model_ids}
             # Mark plan as having unpublished changes (models changed)
@@ -1607,8 +1575,12 @@ def get_model_monitoring_plans(
             MonitoringPlanVersion.published_by),
         joinedload(MonitoringPlan.versions).joinedload(
             MonitoringPlanVersion.metric_snapshots),
+    ).join(
+        MonitoringPlanMembership,
+        MonitoringPlanMembership.plan_id == MonitoringPlan.plan_id
     ).filter(
-        MonitoringPlan.models.any(Model.model_id == model_id),
+        MonitoringPlanMembership.model_id == model_id,
+        MonitoringPlanMembership.effective_to.is_(None),
         MonitoringPlan.is_active == True
     ).all()
 
@@ -1675,6 +1647,125 @@ def get_model_monitoring_plans(
         })
 
     return result
+
+
+@router.get(
+    "/models/{model_id}/monitoring-plan-memberships",
+    response_model=List[MonitoringPlanMembershipResponse]
+)
+def list_model_monitoring_memberships(
+    model_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get monitoring plan membership history for a model."""
+    model = db.query(Model).filter(Model.model_id == model_id).first()
+    if not model:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
+
+    if not can_access_model(model_id, current_user, db):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
+
+    memberships = db.query(MonitoringPlanMembership).options(
+        joinedload(MonitoringPlanMembership.plan),
+        joinedload(MonitoringPlanMembership.changed_by)
+    ).filter(
+        MonitoringPlanMembership.model_id == model_id
+    ).order_by(
+        MonitoringPlanMembership.effective_from.desc()
+    ).all()
+
+    return [
+        {
+            "membership_id": membership.membership_id,
+            "model_id": membership.model_id,
+            "plan_id": membership.plan_id,
+            "plan_name": membership.plan.name if membership.plan else None,
+            "effective_from": membership.effective_from,
+            "effective_to": membership.effective_to,
+            "reason": membership.reason,
+            "changed_by": {
+                "user_id": membership.changed_by.user_id,
+                "email": membership.changed_by.email,
+                "full_name": membership.changed_by.full_name
+            } if membership.changed_by else None
+        }
+        for membership in memberships
+    ]
+
+
+@router.post(
+    "/models/{model_id}/monitoring-plan-transfer",
+    response_model=MonitoringPlanTransferResponse,
+    status_code=status.HTTP_200_OK
+)
+def transfer_model_monitoring_plan(
+    model_id: int,
+    payload: MonitoringPlanTransferRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Transfer a model to another monitoring plan (Admin only)."""
+    model = db.query(Model).filter(Model.model_id == model_id).first()
+    if not model:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
+
+    # Validate destination plan
+    plan = db.query(MonitoringPlan).filter(
+        MonitoringPlan.plan_id == payload.to_plan_id
+    ).first()
+    if not plan:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Destination plan not found"
+        )
+
+    active_membership = db.query(MonitoringPlanMembership).filter(
+        MonitoringPlanMembership.model_id == model_id,
+        MonitoringPlanMembership.effective_to.is_(None)
+    ).first()
+    from_plan_id = active_membership.plan_id if active_membership else None
+
+    new_membership = MonitoringMembershipService(db).transfer_model(
+        model_id=model_id,
+        to_plan_id=payload.to_plan_id,
+        changed_by_user_id=current_user.user_id,
+        reason=payload.reason,
+    )
+    db.flush()
+
+    create_audit_log(
+        db=db,
+        entity_type="MonitoringPlanMembership",
+        entity_id=new_membership.membership_id,
+        action="TRANSFER",
+        user_id=current_user.user_id,
+        changes={
+            "model_id": model_id,
+            "from_plan_id": from_plan_id,
+            "to_plan_id": payload.to_plan_id,
+            "reason": payload.reason,
+        }
+    )
+
+    db.commit()
+
+    return {
+        "model_id": model_id,
+        "from_plan_id": from_plan_id,
+        "to_plan_id": payload.to_plan_id,
+        "effective_from": new_membership.effective_from,
+        "reason": new_membership.reason,
+    }
 
 
 # ============================================================================
@@ -1748,7 +1839,7 @@ def get_plan_version(
         )
 
     accessible_model_ids = _get_accessible_model_ids(db, current_user)
-    _require_plan_view_access(plan, current_user, accessible_model_ids)
+    has_plan_access = _can_view_plan(plan, current_user, accessible_model_ids)
 
     version = db.query(MonitoringPlanVersion).options(
         joinedload(MonitoringPlanVersion.published_by),
@@ -1766,6 +1857,19 @@ def get_plan_version(
             detail="Version not found"
         )
 
+    model_snapshots = list(version.model_snapshots)
+    if not has_plan_access:
+        snapshot_model_ids = {snapshot.model_id for snapshot in model_snapshots}
+        if not accessible_model_ids or not (snapshot_model_ids & accessible_model_ids):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Version not found"
+            )
+        model_snapshots = [
+            snapshot for snapshot in model_snapshots
+            if snapshot.model_id in accessible_model_ids
+        ]
+
     return {
         "version_id": version.version_id,
         "plan_id": version.plan_id,
@@ -1781,7 +1885,7 @@ def get_plan_version(
         "published_at": version.published_at,
         "is_active": version.is_active,
         "metrics_count": len(version.metric_snapshots),
-        "models_count": len(version.model_snapshots),
+        "models_count": len(model_snapshots),
         "cycles_count": len(version.cycles),
         "metric_snapshots": [
             {
@@ -1807,7 +1911,7 @@ def get_plan_version(
                 "model_id": m.model_id,
                 "model_name": m.model_name
             }
-            for m in version.model_snapshots
+            for m in model_snapshots
         ]
     }
 
@@ -3164,19 +3268,16 @@ def validate_results_completeness(db: Session, cycle: MonitoringCycle) -> None:
     metrics_missing_explanation = []
 
     if has_model_specific_results:
-        if cycle.plan_version_id:
-            model_snapshots = db.query(MonitoringPlanModelSnapshot).filter(
-                MonitoringPlanModelSnapshot.version_id == cycle.plan_version_id
-            ).all()
-            model_names = {m.model_id: m.model_name for m in model_snapshots}
-        else:
-            models = db.query(Model).join(
-                monitoring_plan_models,
-                monitoring_plan_models.c.model_id == Model.model_id
-            ).filter(
-                monitoring_plan_models.c.plan_id == cycle.plan_id
-            ).all()
-            model_names = {m.model_id: m.model_name for m in models}
+        model_scope = get_cycle_scope_models(db, cycle)
+        model_names = {
+            entry["model_id"]: entry.get("model_name") or f"Model {entry['model_id']}"
+            for entry in model_scope
+        }
+        if not model_names:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot submit: Cycle has no model scope."
+            )
 
         results_by_metric_model = {
             (r.plan_metric_id, r.model_id): r
@@ -3430,7 +3531,7 @@ def get_monitoring_cycle(
             status_code=status.HTTP_404_NOT_FOUND, detail="Cycle not found")
 
     accessible_model_ids = _get_accessible_model_ids(db, current_user)
-    _require_cycle_view_access(cycle, current_user, accessible_model_ids)
+    _require_cycle_view_access(db, cycle, current_user, accessible_model_ids)
 
     # Count pending approvals
     pending_approvals = sum(
@@ -3484,6 +3585,8 @@ def get_monitoring_cycle(
                 for a in cycle.approvals
             ]
 
+    scope_models = get_cycle_scope_models(db, cycle)
+
     return {
         "cycle_id": cycle.cycle_id,
         "plan_id": cycle.plan_id,
@@ -3525,7 +3628,8 @@ def get_monitoring_cycle(
         "result_count": len(cycle.results),
         "approval_count": len([a for a in cycle.approvals if a.is_required and not a.voided_at]),
         "pending_approval_count": pending_approvals,
-        "approvals": approvals_list
+        "approvals": approvals_list,
+        "scope_models": scope_models,
     }
 
 
@@ -3834,7 +3938,7 @@ def list_cycle_results(
             status_code=status.HTTP_404_NOT_FOUND, detail="Cycle not found")
 
     accessible_model_ids = _get_accessible_model_ids(db, current_user)
-    _require_cycle_view_access(cycle, current_user, accessible_model_ids)
+    _require_cycle_view_access(db, cycle, current_user, accessible_model_ids)
 
     results = db.query(MonitoringResult).options(
         joinedload(MonitoringResult.model),
@@ -4078,19 +4182,16 @@ def import_cycle_results_csv(
     # Get valid models for this plan
     valid_model_ids = set()
     model_names = {}
-    if cycle.plan_version_id:
-        # Use model snapshots from locked version
-        model_snapshots = db.query(MonitoringPlanModelSnapshot).filter(
-            MonitoringPlanModelSnapshot.version_id == cycle.plan_version_id
-        ).all()
-        for snapshot in model_snapshots:
-            valid_model_ids.add(snapshot.model_id)
-            model_names[snapshot.model_id] = snapshot.model_name
-    else:
-        # Use live plan models
-        for model in cycle.plan.models:
-            valid_model_ids.add(model.model_id)
-            model_names[model.model_id] = model.model_name
+    model_scope = get_cycle_scope_models(db, cycle)
+    if not model_scope:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot import results: Cycle has no model scope."
+        )
+    for entry in model_scope:
+        model_id = entry["model_id"]
+        valid_model_ids.add(model_id)
+        model_names[model_id] = entry.get("model_name") or f"Model {model_id}"
 
     # Get valid metrics for this plan
     valid_metric_ids = set()
@@ -4435,6 +4536,16 @@ def start_cycle(
             detail=f"Can only start a cycle in PENDING status (current: {cycle.status})"
         )
 
+    # Lock plan row and active memberships before version selection (deadlock-safe order)
+    db.query(MonitoringPlan).filter(
+        MonitoringPlan.plan_id == cycle.plan_id
+    ).with_for_update().one()
+
+    memberships = db.query(MonitoringPlanMembership).filter(
+        MonitoringPlanMembership.plan_id == cycle.plan_id,
+        MonitoringPlanMembership.effective_to.is_(None)
+    ).order_by(MonitoringPlanMembership.model_id.asc()).with_for_update().all()
+
     # Get active version for this plan (required for version locking)
     # Use SELECT FOR UPDATE to prevent race condition with concurrent version publishing
     active_version = db.query(MonitoringPlanVersion).filter(
@@ -4453,6 +4564,18 @@ def start_cycle(
     cycle.version_locked_at = utc_now()
     cycle.version_locked_by_user_id = current_user.user_id
     cycle.status = MonitoringCycleStatus.DATA_COLLECTION.value
+
+    materialize_cycle_scope(
+        db,
+        cycle,
+        memberships,
+        locked_at=cycle.version_locked_at,
+        scope_source="membership_ledger",
+        source_details={
+            "plan_id": cycle.plan_id,
+            "plan_version_id": active_version.version_id,
+        },
+    )
 
     create_audit_log(
         db=db,
@@ -4903,23 +5026,14 @@ def request_cycle_approval(
             }
         )
 
-    # Get the plan with models to determine regions
-    plan = db.query(MonitoringPlan).options(
-        joinedload(MonitoringPlan.models)
-    ).filter(MonitoringPlan.plan_id == cycle.plan_id).first()
-    if not plan:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Plan not found"
-        )
-
-    # Collect unique regions from models in the plan scope that require regional approval
+    # Collect unique regions from models in the cycle scope that require regional approval
     regions_needing_approval = set()
-    for model in plan.models:
+    for entry in get_cycle_scope_models(db, cycle):
+        model_id = entry["model_id"]
         # Get model's regions through model_regions table
         from app.models.model_region import ModelRegion
         model_regions = db.query(ModelRegion).filter(
-            ModelRegion.model_id == model.model_id
+            ModelRegion.model_id == model_id
         ).all()
 
         for mr in model_regions:
@@ -5012,7 +5126,7 @@ def list_cycle_approvals(
             status_code=status.HTTP_404_NOT_FOUND, detail="Cycle not found")
 
     accessible_model_ids = _get_accessible_model_ids(db, current_user)
-    _require_cycle_view_access(cycle, current_user, accessible_model_ids)
+    _require_cycle_view_access(db, cycle, current_user, accessible_model_ids)
 
     approvals = db.query(MonitoringCycleApproval).options(
         joinedload(MonitoringCycleApproval.approver),
@@ -5087,10 +5201,9 @@ def _check_and_complete_cycle(db: Session, cycle: MonitoringCycle, current_user:
         # Two triggers for Type 1:
         # 1. RED results without active recommendations for that metric
         # 2. RED results persisting across consecutive cycles
-        if cycle.plan and cycle.plan.models:
-            for model in cycle.plan.models:
-                detect_type1_unmitigated_performance(db, model.model_id)
-                detect_type1_persistent_red_for_model(db, model.model_id)
+        for entry in get_cycle_scope_models(db, cycle):
+            detect_type1_unmitigated_performance(db, entry["model_id"])
+            detect_type1_persistent_red_for_model(db, entry["model_id"])
 
         auto_advance_plan_due_dates(
             db,
@@ -5686,7 +5799,7 @@ def export_cycle_results(
             status_code=status.HTTP_404_NOT_FOUND, detail="Cycle not found")
 
     accessible_model_ids = _get_accessible_model_ids(db, current_user)
-    _require_cycle_view_access(cycle, current_user, accessible_model_ids)
+    _require_cycle_view_access(db, cycle, current_user, accessible_model_ids)
 
     # Get all results with metric and model info
     results = db.query(MonitoringResult).options(
@@ -5802,7 +5915,7 @@ def generate_cycle_report_pdf(
         )
 
     accessible_model_ids = _get_accessible_model_ids(db, current_user)
-    _require_cycle_view_access(cycle, current_user, accessible_model_ids)
+    _require_cycle_view_access(db, cycle, current_user, accessible_model_ids)
 
     # Verify cycle is approved or pending approval
     allowed_statuses = {
@@ -5970,10 +6083,7 @@ def generate_cycle_report_pdf(
         'plan_id': cycle.plan.plan_id,
         'name': cycle.plan.name,
         'description': cycle.plan.description,
-        'models': [
-            {'model_id': m.model_id, 'model_name': m.model_name}
-            for m in (cycle.plan.models or [])
-        ]
+        'models': get_cycle_scope_models(db, cycle),
     }
 
     # Find logo file

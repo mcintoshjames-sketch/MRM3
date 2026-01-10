@@ -4,7 +4,7 @@ from __future__ import annotations
 import enum
 from datetime import datetime, date
 from typing import Optional, List, TYPE_CHECKING
-from sqlalchemy import String, Integer, Text, Boolean, ForeignKey, Table, Column, DateTime, Date, Enum as SQLEnum, JSON, Float, UniqueConstraint
+from sqlalchemy import String, Integer, Text, Boolean, ForeignKey, Table, Column, DateTime, Date, Enum as SQLEnum, JSON, Float, UniqueConstraint, CheckConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
 from app.core.time import utc_now
@@ -45,6 +45,46 @@ monitoring_plan_models = Table(
     Column("model_id", Integer, ForeignKey(
         "models.model_id", ondelete="CASCADE"), primary_key=True),
 )
+
+
+class MonitoringPlanMembership(Base):
+    """Ledger of monitoring plan membership over time."""
+    __tablename__ = "monitoring_plan_memberships"
+
+    membership_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    model_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("models.model_id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    plan_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("monitoring_plans.plan_id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    effective_from: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=utc_now
+    )
+    effective_to: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    changed_by_user_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("users.user_id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utc_now, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utc_now, onupdate=utc_now, nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "effective_to IS NULL OR effective_to >= effective_from",
+            name="ck_monitoring_membership_effective_range"
+        ),
+    )
+
+    plan: Mapped["MonitoringPlan"] = relationship("MonitoringPlan", back_populates="memberships")
+    model: Mapped["Model"] = relationship("Model")
+    changed_by: Mapped[Optional["User"]] = relationship(
+        "User", foreign_keys=[changed_by_user_id]
+    )
 
 
 class MonitoringTeam(Base):
@@ -145,6 +185,9 @@ class MonitoringPlan(Base):
     cycles: Mapped[List["MonitoringCycle"]] = relationship(
         "MonitoringCycle", back_populates="plan", cascade="all, delete-orphan",
         order_by="desc(MonitoringCycle.period_end_date)"
+    )
+    memberships: Mapped[List["MonitoringPlanMembership"]] = relationship(
+        "MonitoringPlanMembership", back_populates="plan", cascade="all, delete-orphan"
     )
     versions: Mapped[List["MonitoringPlanVersion"]] = relationship(
         "MonitoringPlanVersion", back_populates="plan",
@@ -439,6 +482,30 @@ class MonitoringCycle(Base):
     approvals: Mapped[List["MonitoringCycleApproval"]] = relationship(
         "MonitoringCycleApproval", back_populates="cycle", cascade="all, delete-orphan"
     )
+    model_scopes: Mapped[List["MonitoringCycleModelScope"]] = relationship(
+        "MonitoringCycleModelScope", back_populates="cycle", cascade="all, delete-orphan"
+    )
+
+
+class MonitoringCycleModelScope(Base):
+    """Immutable record of which models were in scope for a monitoring cycle."""
+    __tablename__ = "monitoring_cycle_model_scopes"
+
+    cycle_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("monitoring_cycles.cycle_id", ondelete="CASCADE"),
+        primary_key=True, index=True
+    )
+    model_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("models.model_id", ondelete="CASCADE"),
+        primary_key=True, index=True
+    )
+    model_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    locked_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utc_now)
+    scope_source: Mapped[str] = mapped_column(String(50), nullable=False)
+    source_details: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+
+    cycle: Mapped["MonitoringCycle"] = relationship("MonitoringCycle", back_populates="model_scopes")
+    model: Mapped["Model"] = relationship("Model")
 
 
 class MonitoringCycleApproval(Base):

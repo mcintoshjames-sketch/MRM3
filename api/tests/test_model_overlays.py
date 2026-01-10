@@ -1,9 +1,11 @@
 """Tests for Model Overlays API endpoints."""
+# Run (from api/): DATABASE_URL=sqlite:///:memory: SECRET_KEY=dev-test-key python3 -m pytest tests/test_model_overlays.py
 from datetime import date, timedelta
 
 import pytest
 
 from app.core.time import utc_now
+from app.core.monitoring_membership import MonitoringMembershipService
 from app.models import Model, ModelOverlay, ModelLimitation, Region, Taxonomy, TaxonomyValue
 from app.models.audit_log import AuditLog
 from app.models.kpm import KpmCategory, Kpm
@@ -150,8 +152,12 @@ def _create_monitoring_setup(db_session, model, entered_by_id):
     db_session.add(cycle)
     db_session.flush()
 
-    plan.models = [model]
-    db_session.flush()
+    MonitoringMembershipService(db_session).replace_plan_models(
+        plan.plan_id,
+        [model.model_id],
+        changed_by_user_id=entered_by_id,
+        reason="Overlay test setup",
+    )
 
     result = MonitoringResult(
         cycle_id=cycle.cycle_id,
@@ -379,6 +385,47 @@ class TestCreateOverlay:
             json=payload
         )
         assert response.status_code == 400
+
+    def test_create_overlay_allows_monitoring_cycle_after_transfer(
+        self,
+        client,
+        db_session,
+        sample_model,
+        admin_user,
+        monitoring_setup,
+        validator_headers,
+    ):
+        plan_b = MonitoringPlan(
+            name="Overlay Transfer Plan",
+            description="Plan after transfer",
+            frequency=MonitoringFrequency.MONTHLY,
+        )
+        db_session.add(plan_b)
+        db_session.flush()
+
+        MonitoringMembershipService(db_session).transfer_model(
+            model_id=sample_model.model_id,
+            to_plan_id=plan_b.plan_id,
+            changed_by_user_id=admin_user.user_id,
+            reason="Transfer before overlay",
+        )
+        db_session.commit()
+
+        payload = {
+            "overlay_kind": "OVERLAY",
+            "is_underperformance_related": True,
+            "description": "Overlay after transfer",
+            "rationale": "Monitoring cycle reference",
+            "effective_from": str(utc_now().date()),
+            "trigger_monitoring_cycle_id": monitoring_setup["cycle"].cycle_id,
+        }
+        response = client.post(
+            f"/models/{sample_model.model_id}/overlays",
+            headers=validator_headers,
+            json=payload
+        )
+        assert response.status_code == 200
+        assert response.json()["trigger_monitoring_cycle_id"] == monitoring_setup["cycle"].cycle_id
 
     def test_create_overlay_rejects_mismatched_limitation(
         self, client, sample_model, validator_headers, other_limitation

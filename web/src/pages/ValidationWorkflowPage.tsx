@@ -19,6 +19,7 @@ interface ValidationRequest {
     validation_type: string;
     priority: string;
     target_completion_date: string;
+    external_project_id?: string | null;
     current_status: string;
     days_in_status: number;
     primary_validator: string | null;
@@ -103,6 +104,7 @@ export default function ValidationWorkflowPage() {
         priority_id: 0,
         target_completion_date: '',
         trigger_reason: '',
+        external_project_id: '',
         region_ids: [] as number[]  // Support multiple regions
     });
 
@@ -126,6 +128,7 @@ export default function ValidationWorkflowPage() {
     // Column customization configuration
     const availableColumns: ColumnDefinition[] = [
         { key: 'request_id', label: 'ID', default: true },
+        { key: 'external_project_id', label: 'External Project ID', default: false },
         { key: 'model_names', label: 'Model', default: true },
         { key: 'validation_type', label: 'Type', default: true },
         { key: 'regions', label: 'Region', default: true },
@@ -583,6 +586,7 @@ export default function ValidationWorkflowPage() {
                 priority_id: 0,
                 target_completion_date: '',
                 trigger_reason: '',
+                external_project_id: '',
                 region_ids: []
             });
             setSelectedVersions({});
@@ -763,6 +767,16 @@ export default function ValidationWorkflowPage() {
             sortKey: 'target_completion_date',
             cell: (req) => req.target_completion_date,
             csvValue: (req) => req.target_completion_date
+        },
+        external_project_id: {
+            header: 'External Project ID',
+            sortKey: 'external_project_id',
+            cell: (req) => req.external_project_id ? (
+                <span className="font-mono text-sm">{req.external_project_id}</span>
+            ) : (
+                <span className="text-gray-400">-</span>
+            ),
+            csvValue: (req) => req.external_project_id || ''
         },
         updated_at: {
             header: 'Last Modified',
@@ -1058,6 +1072,20 @@ export default function ValidationWorkflowPage() {
                                     value={formData.target_completion_date}
                                     onChange={(e) => setFormData({ ...formData, target_completion_date: e.target.value })}
                                     required
+                                />
+                            </div>
+                            <div className="mb-4">
+                                <label htmlFor="external_project_id" className="block text-sm font-medium mb-2">
+                                    External Project ID (Optional)
+                                </label>
+                                <input
+                                    id="external_project_id"
+                                    type="text"
+                                    className="input-field"
+                                    maxLength={36}
+                                    value={formData.external_project_id}
+                                    onChange={(e) => setFormData({ ...formData, external_project_id: e.target.value })}
+                                    placeholder="Up to 36 characters"
                                 />
                             </div>
 

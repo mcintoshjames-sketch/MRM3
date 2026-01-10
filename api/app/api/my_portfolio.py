@@ -25,7 +25,6 @@ from app.models.monitoring import (
     MonitoringCycle,
     MonitoringCycleStatus,
     MonitoringPlanMetric,
-    monitoring_plan_models,
 )
 from app.models.model_exception import ModelException
 from app.models.team import Team

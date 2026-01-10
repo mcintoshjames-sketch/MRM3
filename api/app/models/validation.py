@@ -131,6 +131,11 @@ class ValidationRequest(Base):
     )
     target_completion_date: Mapped[date] = mapped_column(Date, nullable=False)
     trigger_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    external_project_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        nullable=True,
+        comment="External project identifier"
+    )
     current_status_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("taxonomy_values.value_id"), nullable=False
     )

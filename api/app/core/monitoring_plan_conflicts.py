@@ -4,7 +4,7 @@ from typing import Dict, List, Optional
 from sqlalchemy.orm import Session
 
 from app.models.model import Model
-from app.models.monitoring import MonitoringPlan, monitoring_plan_models
+from app.models.monitoring import MonitoringPlan, MonitoringPlanMembership
 
 
 def _normalize_frequency(frequency) -> str:
@@ -32,14 +32,15 @@ def find_monitoring_plan_frequency_conflicts(
         MonitoringPlan.frequency,
         MonitoringPlan.is_active
     ).join(
-        monitoring_plan_models,
-        monitoring_plan_models.c.model_id == Model.model_id
+        MonitoringPlanMembership,
+        MonitoringPlanMembership.model_id == Model.model_id
     ).join(
         MonitoringPlan,
-        MonitoringPlan.plan_id == monitoring_plan_models.c.plan_id
+        MonitoringPlan.plan_id == MonitoringPlanMembership.plan_id
     ).filter(
         Model.model_id.in_(model_ids),
-        MonitoringPlan.frequency == frequency_value
+        MonitoringPlan.frequency == frequency_value,
+        MonitoringPlanMembership.effective_to.is_(None)
     )
 
     if active_only:

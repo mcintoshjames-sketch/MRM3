@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.core.security import create_access_token, get_password_hash
+from app.core.monitoring_membership import MonitoringMembershipService
 from app.models.user import User
 from app.models.role import Role
 from app.core.roles import RoleCode
@@ -15,7 +16,7 @@ from app.models.model import Model
 from app.models.model_delegate import ModelDelegate
 from app.models.monitoring import (
     MonitoringTeam, MonitoringPlan, MonitoringCycle,
-    MonitoringCycleStatus, monitoring_team_members, monitoring_plan_models
+    MonitoringCycleStatus, monitoring_team_members
 )
 from app.models.decommissioning import DecommissioningRequest
 from app.models.team import Team
@@ -146,7 +147,12 @@ def rls_data(db_session: Session, rls_users, usage_frequency):
     db_session.flush()
 
     # Link plan to model
-    plan.models.append(model)
+    MonitoringMembershipService(db_session).replace_plan_models(
+        plan.plan_id,
+        [model.model_id],
+        changed_by_user_id=owner.user_id,
+        reason="RLS test setup",
+    )
 
     # 5. Create Monitoring Cycle
     cycle = MonitoringCycle(

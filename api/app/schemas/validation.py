@@ -77,6 +77,11 @@ class ValidationRequestBase(BaseModel):
     priority_id: int
     target_completion_date: date
     trigger_reason: Optional[str] = None
+    external_project_id: Optional[str] = Field(
+        None,
+        max_length=36,
+        description="External project identifier"
+    )
     region_ids: List[int] = []  # Support multiple regions
     prior_validation_request_id: Optional[int] = None  # Link to previous validation for revalidations
 
@@ -176,6 +181,11 @@ class ValidationRequestUpdate(BaseModel):
     priority_id: Optional[int] = None
     target_completion_date: Optional[date] = None
     trigger_reason: Optional[str] = None
+    external_project_id: Optional[str] = Field(
+        None,
+        max_length=36,
+        description="External project identifier"
+    )
     region_ids: Optional[List[int]] = None
 
 
@@ -517,6 +527,7 @@ class ValidationRequestResponse(BaseModel):
     priority: TaxonomyValueResponse
     target_completion_date: date
     trigger_reason: Optional[str] = None
+    external_project_id: Optional[str] = None
     current_status: TaxonomyValueResponse
     regions: List[Region] = []  # Support multiple regions
     approvals: List[ValidationApprovalResponse] = []  # Added for Phase 5: Smart Approver Assignment
@@ -601,6 +612,7 @@ class ValidationRequestListResponse(BaseModel):
     validation_type: str
     priority: str
     target_completion_date: date
+    external_project_id: Optional[str] = None
     current_status: str
     days_in_status: int
     primary_validator: Optional[str] = None

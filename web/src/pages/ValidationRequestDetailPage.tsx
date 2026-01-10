@@ -125,6 +125,7 @@ interface ValidationRequestDetail {
     priority: TaxonomyValue;
     target_completion_date: string;
     trigger_reason: string | null;
+    external_project_id: string | null;
     current_status: TaxonomyValue;
     created_at: string;
     updated_at: string;
@@ -1839,6 +1840,14 @@ export default function ValidationRequestDetailPage() {
                                         </Link>
                                         <span className="ml-2 text-sm text-gray-500">({primaryModel.status})</span>
                                     </>
+                                )}
+                            </div>
+                            <div>
+                                <h4 className="text-sm font-medium text-gray-500 mb-1">External Project ID</h4>
+                                {request.external_project_id ? (
+                                    <p className="text-lg font-mono">{request.external_project_id}</p>
+                                ) : (
+                                    <p className="text-sm text-gray-400 italic">Not set</p>
                                 )}
                             </div>
                             <div>

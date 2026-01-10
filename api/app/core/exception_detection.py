@@ -11,7 +11,7 @@ import logging
 from datetime import datetime
 from typing import Optional, List, Tuple
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_, func, exists, select
+from sqlalchemy import and_, or_, func, exists, select, inspect
 from sqlalchemy.exc import IntegrityError
 
 logger = logging.getLogger(__name__)
@@ -204,7 +204,10 @@ def _create_exception(
                     "model_id": model_id,
                 },
             )
-            db.expunge(exception)
+            if exception is not None:
+                state = inspect(exception)
+                if state.session is db:
+                    db.expunge(exception)
             exception = None
             continue
         break

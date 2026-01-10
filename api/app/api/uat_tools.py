@@ -98,11 +98,13 @@ CLEAR_TABLES_ORDERED = [
     # Monitoring results and cycles
     "monitoring_results",
     "monitoring_cycle_approvals",
+    "monitoring_cycle_model_scopes",
     "monitoring_cycles",
     "monitoring_plan_metric_snapshots",
     "monitoring_plan_model_snapshots",
     "monitoring_plan_versions",
     "monitoring_plan_metrics",
+    "monitoring_plan_memberships",
     "monitoring_plan_models",
     "monitoring_plans",
     "monitoring_team_members",

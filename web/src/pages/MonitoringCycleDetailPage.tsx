@@ -92,6 +92,7 @@ interface CycleDetail {
     days_overdue: number;
     approvals?: CycleApproval[];
     plan_version?: PlanVersion | null;
+    scope_models?: Model[];
 }
 
 interface MetricSnapshot {
@@ -191,6 +192,10 @@ const MonitoringCycleDetailPage: React.FC = () => {
     const [cycle, setCycle] = useState<CycleDetail | null>(null);
     const [plan, setPlan] = useState<MonitoringPlan | null>(null);
     const [activeTab, setActiveTab] = useState<TabType>('results');
+    const scopeModels = useMemo(
+        () => cycle?.scope_models || plan?.models || [],
+        [cycle?.scope_models, plan?.models]
+    );
 
     // Results state
     const [versionDetail, setVersionDetail] = useState<VersionDetail | null>(null);
@@ -306,9 +311,13 @@ const MonitoringCycleDetailPage: React.FC = () => {
                 const cycleResp = await api.get(`/monitoring/cycles/${cycleId}`);
                 setCycle(cycleResp.data);
 
-                // Fetch plan for breadcrumb and models
-                const planResp = await api.get(`/monitoring/plans/${cycleResp.data.plan_id}`);
-                setPlan(planResp.data);
+                // Fetch plan for breadcrumb and models (optional for historical access)
+                try {
+                    const planResp = await api.get(`/monitoring/plans/${cycleResp.data.plan_id}`);
+                    setPlan(planResp.data);
+                } catch {
+                    setPlan(null);
+                }
 
                 // If cycle has results capability, load results data
                 if (['DATA_COLLECTION', 'ON_HOLD', 'UNDER_REVIEW', 'PENDING_APPROVAL', 'APPROVED'].includes(cycleResp.data.status)) {
@@ -475,10 +484,10 @@ const MonitoringCycleDetailPage: React.FC = () => {
     }, [allCycleResults, cycle]);
 
     useEffect(() => {
-        if (!plan?.models || resultForms.length === 0) return;
+        if (scopeModels.length === 0 || resultForms.length === 0) return;
 
         if (existingResultsMode === 'model-specific') {
-            const modelIds = plan.models.map(model => model.model_id);
+            const modelIds = scopeModels.map(model => model.model_id);
             const hasValidSelection = selectedResultsModel !== null && modelIds.includes(selectedResultsModel);
             if (!hasValidSelection) {
                 handleResultsModelChange(modelIds[0]);
@@ -489,7 +498,7 @@ const MonitoringCycleDetailPage: React.FC = () => {
         if (existingResultsMode === 'plan-level' && selectedResultsModel !== null) {
             handleResultsModelChange(null);
         }
-    }, [existingResultsMode, plan?.models, resultForms.length, selectedResultsModel, handleResultsModelChange]);
+    }, [existingResultsMode, scopeModels, resultForms.length, selectedResultsModel, handleResultsModelChange]);
 
     // Save result
     const saveResult = async (index: number) => {
@@ -593,8 +602,8 @@ const MonitoringCycleDetailPage: React.FC = () => {
 
     // Auto-select grid view for large datasets
     useEffect(() => {
-        if (plan?.models && versionDetail?.metric_snapshots) {
-            const models = plan.models.length;
+        if (scopeModels.length && versionDetail?.metric_snapshots) {
+            const models = scopeModels.length;
             const metrics = versionDetail.metric_snapshots.filter(m => m.original_metric_id !== null).length;
             const totalCells = models * metrics;
             // Auto-switch to grid for 10+ cells
@@ -602,7 +611,7 @@ const MonitoringCycleDetailPage: React.FC = () => {
                 setViewMode('grid');
             }
         }
-    }, [plan, versionDetail]);
+    }, [scopeModels, versionDetail]);
 
     // Grid view handlers
     const handleGridSaveResult = async (payload: ResultSavePayload) => {
@@ -649,7 +658,7 @@ const MonitoringCycleDetailPage: React.FC = () => {
         const metric = versionDetail?.metric_snapshots.find(
             m => m.original_metric_id === cell.metricId
         );
-        const model = plan?.models?.find(m => m.model_id === cell.modelId);
+        const model = scopeModels.find(m => m.model_id === cell.modelId);
 
         setBreachPanelResultId(result?.result_id ?? null);
         setBreachPanelCellIds({ modelId: cell.modelId, metricId: cell.metricId });
@@ -1276,7 +1285,7 @@ const MonitoringCycleDetailPage: React.FC = () => {
                             <MonitoringDataGrid
                                 cycleId={cycle.cycle_id}
                                 metrics={versionDetail.metric_snapshots.filter(m => m.original_metric_id !== null)}
-                                models={plan?.models || []}
+                                models={scopeModels}
                                 existingResults={allCycleResults}
                                 outcomeValues={outcomeValues}
                                 onSaveResult={handleGridSaveResult}
@@ -1288,7 +1297,7 @@ const MonitoringCycleDetailPage: React.FC = () => {
                                 cycle={cycle}
                                 versionDetail={versionDetail}
                                 resultForms={resultForms}
-                                models={plan?.models || []}
+                                models={scopeModels}
                                 outcomeValues={outcomeValues}
                                 selectedModel={selectedResultsModel}
                                 existingResultsMode={existingResultsMode}
@@ -1534,11 +1543,11 @@ const MonitoringCycleDetailPage: React.FC = () => {
             />
 
             {/* Recommendation Create Modal (from breach panel) */}
-            {showRecModal && breachPanelCellIds && cycle && recModalData && plan?.models && (
+            {showRecModal && breachPanelCellIds && cycle && recModalData && scopeModels.length > 0 && (
                 <RecommendationCreateModal
                     onClose={handleRecModalClose}
                     onCreated={handleRecCreated}
-                    models={plan.models}
+                    models={scopeModels}
                     users={recModalData.users}
                     priorities={recModalData.priorities}
                     categories={recModalData.categories}
@@ -1564,7 +1573,7 @@ const MonitoringCycleDetailPage: React.FC = () => {
                         <MonitoringCSVImport
                             cycleId={cycle.cycle_id}
                             metrics={versionDetail.metric_snapshots.filter(m => m.original_metric_id !== null)}
-                            models={plan?.models || []}
+                            models={scopeModels}
                             onImportComplete={handleCSVImportComplete}
                             onClose={() => setShowCSVImport(false)}
                         />

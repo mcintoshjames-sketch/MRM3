@@ -732,26 +732,23 @@ def _compute_monitoring_metrics(
     models_with_red = set()
     models_monitored = set()
 
-    # Get distinct model_ids from monitoring plans using the association table
-    from app.models.monitoring import monitoring_plan_models, MonitoringPlan
-    monitored_model_ids = db.query(monitoring_plan_models.c.model_id).distinct().all()
+    from app.models.monitoring import MonitoringPlanMembership
+    monitored_model_ids = db.query(MonitoringPlanMembership.model_id).filter(
+        MonitoringPlanMembership.effective_to.is_(None)
+    ).distinct().all()
     monitored_model_ids = [mid[0] for mid in monitored_model_ids if mid[0] in model_ids]
 
     for model_id in monitored_model_ids:
         models_monitored.add(model_id)
         # Get the latest monitoring result for this model
-        # A model can be in multiple plans, get latest cycle across all plans containing this model
+        # One active plan per model; get the latest cycle result across all cycles for this model
         latest_result = db.query(MonitoringResult).join(
             MonitoringCycle
-        ).join(
-            MonitoringPlan
-        ).join(
-            monitoring_plan_models,
-            and_(
-                monitoring_plan_models.c.plan_id == MonitoringPlan.plan_id,
-                monitoring_plan_models.c.model_id == model_id
-            )
-        ).order_by(MonitoringCycle.period_end_date.desc()).first()
+        ).filter(
+            MonitoringResult.model_id == model_id
+        ).order_by(
+            MonitoringCycle.period_end_date.desc()
+        ).first()
 
         if latest_result and latest_result.calculated_outcome == "RED":
             models_with_red.add(model_id)

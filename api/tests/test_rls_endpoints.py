@@ -1,8 +1,11 @@
 """API-level RLS regression tests."""
+# Run (from api/): DATABASE_URL=sqlite:///:memory: SECRET_KEY=dev-test-key python3 -m pytest tests/test_rls_endpoints.py
 from datetime import date, timedelta
 
 from app.core.roles import RoleCode
+from app.core.time import utc_now
 from app.core.security import create_access_token, get_password_hash
+from app.core.monitoring_membership import MonitoringMembershipService
 from app.models.decommissioning import DecommissioningRequest
 from app.models.irp import IRP
 from app.models.model import Model
@@ -10,6 +13,7 @@ from app.models.model_exception import ModelException
 from app.models.monitoring import (
     MonitoringCycle,
     MonitoringCycleApproval,
+    MonitoringCycleModelScope,
     MonitoringCycleStatus,
     MonitoringFrequency,
     MonitoringPlan,
@@ -176,7 +180,12 @@ def _create_monitoring_plan(db_session, name, team, data_provider, models):
     )
     db_session.add(plan)
     db_session.flush()
-    plan.models = models
+    MonitoringMembershipService(db_session).replace_plan_models(
+        plan.plan_id,
+        [model.model_id for model in models],
+        changed_by_user_id=data_provider.user_id if data_provider else None,
+        reason="RLS endpoint test setup",
+    )
     db_session.commit()
     db_session.refresh(plan)
     return plan
@@ -498,6 +507,145 @@ def test_rls_monitoring_cycle_access_for_assignee(
     response = client.get(f"/monitoring/cycles/{cycle.cycle_id}/results", headers=auth_headers)
     assert response.status_code == 200
 
+
+def test_rls_monitoring_cycle_access_via_scope_after_transfer(
+    client,
+    auth_headers,
+    admin_user,
+    test_user,
+    usage_frequency,
+    db_session,
+):
+    model = Model(
+        model_name="Scoped Model",
+        status="Active",
+        owner_id=test_user.user_id,
+        development_type="In-House",
+        usage_frequency_id=usage_frequency["daily"].value_id,
+        row_approval_status=None,
+        submitted_by_user_id=test_user.user_id,
+    )
+    db_session.add(model)
+    db_session.flush()
+
+    plan_a = MonitoringPlan(
+        name="Scope Plan A",
+        description="Plan with historical scope",
+        frequency=MonitoringFrequency.QUARTERLY,
+        data_submission_lead_days=10,
+        reporting_lead_days=20,
+        next_submission_due_date=date.today(),
+        next_report_due_date=date.today() + timedelta(days=20),
+        is_active=True,
+    )
+    plan_b = MonitoringPlan(
+        name="Scope Plan B",
+        description="Plan after transfer",
+        frequency=MonitoringFrequency.QUARTERLY,
+        data_submission_lead_days=10,
+        reporting_lead_days=20,
+        next_submission_due_date=date.today(),
+        next_report_due_date=date.today() + timedelta(days=20),
+        is_active=True,
+    )
+    db_session.add_all([plan_a, plan_b])
+    db_session.flush()
+
+    MonitoringMembershipService(db_session).replace_plan_models(
+        plan_a.plan_id,
+        [model.model_id],
+        changed_by_user_id=admin_user.user_id,
+        reason="Scope access setup",
+    )
+    cycle = MonitoringCycle(
+        plan_id=plan_a.plan_id,
+        period_start_date=date.today() - timedelta(days=90),
+        period_end_date=date.today() - timedelta(days=1),
+        submission_due_date=date.today(),
+        report_due_date=date.today() + timedelta(days=7),
+        status=MonitoringCycleStatus.APPROVED.value,
+    )
+    db_session.add(cycle)
+    db_session.flush()
+    db_session.add(MonitoringCycleModelScope(
+        cycle_id=cycle.cycle_id,
+        model_id=model.model_id,
+        locked_at=utc_now(),
+        scope_source="membership_ledger",
+    ))
+    db_session.commit()
+
+    MonitoringMembershipService(db_session).transfer_model(
+        model_id=model.model_id,
+        to_plan_id=plan_b.plan_id,
+        changed_by_user_id=admin_user.user_id,
+        reason="Transfer after cycle",
+    )
+    db_session.commit()
+
+    response = client.get(f"/monitoring/cycles/{cycle.cycle_id}", headers=auth_headers)
+    assert response.status_code == 200
+
+
+def test_rls_monitoring_cycle_access_denied_without_model_access(
+    client,
+    second_user_headers,
+    admin_user,
+    test_user,
+    usage_frequency,
+    db_session,
+):
+    model = Model(
+        model_name="Hidden Model",
+        status="Active",
+        owner_id=test_user.user_id,
+        development_type="In-House",
+        usage_frequency_id=usage_frequency["daily"].value_id,
+        row_approval_status=None,
+        submitted_by_user_id=test_user.user_id,
+    )
+    db_session.add(model)
+    db_session.flush()
+
+    plan = MonitoringPlan(
+        name="Hidden Plan",
+        description="Plan for hidden model",
+        frequency=MonitoringFrequency.QUARTERLY,
+        data_submission_lead_days=10,
+        reporting_lead_days=20,
+        next_submission_due_date=date.today(),
+        next_report_due_date=date.today() + timedelta(days=20),
+        is_active=True,
+    )
+    db_session.add(plan)
+    db_session.flush()
+
+    MonitoringMembershipService(db_session).replace_plan_models(
+        plan.plan_id,
+        [model.model_id],
+        changed_by_user_id=admin_user.user_id,
+        reason="Hidden access setup",
+    )
+    cycle = MonitoringCycle(
+        plan_id=plan.plan_id,
+        period_start_date=date.today() - timedelta(days=90),
+        period_end_date=date.today() - timedelta(days=1),
+        submission_due_date=date.today(),
+        report_due_date=date.today() + timedelta(days=7),
+        status=MonitoringCycleStatus.APPROVED.value,
+    )
+    db_session.add(cycle)
+    db_session.flush()
+    db_session.add(MonitoringCycleModelScope(
+        cycle_id=cycle.cycle_id,
+        model_id=model.model_id,
+        locked_at=utc_now(),
+        scope_source="membership_ledger",
+    ))
+    db_session.commit()
+
+    response = client.get(f"/monitoring/cycles/{cycle.cycle_id}", headers=second_user_headers)
+    assert response.status_code == 404
 
 def test_rls_monitoring_cycle_approvals_require_access(
     client,

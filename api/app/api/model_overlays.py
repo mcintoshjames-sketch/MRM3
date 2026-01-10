@@ -10,6 +10,7 @@ from app.core.roles import is_admin, is_validator
 from app.core.rls import can_access_model
 from app.core.team_utils import get_models_team_map
 from app.core.time import utc_now
+from app.core.monitoring_scope import get_cycle_scope_model_ids
 from app.models import (
     User, Model, Region, Team, TaxonomyValue,
     ModelOverlay, ModelLimitation, MonitoringResult, MonitoringCycle, MonitoringPlan,
@@ -101,8 +102,8 @@ def _validate_monitoring_result(db: Session, model_id: int, result_id: int) -> M
             raise HTTPException(status_code=400, detail="Monitoring result does not belong to this model")
         return result
 
-    plan_models = [m.model_id for m in result.cycle.plan.models] if result.cycle and result.cycle.plan else []
-    if len(plan_models) == 1 and plan_models[0] == model_id:
+    scope_model_ids = get_cycle_scope_model_ids(db, result.cycle) if result.cycle else set()
+    if len(scope_model_ids) == 1 and model_id in scope_model_ids:
         return result
 
     raise HTTPException(status_code=400, detail="Monitoring result does not belong to this model")
@@ -115,8 +116,8 @@ def _validate_monitoring_cycle(db: Session, model_id: int, cycle_id: int) -> Mon
     if not cycle:
         raise HTTPException(status_code=400, detail="Invalid trigger_monitoring_cycle_id")
 
-    plan_models = [m.model_id for m in cycle.plan.models] if cycle.plan else []
-    if model_id not in plan_models:
+    scope_model_ids = get_cycle_scope_model_ids(db, cycle)
+    if model_id not in scope_model_ids:
         raise HTTPException(status_code=400, detail="Monitoring cycle does not include this model")
     return cycle
 

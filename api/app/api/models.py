@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from pydantic import BaseModel
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session, joinedload, selectinload
+from sqlalchemy import or_
 from app.core.database import get_db
 from app.core.time import utc_now
 from app.core.deps import get_current_user
@@ -27,7 +28,14 @@ from app.models.model_version import ModelVersion
 from app.models.model_region import ModelRegion
 from app.models.validation_grouping import ValidationGroupingMemory
 from app.models.model_hierarchy import ModelHierarchy
-from app.models.monitoring import MonitoringCycle, MonitoringCycleApproval, MonitoringPlan, monitoring_plan_models
+from app.models.monitoring import (
+    MonitoringCycle,
+    MonitoringCycleApproval,
+    MonitoringPlan,
+    MonitoringCycleModelScope,
+    MonitoringPlanModelSnapshot,
+    MonitoringResult,
+)
 from app.models.methodology import Methodology
 from app.models.risk_assessment import ModelRiskAssessment
 from app.models.irp import IRP
@@ -3138,19 +3146,27 @@ def get_model_activity_timeline(
 
     # 9. Monitoring cycles (performance monitoring)
     # Find monitoring plans that include this model
+    scope_exists = db.query(MonitoringCycleModelScope.cycle_id).filter(
+        MonitoringCycleModelScope.cycle_id == MonitoringCycle.cycle_id,
+        MonitoringCycleModelScope.model_id == model_id
+    ).exists()
+    snapshot_exists = db.query(MonitoringPlanModelSnapshot.snapshot_id).filter(
+        MonitoringPlanModelSnapshot.version_id == MonitoringCycle.plan_version_id,
+        MonitoringPlanModelSnapshot.model_id == model_id
+    ).exists()
+    result_exists = db.query(MonitoringResult.result_id).filter(
+        MonitoringResult.cycle_id == MonitoringCycle.cycle_id,
+        MonitoringResult.model_id == model_id
+    ).exists()
+
     monitoring_cycles = db.query(MonitoringCycle).options(
         joinedload(MonitoringCycle.plan),
         joinedload(MonitoringCycle.submitted_by),
         joinedload(MonitoringCycle.completed_by),
         joinedload(MonitoringCycle.approvals).joinedload(MonitoringCycleApproval.approver),
         joinedload(MonitoringCycle.approvals).joinedload(MonitoringCycleApproval.region)
-    ).join(
-        MonitoringPlan, MonitoringCycle.plan_id == MonitoringPlan.plan_id
-    ).join(
-        monitoring_plan_models,
-        MonitoringPlan.plan_id == monitoring_plan_models.c.plan_id
     ).filter(
-        monitoring_plan_models.c.model_id == model_id
+        or_(scope_exists, snapshot_exists, result_exists)
     ).all()
 
     for cycle in monitoring_cycles:

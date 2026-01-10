@@ -39,6 +39,39 @@ class ModelRef(BaseModel):
 
 
 # ============================================================================
+# MONITORING PLAN MEMBERSHIP SCHEMAS
+# ============================================================================
+
+class MonitoringPlanMembershipResponse(BaseModel):
+    """Response schema for monitoring plan membership history."""
+    membership_id: int
+    model_id: int
+    plan_id: int
+    plan_name: Optional[str] = None
+    effective_from: datetime
+    effective_to: Optional[datetime] = None
+    reason: Optional[str] = None
+    changed_by: Optional[UserRef] = None
+
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
+
+
+class MonitoringPlanTransferRequest(BaseModel):
+    """Request schema for monitoring plan transfer."""
+    to_plan_id: int
+    reason: Optional[str] = None
+
+
+class MonitoringPlanTransferResponse(BaseModel):
+    """Response schema for monitoring plan transfer."""
+    model_id: int
+    from_plan_id: Optional[int] = None
+    to_plan_id: int
+    effective_from: datetime
+    reason: Optional[str] = None
+
+
+# ============================================================================
 # KPM REFERENCE (for plan metrics)
 # ============================================================================
 
@@ -449,6 +482,8 @@ class MonitoringCycleResponse(BaseModel):
     pending_approval_count: int = 0
     # Embedded approvals (with can_approve computed for current user)
     approvals: Optional[List["MonitoringCycleApprovalResponse"]] = None
+    # Immutable model scope for this cycle
+    scope_models: List[ModelRef] = []
 
     model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 

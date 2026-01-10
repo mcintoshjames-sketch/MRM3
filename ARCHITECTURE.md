@@ -80,7 +80,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
 - Additional approvals: `conditional_approval.py` (ApproverRole, ConditionalApprovalRule, RuleRequiredApprover).
   - MAP Applications: `map_application.py` (mock application inventory), `model_application.py` (model-application links with relationship types).
   - KPM (Key Performance Metrics): `kpm.py` (KpmCategory, Kpm - library of ongoing monitoring metrics).
-  - Performance Monitoring: `monitoring.py` (MonitoringTeam, MonitoringPlan, MonitoringPlanMetric, MonitoringPlanVersion, MonitoringPlanMetricSnapshot, monitoring_team_members, monitoring_plan_models junction tables).
+  - Performance Monitoring: `monitoring.py` (MonitoringTeam, MonitoringPlan, MonitoringPlanMetric, MonitoringPlanVersion, MonitoringPlanMetricSnapshot, MonitoringPlanMembership, MonitoringCycleModelScope, monitoring_team_members, monitoring_plan_models projection table).
   - Recommendations: `recommendation.py` (Recommendation, ActionPlanTask, RecommendationRebuttal, ClosureEvidence, RecommendationStatusHistory, RecommendationApproval, RecommendationPriorityConfig, RecommendationPriorityRegionalOverride).
   - Risk Assessment: `risk_assessment.py` (QualitativeRiskFactor, QualitativeFactorGuidance, ModelRiskAssessment, QualitativeFactorAssessment) - qualitative/quantitative scoring with inherent risk matrix and tier derivation.
   - Scorecard: `scorecard.py` (ScorecardSection, ScorecardCriterion, ValidationScorecardRating, ValidationScorecardResult, ScorecardConfigVersion, ScorecardSectionSnapshot, ScorecardCriterionSnapshot) - validation scorecard with configuration versioning.
@@ -338,7 +338,8 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
 - **Purpose**: Define recurring monitoring schedules for model performance review with configurable metrics and thresholds.
 - **Data Model**:
   - **MonitoringTeam**: Groups of users responsible for monitoring. Fields: team_id, name, description, is_active, members (many-to-many via monitoring_team_members).
-  - **MonitoringPlan**: Recurring monitoring schedule. Fields: plan_id, name, description, frequency (Monthly/Quarterly/Semi-Annual/Annual), monitoring_team_id, data_provider_user_id, reporting_lead_days, data_submission_lead_days, next_submission_due_date, next_report_due_date, is_active, is_dirty, models (many-to-many via monitoring_plan_models).
+  - **MonitoringPlan**: Recurring monitoring schedule. Fields: plan_id, name, description, frequency (Monthly/Quarterly/Semi-Annual/Annual), monitoring_team_id, data_provider_user_id, reporting_lead_days, data_submission_lead_days, next_submission_due_date, next_report_due_date, is_active, is_dirty, current models (projection via monitoring_plan_models).
+  - **MonitoringPlanMembership**: Ledger of plan assignment over time. Fields: membership_id, model_id, plan_id, effective_from, effective_to, reason, changed_by_user_id. Invariant: one active plan per model (effective_to IS NULL).
   - **MonitoringPlanMetric**: KPM configuration for a plan with thresholds. Fields: metric_id, plan_id, kpm_id, yellow_min/max, red_min/max, qualitative_guidance, sort_order, is_active.
   - **MonitoringPlanVersion**: Version snapshots of plan metric configurations. Fields: version_id, plan_id, version_number, version_name, description, effective_date, published_by_user_id, published_at, is_active.
   - **MonitoringPlanMetricSnapshot**: Point-in-time capture of metric configuration at version publish. Fields: snapshot_id, version_id, original_metric_id, kpm_id, yellow_min/max, red_min/max, qualitative_guidance, sort_order, is_active, kpm_name, kpm_category_name, evaluation_type.
@@ -373,12 +374,15 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - Metrics: `POST /plans/{id}/metrics` (Admin or team member), `PATCH /plans/{id}/metrics/{metric_id}` (Admin or team member), `DELETE /plans/{id}/metrics/{metric_id}` (Admin or team member)
   - Versions: `GET /plans/{id}/versions`, `GET /plans/{id}/versions/{version_id}`, `POST /plans/{id}/versions/publish`, `GET /plans/{id}/versions/{version_id}/export`
   - Model lookup: `GET /models/{model_id}/monitoring-plans` (for component 9b)
+  - Membership history: `GET /models/{model_id}/monitoring-plan-memberships`
+  - Transfer: `POST /models/{model_id}/monitoring-plan-transfer`
 - **Frontend**: MonitoringPlansPage (Admin only) with tabs for Teams and Plans management. Metrics modal adapts configuration form based on KPM evaluation type: shows threshold fields for Quantitative KPMs, guidance text for Qualitative/Outcome Only. Versions modal displays version history with publish capability, version details with metric snapshots, and CSV export.
 
 ## Monitoring Cycles & Results (with Approval Workflow)
 - **Purpose**: Capture periodic monitoring results with Red/Yellow/Green outcome calculation and formal approval workflow similar to validation projects.
 - **Data Model**:
   - **MonitoringCycle**: Represents one monitoring period for a plan. Fields: cycle_id, plan_id, period_start_date, period_end_date, submission_due_date, report_due_date, status, hold_reason, hold_start_date, original_due_date, postponed_due_date, postponement_count, assigned_to_user_id, submitted_at, submitted_by_user_id, completed_at, completed_by_user_id, notes, report_url, **plan_version_id** (locked at DATA_COLLECTION), **version_locked_at**, **version_locked_by_user_id**.
+  - **MonitoringCycleModelScope**: Immutable model scope for a cycle. Fields: cycle_id, model_id, model_name, locked_at, scope_source, source_details. Materialized when cycle starts.
   - **MonitoringCycleApproval**: Approval records for cycles (Global + Regional). Fields: approval_id, cycle_id, approver_id, approval_type (Global/Regional), region_id, represented_region_id, is_required, approval_status (Pending/Approved/Rejected/Voided), comments, approved_at, approval_evidence, voided_by_id, void_reason, voided_at.
   - **MonitoringResult**: Individual metric result for a cycle. Fields: result_id, cycle_id, plan_metric_id, model_id (optional for multi-model plans), numeric_value, outcome_value_id, calculated_outcome (GREEN/YELLOW/RED/N/A), narrative, supporting_data (JSON), entered_by_user_id.
 - **Cycle Status Workflow**:
@@ -398,6 +402,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
     - **Global Approval**: Always required (1 approval)
     - **Regional Approvals**: One per region where models in plan scope are deployed (based on model_regions table, only for regions with requires_regional_approval=true)
   - Approvers not pre-assigned; any user with appropriate role can approve
+  - **History Precedence**: cycle history queries resolve model scope from MonitoringCycleModelScope first, then fall back to plan version snapshots or results if scopes are missing.
   - When all required approvals obtained, cycle auto-transitions to APPROVED
   - Admin can void approval requirements with documented reason
   - Rejection returns cycle to UNDER_REVIEW and resets other pending approvals

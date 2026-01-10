@@ -5,6 +5,7 @@ from app.core.monitoring_backfill import (
     backfill_monitoring_results_outcomes,
     backfill_monitoring_cycle_versions,
 )
+from app.core.monitoring_membership import MonitoringMembershipService
 from app.core.time import utc_now
 from app.models.kpm import Kpm, KpmCategory
 from app.models.model import Model
@@ -128,7 +129,12 @@ def _setup_versioned_cycle(db_session, admin_user, usage_frequency):
     )
     db_session.add(plan)
     db_session.flush()
-    plan.models = [model]
+    MonitoringMembershipService(db_session).replace_plan_models(
+        plan.plan_id,
+        [model.model_id],
+        changed_by_user_id=admin_user.user_id,
+        reason="Backfill test setup",
+    )
 
     metric = MonitoringPlanMetric(
         plan_id=plan.plan_id,

@@ -686,9 +686,9 @@ class TestMonitoringPlans:
 
 
 class TestMonitoringPlanFrequencyOverlap:
-    """Tests for monitoring plan frequency overlap rules."""
+    """Tests for monitoring plan transfer behavior (one plan per model)."""
 
-    def test_create_plan_blocks_same_frequency_for_model(self, client, admin_headers, sample_model):
+    def test_create_plan_transfers_model_to_new_plan(self, client, admin_headers, sample_model):
         create_resp = client.post("/monitoring/plans", headers=admin_headers, json={
             "initial_period_end_date": date.today().isoformat(),
             "name": "Monthly Plan A",
@@ -696,7 +696,6 @@ class TestMonitoringPlanFrequencyOverlap:
             "model_ids": [sample_model.model_id]
         })
         assert create_resp.status_code == 201
-        plan_id = create_resp.json()["plan_id"]
 
         response = client.post("/monitoring/plans", headers=admin_headers, json={
             "initial_period_end_date": date.today().isoformat(),
@@ -704,11 +703,16 @@ class TestMonitoringPlanFrequencyOverlap:
             "frequency": "Monthly",
             "model_ids": [sample_model.model_id]
         })
-        assert response.status_code == 400
-        detail = response.json()["detail"]
-        assert "one active monitoring plan per frequency" in detail.lower()
-        assert str(sample_model.model_id) in detail
-        assert str(plan_id) in detail
+        assert response.status_code == 201
+        plan_b_id = response.json()["plan_id"]
+
+        list_resp = client.get(
+            f"/models/{sample_model.model_id}/monitoring-plans",
+            headers=admin_headers
+        )
+        assert list_resp.status_code == 200
+        plan_ids = [plan["plan_id"] for plan in list_resp.json()]
+        assert plan_ids == [plan_b_id]
 
     def test_create_plan_allows_different_frequency(self, client, admin_headers, sample_model):
         create_resp = client.post("/monitoring/plans", headers=admin_headers, json={
@@ -726,8 +730,17 @@ class TestMonitoringPlanFrequencyOverlap:
             "model_ids": [sample_model.model_id]
         })
         assert response.status_code == 201
+        plan_b_id = response.json()["plan_id"]
 
-    def test_update_plan_blocks_adding_model_conflict(self, client, admin_headers, sample_model):
+        list_resp = client.get(
+            f"/models/{sample_model.model_id}/monitoring-plans",
+            headers=admin_headers
+        )
+        assert list_resp.status_code == 200
+        plan_ids = [plan["plan_id"] for plan in list_resp.json()]
+        assert plan_ids == [plan_b_id]
+
+    def test_update_plan_allows_transfer_on_model_add(self, client, admin_headers, sample_model):
         create_resp = client.post("/monitoring/plans", headers=admin_headers, json={
             "initial_period_end_date": date.today().isoformat(),
             "name": "Monthly Plan A",
@@ -735,7 +748,6 @@ class TestMonitoringPlanFrequencyOverlap:
             "model_ids": [sample_model.model_id]
         })
         assert create_resp.status_code == 201
-        plan_id = create_resp.json()["plan_id"]
 
         second_resp = client.post("/monitoring/plans", headers=admin_headers, json={
             "initial_period_end_date": date.today().isoformat(),
@@ -748,13 +760,17 @@ class TestMonitoringPlanFrequencyOverlap:
         response = client.patch(f"/monitoring/plans/{second_plan_id}", headers=admin_headers, json={
             "model_ids": [sample_model.model_id]
         })
-        assert response.status_code == 400
-        detail = response.json()["detail"]
-        assert "one active monitoring plan per frequency" in detail.lower()
-        assert str(sample_model.model_id) in detail
-        assert str(plan_id) in detail
+        assert response.status_code == 200
 
-    def test_update_plan_blocks_frequency_change_conflict(self, client, admin_headers, sample_model):
+        list_resp = client.get(
+            f"/models/{sample_model.model_id}/monitoring-plans",
+            headers=admin_headers
+        )
+        assert list_resp.status_code == 200
+        plan_ids = [plan["plan_id"] for plan in list_resp.json()]
+        assert plan_ids == [second_plan_id]
+
+    def test_update_plan_allows_frequency_change_after_transfer(self, client, admin_headers, sample_model):
         quarterly_resp = client.post("/monitoring/plans", headers=admin_headers, json={
             "initial_period_end_date": date.today().isoformat(),
             "name": "Quarterly Plan A",
@@ -762,7 +778,6 @@ class TestMonitoringPlanFrequencyOverlap:
             "model_ids": [sample_model.model_id]
         })
         assert quarterly_resp.status_code == 201
-        plan_id = quarterly_resp.json()["plan_id"]
 
         monthly_resp = client.post("/monitoring/plans", headers=admin_headers, json={
             "initial_period_end_date": date.today().isoformat(),
@@ -776,13 +791,17 @@ class TestMonitoringPlanFrequencyOverlap:
         response = client.patch(f"/monitoring/plans/{monthly_plan_id}", headers=admin_headers, json={
             "frequency": "Quarterly"
         })
-        assert response.status_code == 400
-        detail = response.json()["detail"]
-        assert "one active monitoring plan per frequency" in detail.lower()
-        assert str(sample_model.model_id) in detail
-        assert str(plan_id) in detail
+        assert response.status_code == 200
 
-    def test_activate_plan_blocks_frequency_conflict(self, client, admin_headers, sample_model):
+        list_resp = client.get(
+            f"/models/{sample_model.model_id}/monitoring-plans",
+            headers=admin_headers
+        )
+        assert list_resp.status_code == 200
+        plan_ids = [plan["plan_id"] for plan in list_resp.json()]
+        assert plan_ids == [monthly_plan_id]
+
+    def test_activate_plan_allows_after_transfer(self, client, admin_headers, sample_model):
         active_resp = client.post("/monitoring/plans", headers=admin_headers, json={
             "initial_period_end_date": date.today().isoformat(),
             "name": "Monthly Plan A",
@@ -791,7 +810,6 @@ class TestMonitoringPlanFrequencyOverlap:
             "is_active": True
         })
         assert active_resp.status_code == 201
-        plan_id = active_resp.json()["plan_id"]
 
         inactive_resp = client.post("/monitoring/plans", headers=admin_headers, json={
             "initial_period_end_date": date.today().isoformat(),
@@ -806,11 +824,15 @@ class TestMonitoringPlanFrequencyOverlap:
         response = client.patch(f"/monitoring/plans/{inactive_plan_id}", headers=admin_headers, json={
             "is_active": True
         })
-        assert response.status_code == 400
-        detail = response.json()["detail"]
-        assert "one active monitoring plan per frequency" in detail.lower()
-        assert str(sample_model.model_id) in detail
-        assert str(plan_id) in detail
+        assert response.status_code == 200
+
+        list_resp = client.get(
+            f"/models/{sample_model.model_id}/monitoring-plans",
+            headers=admin_headers
+        )
+        assert list_resp.status_code == 200
+        plan_ids = [plan["plan_id"] for plan in list_resp.json()]
+        assert plan_ids == [inactive_plan_id]
 
 
 class TestMonitoringPlanMetrics:

@@ -237,6 +237,13 @@ When you need to update a monitoring plan:
 
 **Important**: Cycles that are already in progress use the version that was active when they started. Your changes will not affect them.
 
+### Transferring a Model Between Monitoring Plans
+
+- A model can belong to only one monitoring plan at a time.
+- Use the transfer action (Admin) to move a model to a new plan and optionally record a reason.
+- Transfers are blocked if the source plan has an active cycle in **Data Collection**, **Under Review**, **Pending Approval**, or **On Hold**.
+- Historical cycles and reports remain visible after a transfer because cycle scope is locked at cycle start.
+
 ---
 
 ## 5. The Monitoring Cycle Workflow
