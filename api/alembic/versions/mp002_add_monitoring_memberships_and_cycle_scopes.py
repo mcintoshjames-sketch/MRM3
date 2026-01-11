@@ -1,7 +1,7 @@
 """add monitoring plan memberships and cycle scopes
 
 Revision ID: mp002_add_monitoring_memberships_and_cycle_scopes
-Revises: mo001_add_model_overlays
+Revises: b7c8d9e0f1a2
 Create Date: 2026-01-06 00:00:00.000000
 """
 from typing import Sequence, Union
@@ -14,7 +14,7 @@ from sqlalchemy import text
 
 # revision identifiers, used by Alembic.
 revision: str = "mp002_add_monitoring_memberships_and_cycle_scopes"
-down_revision: Union[str, None] = "mo001_add_model_overlays"
+down_revision: Union[str, None] = "b7c8d9e0f1a2"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
