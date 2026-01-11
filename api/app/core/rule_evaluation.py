@@ -49,7 +49,7 @@ def get_required_approver_roles(
         return {
             "required_roles": [],
             "rules_applied": [],
-            "explanation_summary": "No conditional approval rules are configured or active."
+            "explanation_summary": "No additional approval rules are configured or active."
         }
 
     # Get model's deployed region IDs
@@ -70,7 +70,7 @@ def get_required_approver_roles(
         return {
             "required_roles": [],
             "rules_applied": [],
-            "explanation_summary": "No conditional approval rules apply to this validation request."
+            "explanation_summary": "No additional approval rules apply to this validation request."
         }
 
     # Fetch approver role details and check for existing approvals

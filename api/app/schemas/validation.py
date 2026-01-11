@@ -1,5 +1,5 @@
 """Validation workflow schemas."""
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from datetime import datetime, date
 from typing import Optional, List, Dict
 from app.schemas.user import UserResponse
@@ -496,8 +496,38 @@ class ValidationApprovalResponse(BaseModel):
     # Voided status (approvals may be voided due to model risk tier changes)
     voided_at: Optional[datetime] = None
     void_reason: Optional[str] = None
+    # Manual approval fields
+    manually_added_by: Optional[UserSummary] = None
+    manual_add_reason: Optional[str] = None
+    manually_added_at: Optional[datetime] = None
+    assigned_approver: Optional[UserSummary] = None
 
     model_config = ConfigDict(from_attributes=True, protected_namespaces=())
+
+
+class ManualApprovalCreate(BaseModel):
+    """Schema for manually adding an approval requirement."""
+    approver_role_id: Optional[int] = None
+    assigned_approver_id: Optional[int] = None
+    reason: str = Field(..., min_length=1, description="Required justification")
+
+    @model_validator(mode='after')
+    def validate_exactly_one(self):
+        if (self.approver_role_id is None) == (self.assigned_approver_id is None):
+            raise ValueError("Exactly one of approver_role_id or assigned_approver_id must be provided")
+        return self
+
+
+class ManualApprovalResponse(BaseModel):
+    """Response after creating manual approval."""
+    approval_id: int
+    approval_type: str
+    approver_role_name: Optional[str] = None
+    assigned_approver_name: Optional[str] = None
+    reason: str
+    added_by: str
+    added_at: datetime
+    message: str
 
 
 # ==================== VALIDATION STATUS HISTORY SCHEMAS ====================

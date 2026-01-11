@@ -52,6 +52,7 @@ class UserResponse(UserBase):
     capabilities: dict | None = None
     regions: List[Region] = []  # Authorized regions for Regional Approvers
     high_fluctuation_flag: bool = False  # For quarterly attestation triggering
+    entra_id: str | None = None
     lob_id: int  # User's LOB assignment (required)
     lob: Optional[LOBUnitBrief] = None  # Nested LOB info with full path
 

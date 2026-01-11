@@ -156,7 +156,7 @@ QMIS provides comprehensive end-to-end validation lifecycle management, supporti
 
 **Approval Workflow**
 - Multi-stakeholder approvals (Global + Regional)
-- Conditional approval rules based on risk tier, validation type, regions
+- Additional approval rules based on risk tier, validation type, regions
 - Approval evidence requirements
 - Admin capability to void approvals with documented reason
 

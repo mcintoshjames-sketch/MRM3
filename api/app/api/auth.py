@@ -1,8 +1,9 @@
 """Authentication routes."""
 import csv
 import io
+import uuid
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import or_
@@ -82,6 +83,7 @@ def get_user_with_lob(db: Session, user: User) -> dict:
         "role_code": role_code,
         "capabilities": build_capabilities(role_code),
         "high_fluctuation_flag": user.high_fluctuation_flag,
+        "entra_id": user.entra_id,
         "regions": user.regions,
         "lob_id": user.lob_id,
         "lob": None
@@ -223,15 +225,28 @@ def update_me(
 @router.get("/users", response_model=List[UserResponse])
 def list_users(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    search: Optional[str] = None,
+    limit: Optional[int] = Query(None, ge=1, le=100)
 ):
     """List all users."""
     require_admin_user(current_user)
-    users = db.query(User).options(
+    query = db.query(User).options(
         joinedload(User.regions),
         joinedload(User.lob),
         joinedload(User.role_ref)
-    ).all()
+    )
+    if search:
+        search_term = f"%{search}%"
+        query = query.filter(
+            or_(
+                User.full_name.ilike(search_term),
+                User.email.ilike(search_term)
+            )
+        )
+    if limit:
+        query = query.limit(limit)
+    users = query.all()
     return [get_user_with_lob(db, u) for u in users]
 
 
@@ -315,12 +330,31 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
     # Force self-registration to USER role regardless of client input
     role = resolve_role_for_write(db, RoleCode.USER.value, None)
 
+    # Ensure Entra directory entry exists for this user
+    entra_user = db.query(EntraUser).filter(
+        or_(
+            EntraUser.mail == user_data.email,
+            EntraUser.user_principal_name == user_data.email
+        )
+    ).first()
+    if not entra_user:
+        entra_user = EntraUser(
+            entra_id=str(uuid.uuid4()),
+            user_principal_name=user_data.email,
+            display_name=user_data.full_name,
+            mail=user_data.email,
+            account_enabled=True
+        )
+        db.add(entra_user)
+        db.flush()
+
     # Create user
     user = User(
         email=user_data.email,
         full_name=user_data.full_name,
         password_hash=get_password_hash(user_data.password),
         role_id=role.role_id,
+        entra_id=entra_user.entra_id,
         lob_id=user_data.lob_id
     )
 
@@ -613,6 +647,7 @@ def provision_entra_user(
         full_name=entra_user.display_name,
         password_hash=get_password_hash("entra_sso_placeholder"),  # Placeholder for SSO
         role_id=role.role_id,
+        entra_id=entra_user.entra_id,
         lob_id=provision_data.lob_id
     )
     db.add(user)

@@ -24,7 +24,7 @@ from app.core.validation_conflicts import (
     build_validation_conflict_message
 )
 from app.models import (
-    User, Model, ModelVersion, TaxonomyValue, Taxonomy, AuditLog, Region,
+    User, Model, ModelVersion, TaxonomyValue, Taxonomy, AuditLog, Region, EntraUser, ApproverRole,
     ValidationRequest, ValidationRequestModelVersion, ValidationStatusHistory, ValidationAssignment,
     ValidationOutcome, ValidationReviewOutcome, ValidationApproval, ValidationGroupingMemory,
     ValidationPolicy, ValidationWorkflowSLA, ModelRegion, Region,
@@ -47,6 +47,7 @@ from app.schemas.validation import (
     ValidationOutcomeCreate, ValidationOutcomeUpdate, ValidationOutcomeResponse,
     ValidationReviewOutcomeCreate, ValidationReviewOutcomeUpdate, ValidationReviewOutcomeResponse,
     ValidationApprovalCreate, ValidationApprovalUpdate, ValidationApprovalResponse,
+    ManualApprovalCreate, ManualApprovalResponse,
     ValidationStatusHistoryResponse,
     ValidationComponentDefinitionResponse, ValidationComponentDefinitionUpdate,
     ValidationPlanCreate, ValidationPlanUpdate, ValidationPlanResponse,
@@ -59,6 +60,7 @@ from app.schemas.validation import (
 from app.schemas.user_lookup import AssignableValidatorResponse
 from app.schemas.conditional_approval import (
     ConditionalApprovalsEvaluationResponse,
+    ManualApprovalSummary,
     SubmitConditionalApprovalRequest,
     SubmitConditionalApprovalResponse,
     VoidApprovalRequirementRequest,
@@ -116,6 +118,19 @@ def create_audit_log(
     )
     db.add(audit_log)
     # Note: commit happens with the main transaction
+
+
+def _is_user_active(db: Session, user: Optional[User]) -> bool:
+    """Check if user is active (has active Entra account or is local-only)."""
+    if not user:
+        return False
+    if user.entra_id:
+        entra_user = db.query(EntraUser).filter(
+            EntraUser.entra_id == user.entra_id
+        ).first()
+        if entra_user and not entra_user.account_enabled:
+            return False
+    return True
 
 
 # Staleness threshold for overdue comments (matches overdue_commentary.py)
@@ -2317,7 +2332,11 @@ def create_validation_request(
     db.refresh(validation_request)
     validation_request_with_approvals = db.query(ValidationRequest).options(
         joinedload(ValidationRequest.approvals).joinedload(
-            ValidationApproval.approver)
+            ValidationApproval.approver),
+        joinedload(ValidationRequest.approvals).joinedload(
+            ValidationApproval.assigned_approver),
+        joinedload(ValidationRequest.approvals).joinedload(
+            ValidationApproval.manually_added_by)
     ).filter(ValidationRequest.request_id == validation_request.request_id).first()
 
     return validation_request_with_approvals
@@ -2542,6 +2561,10 @@ def get_validation_request(
             ValidationStatusHistory.changed_by),
         joinedload(ValidationRequest.approvals).joinedload(
             ValidationApproval.approver),
+        joinedload(ValidationRequest.approvals).joinedload(
+            ValidationApproval.assigned_approver),
+        joinedload(ValidationRequest.approvals).joinedload(
+            ValidationApproval.manually_added_by),
         joinedload(ValidationRequest.outcome),
         joinedload(ValidationRequest.review_outcome).joinedload(
             ValidationReviewOutcome.reviewer)
@@ -2668,7 +2691,9 @@ def update_request_models(
         joinedload(ValidationRequest.validation_type),
         joinedload(ValidationRequest.regions),
         joinedload(ValidationRequest.assignments).joinedload(ValidationAssignment.validator),
-        joinedload(ValidationRequest.approvals),
+        joinedload(ValidationRequest.approvals).joinedload(ValidationApproval.approver),
+        joinedload(ValidationRequest.approvals).joinedload(ValidationApproval.assigned_approver),
+        joinedload(ValidationRequest.approvals).joinedload(ValidationApproval.manually_added_by),
         joinedload(ValidationRequest.models).joinedload(Model.model_regions),
         joinedload(ValidationRequest.model_versions_assoc).joinedload(
             ValidationRequestModelVersion.model).joinedload(Model.model_regions),
@@ -2826,7 +2851,9 @@ def update_request_models(
         joinedload(ValidationRequest.validation_type),
         joinedload(ValidationRequest.regions),
         joinedload(ValidationRequest.assignments).joinedload(ValidationAssignment.validator),
-        joinedload(ValidationRequest.approvals),
+        joinedload(ValidationRequest.approvals).joinedload(ValidationApproval.approver),
+        joinedload(ValidationRequest.approvals).joinedload(ValidationApproval.assigned_approver),
+        joinedload(ValidationRequest.approvals).joinedload(ValidationApproval.manually_added_by),
         joinedload(ValidationRequest.models).joinedload(Model.model_regions),
         joinedload(ValidationRequest.model_versions_assoc).joinedload(
             ValidationRequestModelVersion.model).joinedload(Model.model_regions),
@@ -5212,7 +5239,9 @@ def submit_approval(
     validation_request = db.query(ValidationRequest).options(
         joinedload(ValidationRequest.current_status),
         joinedload(ValidationRequest.models),
-        joinedload(ValidationRequest.approvals),
+        joinedload(ValidationRequest.approvals).joinedload(ValidationApproval.approver),
+        joinedload(ValidationRequest.approvals).joinedload(ValidationApproval.assigned_approver),
+        joinedload(ValidationRequest.approvals).joinedload(ValidationApproval.manually_added_by),
         joinedload(ValidationRequest.scorecard_result)
     ).filter(
         ValidationRequest.request_id == approval.request_id
@@ -8391,13 +8420,42 @@ def get_conditional_approvals_evaluation(
             detail="Validation request not found"
         )
 
+    manual_approvals = db.query(ValidationApproval).filter(
+        ValidationApproval.request_id == request_id,
+        ValidationApproval.approval_type.in_(["Manual-Role", "Manual-User"])
+    ).options(
+        joinedload(ValidationApproval.approver_role_ref),
+        joinedload(ValidationApproval.assigned_approver),
+        joinedload(ValidationApproval.manually_added_by)
+    ).all()
+
+    manual_approvals_payload = [
+        ManualApprovalSummary(
+            approval_id=approval.approval_id,
+            approval_type=approval.approval_type,
+            approval_status=approval.approval_status,
+            approver_role_id=approval.approver_role_id,
+            approver_role_name=approval.approver_role_ref.role_name if approval.approver_role_ref else None,
+            assigned_approver_id=approval.assigned_approver_id,
+            assigned_approver_name=approval.assigned_approver.full_name if approval.assigned_approver else None,
+            assigned_approver_active=_is_user_active(db, approval.assigned_approver) if approval.assigned_approver else None,
+            manually_added_by_name=approval.manually_added_by.full_name if approval.manually_added_by else None,
+            manual_add_reason=approval.manual_add_reason,
+            manually_added_at=approval.manually_added_at,
+            voided_at=approval.voided_at,
+            void_reason=approval.void_reason
+        )
+        for approval in manual_approvals
+    ]
+
     # Use first model as primary model for rule evaluation
     models = validation_request.models
     if not models:
         return ConditionalApprovalsEvaluationResponse(
             required_roles=[],
             rules_applied=[],
-            explanation_summary="No models associated with this validation request"
+            explanation_summary="No models associated with this validation request",
+            manual_approvals=manual_approvals_payload
         )
 
     primary_model = models[0]
@@ -8409,7 +8467,145 @@ def get_conditional_approvals_evaluation(
     return ConditionalApprovalsEvaluationResponse(
         required_roles=evaluation_result["required_roles"],
         rules_applied=evaluation_result["rules_applied"],
-        explanation_summary=evaluation_result["explanation_summary"]
+        explanation_summary=evaluation_result["explanation_summary"],
+        manual_approvals=manual_approvals_payload
+    )
+
+
+@router.post("/requests/{request_id}/add-manual-approval", response_model=ManualApprovalResponse)
+def add_manual_approval(
+    request_id: int,
+    data: ManualApprovalCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Manually add an additional approval requirement (Admin only).
+    Can add either a role-based or individual user requirement.
+    """
+    check_admin(current_user)
+
+    validation_request = db.query(ValidationRequest).filter(
+        ValidationRequest.request_id == request_id
+    ).first()
+    if not validation_request:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Validation request not found"
+        )
+
+    if validation_request.current_status and validation_request.current_status.code in {"APPROVED", "CANCELLED"}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot add approvals to request in {validation_request.current_status.code} status"
+        )
+
+    approval_type = "Manual-Role"
+    target_name = None
+
+    if data.approver_role_id:
+        approver_role = db.query(ApproverRole).filter(
+            ApproverRole.role_id == data.approver_role_id,
+            ApproverRole.is_active == True
+        ).first()
+        if not approver_role:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Approver role not found or inactive"
+            )
+
+        existing = db.query(ValidationApproval).filter(
+            ValidationApproval.request_id == request_id,
+            ValidationApproval.approver_role_id == data.approver_role_id,
+            ValidationApproval.voided_at.is_(None)
+        ).first()
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Approval requirement for {approver_role.role_name} already exists"
+            )
+
+        approval = ValidationApproval(
+            request_id=request_id,
+            approver_role_id=data.approver_role_id,
+            approver_id=None,
+            approver_role="Manual",
+            approval_type="Manual-Role",
+            approval_status="Pending",
+            is_required=True,
+            manually_added_by_id=current_user.user_id,
+            manual_add_reason=data.reason,
+            manually_added_at=utc_now(),
+            comments=f"Manually added by admin: {data.reason}"
+        )
+        target_name = approver_role.role_name
+    else:
+        assigned_user = db.query(User).filter(
+            User.user_id == data.assigned_approver_id
+        ).first()
+        if not assigned_user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Assigned user not found"
+            )
+
+        existing = db.query(ValidationApproval).filter(
+            ValidationApproval.request_id == request_id,
+            ValidationApproval.assigned_approver_id == data.assigned_approver_id,
+            ValidationApproval.voided_at.is_(None)
+        ).first()
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Approval requirement for {assigned_user.full_name} already exists"
+            )
+
+        approval = ValidationApproval(
+            request_id=request_id,
+            assigned_approver_id=data.assigned_approver_id,
+            approver_id=None,
+            approver_role="Manual",
+            approval_type="Manual-User",
+            approval_status="Pending",
+            is_required=True,
+            manually_added_by_id=current_user.user_id,
+            manual_add_reason=data.reason,
+            manually_added_at=utc_now(),
+            comments=f"Manually assigned to {assigned_user.full_name}: {data.reason}"
+        )
+        approval_type = "Manual-User"
+        target_name = assigned_user.full_name
+
+    db.add(approval)
+    db.flush()
+
+    audit_log = AuditLog(
+        entity_type="ValidationApproval",
+        entity_id=request_id,
+        action="MANUAL_APPROVAL_ADDED",
+        user_id=current_user.user_id,
+        changes={
+            "approval_id": approval.approval_id,
+            "approval_type": approval_type,
+            "approver_role": approver_role.role_name if data.approver_role_id else None,
+            "assigned_approver_name": assigned_user.full_name if data.assigned_approver_id else None,
+            "status": "Pending",
+            "reason": data.reason
+        },
+        timestamp=utc_now()
+    )
+    db.add(audit_log)
+    db.commit()
+
+    return ManualApprovalResponse(
+        approval_id=approval.approval_id,
+        approval_type=approval_type,
+        approver_role_name=target_name if data.approver_role_id else None,
+        assigned_approver_name=target_name if data.assigned_approver_id else None,
+        reason=data.reason,
+        added_by=current_user.full_name,
+        added_at=approval.manually_added_at,
+        message=f"Manual approval requirement added for {target_name}"
     )
 
 
@@ -8421,17 +8617,14 @@ def submit_conditional_approval(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Submit additional approval (Admin only).
+    Submit additional approval (Admin or assigned approver).
 
     Any Admin can approve on behalf of any approver role by providing:
     - approver_role_id: The role being approved
     - approval_status: "Approved" or "Sent Back" (to reject entirely, cancel the workflow instead)
-    - approval_evidence: Description of evidence (meeting minutes, email, etc.)
+    - approval_evidence: Description of evidence (meeting minutes, email, etc.) [required for Admin proxy approvals]
     - comments: Optional additional comments
     """
-    # Check Admin permission
-    check_admin(current_user)
-
     # Get the approval requirement
     approval = db.query(ValidationApproval).filter(
         ValidationApproval.approval_id == approval_id
@@ -8443,18 +8636,53 @@ def submit_conditional_approval(
             detail="Approval requirement not found"
         )
 
-    # Verify this is an additional approval (has approver_role_id)
-    if not approval.approver_role_id:
+    is_admin_user = is_admin(current_user)
+    is_assigned_user = (
+        approval.assigned_approver_id is not None and
+        approval.assigned_approver_id == current_user.user_id
+    )
+
+    if not is_admin_user and not is_assigned_user:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admins or the assigned approver can submit this approval"
+        )
+
+    approval_evidence = (approval_data.approval_evidence or "").strip()
+    comments = (approval_data.comments or "").strip()
+    if approval_data.approval_status == "Sent Back" and not comments:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Comments are required when sending back for revision"
+        )
+    if not is_assigned_user and not approval_evidence:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Admin must provide approval_evidence when approving on behalf (e.g., meeting minutes, email confirmation)"
+        )
+
+    # Verify this is an additional/manual approval (has approver_role_id OR assigned_approver_id)
+    is_additional_approval = (
+        approval.approver_role_id is not None or
+        approval.assigned_approver_id is not None
+    )
+    if not is_additional_approval:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="This is not an additional approval requirement"
         )
 
     # Verify the approver_role_id matches (if provided)
-    if approval.approver_role_id != approval_data.approver_role_id:
+    if approval.approver_role_id is not None:
+        if approval.approver_role_id != approval_data.approver_role_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Approver role ID does not match the approval requirement"
+            )
+    elif approval_data.approver_role_id is not None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Approver role ID does not match the approval requirement"
+            detail="This is a user-assigned approval, approver_role_id should not be provided"
         )
 
     # Check if already approved or voided
@@ -8474,8 +8702,8 @@ def submit_conditional_approval(
     approval.approval_status = approval_data.approval_status
     approval.approver_id = current_user.user_id  # Admin who submitted the approval
     approval.approved_at = utc_now()
-    approval.approval_evidence = approval_data.approval_evidence
-    approval.comments = approval_data.comments
+    approval.approval_evidence = approval_evidence or None
+    approval.comments = comments or None
 
     # Flush to ensure the update is visible in subsequent queries
     db.flush()
@@ -8494,9 +8722,11 @@ def submit_conditional_approval(
             # Check if all additional approvals are now approved
             all_conditional_approvals = db.query(ValidationApproval).filter(
                 ValidationApproval.request_id == approval.request_id,
-                ValidationApproval.approver_role_id.isnot(
-                    None),  # Only additional approvals
-                ValidationApproval.voided_at.is_(None)  # Not voided
+                or_(
+                    ValidationApproval.approver_role_id.isnot(None),
+                    ValidationApproval.assigned_approver_id.isnot(None)
+                ),
+                ValidationApproval.voided_at.is_(None)
             ).all()
 
             all_approved = all(
@@ -8507,16 +8737,44 @@ def submit_conditional_approval(
                 for model in validation_request.models:
                     model.use_approval_date = utc_now()
 
+    approver_role_name = None
+    assigned_approver_name = None
+    if approval.approver_role_id is not None:
+        role = db.query(ApproverRole).filter(
+            ApproverRole.role_id == approval.approver_role_id
+        ).first()
+        approver_role_name = role.role_name if role else None
+    if approval.assigned_approver_id is not None:
+        assigned_user = db.query(User).filter(
+            User.user_id == approval.assigned_approver_id
+        ).first()
+        assigned_approver_name = assigned_user.full_name if assigned_user else None
+    target_label = approver_role_name or assigned_approver_name
+    is_proxy_approval = is_admin_user and not is_assigned_user
+
     # Create audit log
     audit_log = AuditLog(
         entity_type="ValidationApproval",
-        entity_id=approval_id,
+        entity_id=approval.request_id,
         action="CONDITIONAL_APPROVAL_SUBMIT",
         user_id=current_user.user_id,
         changes={
-            "approver_role_id": approval_data.approver_role_id,
+            "approval_id": approval_id,
+            "approval_type": approval.approval_type,
+            "approver_role": approver_role_name,
+            "assigned_approver_name": assigned_approver_name,
             "approval_status": approval_data.approval_status,
-            "approval_evidence": approval_data.approval_evidence
+            "status": approval_data.approval_status,
+            "approval_evidence": approval_evidence or None,
+            **(
+                {
+                    "proxy_approval": True,
+                    "approved_by_admin": current_user.full_name,
+                    "on_behalf_of": target_label or "Approver"
+                }
+                if is_proxy_approval
+                else {}
+            )
         },
         timestamp=utc_now()
     )
@@ -8556,8 +8814,8 @@ def void_approval_requirement(
             detail="Approval requirement not found"
         )
 
-    # Verify this is an additional approval (has approver_role_id)
-    if not approval.approver_role_id:
+    # Verify this is an additional/manual approval (has approver_role_id OR assigned_approver_id)
+    if approval.approver_role_id is None and approval.assigned_approver_id is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="This is not an additional approval requirement"
@@ -8606,13 +8864,31 @@ def void_approval_requirement(
                 )
                 db.add(model_audit)
 
+    approver_role_name = None
+    assigned_approver_name = None
+    if approval.approver_role_id is not None:
+        role = db.query(ApproverRole).filter(
+            ApproverRole.role_id == approval.approver_role_id
+        ).first()
+        approver_role_name = role.role_name if role else None
+    if approval.assigned_approver_id is not None:
+        assigned_user = db.query(User).filter(
+            User.user_id == approval.assigned_approver_id
+        ).first()
+        assigned_approver_name = assigned_user.full_name if assigned_user else None
+
     # Create audit log
     audit_log = AuditLog(
         entity_type="ValidationApproval",
-        entity_id=approval_id,
+        entity_id=approval.request_id,
         action="CONDITIONAL_APPROVAL_VOID",
         user_id=current_user.user_id,
         changes={
+            "approval_id": approval_id,
+            "approval_type": approval.approval_type,
+            "approver_role": approver_role_name,
+            "assigned_approver_name": assigned_approver_name,
+            "status": "Voided",
             "void_reason": void_data.void_reason
         },
         timestamp=utc_now()
@@ -8633,10 +8909,10 @@ def get_pending_conditional_approvals(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Get validation requests with pending conditional approval requirements.
+    Get validation requests with pending additional approval requirements.
 
     Returns list of validation requests that have:
-    - At least one conditional approval requirement (approver_role_id not null)
+    - At least one additional approval requirement (role-based or user-based)
     - At least one requirement with status = 'Pending' or null
     - Not voided
 
@@ -8647,8 +8923,10 @@ def get_pending_conditional_approvals(
 
     # Query validation approvals for conditional requirements that are pending
     pending_approvals = db.query(ValidationApproval).filter(
-        ValidationApproval.approver_role_id.isnot(
-            None),  # Additional approval
+        or_(
+            ValidationApproval.approver_role_id.isnot(None),
+            ValidationApproval.assigned_approver_id.isnot(None)
+        ),
         ValidationApproval.voided_at.is_(None),  # Not voided
         or_(
             ValidationApproval.approval_status == 'Pending',
@@ -8659,7 +8937,8 @@ def get_pending_conditional_approvals(
             ValidationRequest.model_versions_assoc).joinedload(ValidationRequestModelVersion.model),
         joinedload(ValidationApproval.request).joinedload(
             ValidationRequest.validation_type),
-        joinedload(ValidationApproval.approver_role_ref)
+        joinedload(ValidationApproval.approver_role_ref),
+        joinedload(ValidationApproval.assigned_approver)
     ).all()
 
     # Group by request_id to avoid duplicates
@@ -8685,16 +8964,20 @@ def get_pending_conditional_approvals(
                 "model_id": model_id,
                 "model_name": model_name,
                 "validation_type": req.validation_type.label if req.validation_type else "Unknown",
-                "pending_approver_roles": [],
+                "pending_approvals": [],
                 "days_pending": days_pending,
                 "created_at": req.created_at.isoformat() if req.created_at else None
             }
 
         # Add this pending approval to the list
-        requests_map[req_id]["pending_approver_roles"].append({
+        requests_map[req_id]["pending_approvals"].append({
             "approval_id": approval.approval_id,
+            "approval_type": approval.approval_type,
             "approver_role_id": approval.approver_role_id,
-            "approver_role_name": approval.approver_role_ref.role_name if approval.approver_role_ref else "Unknown",
+            "approver_role_name": approval.approver_role_ref.role_name if approval.approver_role_ref else None,
+            "assigned_approver_id": approval.assigned_approver_id,
+            "assigned_approver_name": approval.assigned_approver.full_name if approval.assigned_approver else None,
+            "assigned_approver_active": _is_user_active(db, approval.assigned_approver) if approval.assigned_approver else None,
             "days_pending": (utc_now() - approval.created_at).days
         })
 
@@ -8703,6 +8986,48 @@ def get_pending_conditional_approvals(
                      key=lambda x: x["days_pending"], reverse=True)
 
     return results
+
+
+@router.get("/dashboard/my-pending-approvals")
+def get_my_pending_approvals(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get approvals where the current user is directly assigned (Manual-User type).
+    Available to all authenticated users.
+    """
+    pending_approvals = db.query(ValidationApproval).filter(
+        ValidationApproval.assigned_approver_id == current_user.user_id,
+        ValidationApproval.voided_at.is_(None),
+        or_(
+            ValidationApproval.approval_status == 'Pending',
+            ValidationApproval.approval_status.is_(None)
+        )
+    ).options(
+        joinedload(ValidationApproval.request).joinedload(
+            ValidationRequest.model_versions_assoc).joinedload(ValidationRequestModelVersion.model),
+        joinedload(ValidationApproval.manually_added_by)
+    ).all()
+
+    results = []
+    for approval in pending_approvals:
+        req = approval.request
+        model_name = "Unknown"
+        if req.model_versions_assoc:
+            model_name = req.model_versions_assoc[0].model.model_name
+
+        results.append({
+            "approval_id": approval.approval_id,
+            "request_id": req.request_id,
+            "model_name": model_name,
+            "reason": approval.manual_add_reason,
+            "added_by": approval.manually_added_by.full_name if approval.manually_added_by else "Unknown",
+            "added_at": approval.manually_added_at.isoformat() if approval.manually_added_at else None,
+            "days_pending": (utc_now() - approval.created_at).days
+        })
+
+    return {"pending_approvals": results, "count": len(results)}
 
 
 @router.get("/dashboard/recent-approvals")
@@ -9177,7 +9502,9 @@ def export_effective_challenge_report(
         joinedload(ValidationRequest.current_status),
         joinedload(ValidationRequest.validation_type),
         joinedload(ValidationRequest.outcome),
-        joinedload(ValidationRequest.approvals).joinedload(ValidationApproval.approver)
+        joinedload(ValidationRequest.approvals).joinedload(ValidationApproval.approver),
+        joinedload(ValidationRequest.approvals).joinedload(ValidationApproval.assigned_approver),
+        joinedload(ValidationRequest.approvals).joinedload(ValidationApproval.manually_added_by)
     ).filter(ValidationRequest.request_id == request_id).first()
 
     if not validation_request:

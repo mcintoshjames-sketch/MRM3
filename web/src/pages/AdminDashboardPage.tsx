@@ -6,6 +6,7 @@ import Layout from '../components/Layout';
 import { overdueCommentaryApi, MyOverdueItem } from '../api/overdueCommentary';
 import OverdueCommentaryModal, { OverdueType } from '../components/OverdueCommentaryModal';
 import MRSAReviewStatusBadge, { MRSAReviewStatusCode } from '../components/MRSAReviewStatusBadge';
+import PendingManualApprovalsBanner from '../components/PendingManualApprovalsBanner';
 
 interface SLAViolation {
     request_id: number;
@@ -138,10 +139,14 @@ interface PendingAdditionalApproval {
     model_id: number;
     model_name: string;
     validation_type: string;
-    pending_approver_roles: Array<{
+    pending_approvals: Array<{
         approval_id: number;
-        approver_role_id: number;
-        approver_role_name: string;
+        approval_type: string;
+        approver_role_id: number | null;
+        approver_role_name: string | null;
+        assigned_approver_id: number | null;
+        assigned_approver_name: string | null;
+        assigned_approver_active: boolean | null;
         days_pending: number;
     }>;
     days_pending: number;
@@ -471,6 +476,8 @@ export default function AdminDashboardPage() {
                 <h2 className="text-2xl font-bold">Admin Dashboard</h2>
                 <p className="text-gray-600 mt-1">Welcome back, {user?.full_name}</p>
             </div>
+
+            <PendingManualApprovalsBanner />
 
             {/* Attestation Cycle Reminder Banner */}
             {cycleReminder?.should_show_reminder && (
@@ -842,13 +849,23 @@ export default function AdminDashboardPage() {
                                             </Link>
                                         </div>
                                         <div className="text-xs text-gray-600 space-y-0.5">
-                                            {item.pending_approver_roles.map((role) => (
-                                                <div key={role.approval_id} className="flex items-center gap-1">
-                                                    <span className="text-purple-600 font-medium">{role.approver_role_name}</span>
-                                                    <span className="text-gray-400">•</span>
-                                                    <span>{role.days_pending} {role.days_pending === 1 ? 'day' : 'days'} pending</span>
-                                                </div>
-                                            ))}
+                                            {item.pending_approvals.map((approval) => {
+                                                const label = approval.approver_role_name
+                                                    ? approval.approver_role_name
+                                                    : approval.assigned_approver_name
+                                                        ? `Assigned: ${approval.assigned_approver_name}`
+                                                        : 'Additional Approval';
+                                                return (
+                                                    <div key={approval.approval_id} className="flex items-center gap-1">
+                                                        <span className="text-purple-600 font-medium">{label}</span>
+                                                        {approval.assigned_approver_active === false && (
+                                                            <span className="text-red-600 text-[10px] font-semibold">INACTIVE</span>
+                                                        )}
+                                                        <span className="text-gray-400">•</span>
+                                                        <span>{approval.days_pending} {approval.days_pending === 1 ? 'day' : 'days'} pending</span>
+                                                    </div>
+                                                );
+                                            })}
                                         </div>
                                     </div>
                                     <div className="flex-shrink-0">

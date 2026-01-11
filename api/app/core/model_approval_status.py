@@ -19,7 +19,7 @@ Status Definitions:
 from datetime import date, datetime
 from typing import Optional, Tuple, Dict, Any, List
 from sqlalchemy.orm import Session
-from sqlalchemy import and_
+from sqlalchemy import and_, or_
 
 from app.models import (
     Model,
@@ -241,7 +241,10 @@ def _check_approvals_complete(
         # Count pending conditional approvals
         pending_conditional = db.query(ValidationApproval).filter(
             ValidationApproval.request_id == validation.request_id,
-            ValidationApproval.approver_role_id.isnot(None),  # Conditional approval
+            or_(
+                ValidationApproval.approver_role_id.isnot(None),
+                ValidationApproval.assigned_approver_id.isnot(None)
+            ),
             ValidationApproval.approval_status == "Pending",
             ValidationApproval.voided_at.is_(None)
         ).count()
@@ -258,7 +261,10 @@ def _has_conditional_approval_requirements(
     """Check if this validation has any conditional approval requirements."""
     return db.query(ValidationApproval).filter(
         ValidationApproval.request_id == validation.request_id,
-        ValidationApproval.approver_role_id.isnot(None)
+        or_(
+            ValidationApproval.approver_role_id.isnot(None),
+            ValidationApproval.assigned_approver_id.isnot(None)
+        )
     ).count() > 0
 
 

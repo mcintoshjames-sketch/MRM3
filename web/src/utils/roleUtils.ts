@@ -25,6 +25,7 @@ const ROLE_DISPLAY_TO_CODE: Record<string, RoleCode> = {
 };
 
 export type UserLike = {
+    user_id?: number;
     role_code?: string | null;
     role?: string | null;
     capabilities?: Record<string, boolean> | null;

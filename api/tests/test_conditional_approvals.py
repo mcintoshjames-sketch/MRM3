@@ -7,6 +7,7 @@ from app.models.validation import ValidationRequest, ValidationApproval
 from app.models.region import Region
 from app.models.model import Model
 from app.models.model_region import ModelRegion
+from app.models.entra_user import EntraUser
 from app.core.rule_evaluation import get_required_approver_roles
 from app.models.risk_assessment import QualitativeRiskFactor, ModelRiskAssessment, QualitativeFactorAssessment
 from app.core.time import utc_now
@@ -88,6 +89,46 @@ def create_complete_risk_assessment(db_session, model_id, factors):
 
     db_session.commit()
     return assessment
+
+
+def create_validation_request_with_model(
+    db_session,
+    requestor_id: int,
+    validation_type_id: int,
+    priority_id: int,
+    status_id: int,
+    usage_frequency_id: int
+):
+    model = Model(
+        model_name="Manual Approval Test Model",
+        owner_id=requestor_id,
+        row_approval_status="approved",
+        use_approval_date=None,
+        usage_frequency_id=usage_frequency_id
+    )
+    db_session.add(model)
+    db_session.flush()
+
+    validation_request = ValidationRequest(
+        requestor_id=requestor_id,
+        validation_type_id=validation_type_id,
+        priority_id=priority_id,
+        target_completion_date=date(2025, 12, 31),
+        current_status_id=status_id
+    )
+    db_session.add(validation_request)
+    db_session.flush()
+
+    from app.models.validation import ValidationRequestModelVersion
+    assoc = ValidationRequestModelVersion(
+        request_id=validation_request.request_id,
+        model_id=model.model_id,
+        version_id=None
+    )
+    db_session.add(assoc)
+    db_session.commit()
+
+    return model, validation_request
 
 
 class TestApproverRoleCRUD:
@@ -1612,7 +1653,7 @@ class TestApprovalWorkflowIntegration:
         audit_log = db_session.query(AuditLog).filter(
             AuditLog.action == "CONDITIONAL_APPROVAL_VOID",
             AuditLog.entity_type == "ValidationApproval",
-            AuditLog.entity_id == approval.approval_id
+            AuditLog.entity_id == validation_request.request_id
         ).first()
         assert audit_log is not None
         assert audit_log.user_id == admin_user.user_id
@@ -1676,7 +1717,590 @@ class TestApprovalWorkflowIntegration:
         audit_log = db_session.query(AuditLog).filter(
             AuditLog.action == "CONDITIONAL_APPROVAL_SUBMIT",
             AuditLog.entity_type == "ValidationApproval",
-            AuditLog.entity_id == approval.approval_id
+            AuditLog.entity_id == validation_request.request_id
         ).first()
         assert audit_log is not None
         assert audit_log.user_id == admin_user.user_id
+
+
+class TestManualApprovals:
+    """Tests for manual approval requirements."""
+
+    def test_add_manual_role_based_approval(self, client, db_session, admin_user, admin_headers, test_user, taxonomy_values):
+        role = ApproverRole(role_name="Manual Committee")
+        db_session.add(role)
+        db_session.flush()
+
+        validation_request = ValidationRequest(
+            requestor_id=test_user.user_id,
+            validation_type_id=taxonomy_values["initial"].value_id,
+            priority_id=taxonomy_values["priority_standard"].value_id,
+            target_completion_date=date(2025, 12, 31),
+            current_status_id=taxonomy_values["status_intake"].value_id
+        )
+        db_session.add(validation_request)
+        db_session.commit()
+
+        payload = {
+            "approver_role_id": role.role_id,
+            "reason": "Need committee signoff"
+        }
+        response = client.post(
+            f"/validation-workflow/requests/{validation_request.request_id}/add-manual-approval",
+            json=payload,
+            headers=admin_headers
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["approval_type"] == "Manual-Role"
+        assert data["approver_role_name"] == role.role_name
+        assert data["assigned_approver_name"] is None
+        assert data["reason"] == "Need committee signoff"
+
+        approval = db_session.query(ValidationApproval).filter(
+            ValidationApproval.approval_id == data["approval_id"]
+        ).first()
+        assert approval is not None
+        assert approval.approver_role_id == role.role_id
+        assert approval.assigned_approver_id is None
+        assert approval.approval_type == "Manual-Role"
+        assert approval.manually_added_by_id == admin_user.user_id
+        assert approval.manual_add_reason == "Need committee signoff"
+
+    def test_add_manual_user_based_approval(self, client, db_session, admin_user, admin_headers, test_user, second_user, taxonomy_values):
+        validation_request = ValidationRequest(
+            requestor_id=test_user.user_id,
+            validation_type_id=taxonomy_values["initial"].value_id,
+            priority_id=taxonomy_values["priority_standard"].value_id,
+            target_completion_date=date(2025, 12, 31),
+            current_status_id=taxonomy_values["status_planning"].value_id
+        )
+        db_session.add(validation_request)
+        db_session.commit()
+
+        payload = {
+            "assigned_approver_id": second_user.user_id,
+            "reason": "Need direct signoff"
+        }
+        response = client.post(
+            f"/validation-workflow/requests/{validation_request.request_id}/add-manual-approval",
+            json=payload,
+            headers=admin_headers
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["approval_type"] == "Manual-User"
+        assert data["assigned_approver_name"] == second_user.full_name
+        assert data["approver_role_name"] is None
+
+        approval = db_session.query(ValidationApproval).filter(
+            ValidationApproval.approval_id == data["approval_id"]
+        ).first()
+        assert approval is not None
+        assert approval.assigned_approver_id == second_user.user_id
+        assert approval.approver_role_id is None
+        assert approval.approval_type == "Manual-User"
+        assert approval.manually_added_by_id == admin_user.user_id
+
+    def test_manual_approval_duplicate_role_rejected(self, client, db_session, admin_headers, test_user, taxonomy_values):
+        role = ApproverRole(role_name="Manual Duplicate Role")
+        db_session.add(role)
+        db_session.flush()
+
+        validation_request = ValidationRequest(
+            requestor_id=test_user.user_id,
+            validation_type_id=taxonomy_values["initial"].value_id,
+            priority_id=taxonomy_values["priority_standard"].value_id,
+            target_completion_date=date(2025, 12, 31),
+            current_status_id=taxonomy_values["status_in_progress"].value_id
+        )
+        db_session.add(validation_request)
+        db_session.commit()
+
+        payload = {
+            "approver_role_id": role.role_id,
+            "reason": "Initial requirement"
+        }
+        response = client.post(
+            f"/validation-workflow/requests/{validation_request.request_id}/add-manual-approval",
+            json=payload,
+            headers=admin_headers
+        )
+        assert response.status_code == 200
+
+        response = client.post(
+            f"/validation-workflow/requests/{validation_request.request_id}/add-manual-approval",
+            json=payload,
+            headers=admin_headers
+        )
+        assert response.status_code == 400
+
+    def test_manual_approval_rejected_for_terminal_status(self, client, db_session, admin_headers, test_user, taxonomy_values):
+        role = ApproverRole(role_name="Terminal Role")
+        db_session.add(role)
+        db_session.flush()
+
+        validation_request = ValidationRequest(
+            requestor_id=test_user.user_id,
+            validation_type_id=taxonomy_values["initial"].value_id,
+            priority_id=taxonomy_values["priority_standard"].value_id,
+            target_completion_date=date(2025, 12, 31),
+            current_status_id=taxonomy_values["status_approved"].value_id
+        )
+        db_session.add(validation_request)
+        db_session.commit()
+
+        payload = {
+            "approver_role_id": role.role_id,
+            "reason": "Should be blocked"
+        }
+        response = client.post(
+            f"/validation-workflow/requests/{validation_request.request_id}/add-manual-approval",
+            json=payload,
+            headers=admin_headers
+        )
+        assert response.status_code == 400
+
+    def test_manual_approval_requires_admin(self, client, db_session, auth_headers, test_user, taxonomy_values):
+        role = ApproverRole(role_name="Non Admin Role")
+        db_session.add(role)
+        db_session.flush()
+
+        validation_request = ValidationRequest(
+            requestor_id=test_user.user_id,
+            validation_type_id=taxonomy_values["initial"].value_id,
+            priority_id=taxonomy_values["priority_standard"].value_id,
+            target_completion_date=date(2025, 12, 31),
+            current_status_id=taxonomy_values["status_review"].value_id
+        )
+        db_session.add(validation_request)
+        db_session.commit()
+
+        payload = {
+            "approver_role_id": role.role_id,
+            "reason": "Non-admin attempt"
+        }
+        response = client.post(
+            f"/validation-workflow/requests/{validation_request.request_id}/add-manual-approval",
+            json=payload,
+            headers=auth_headers
+        )
+        assert response.status_code == 403
+
+    def test_assigned_user_can_submit_manual_user_approval(self, client, db_session, admin_headers, second_user_headers, second_user, test_user, taxonomy_values, usage_frequency):
+        model, validation_request = create_validation_request_with_model(
+            db_session,
+            requestor_id=test_user.user_id,
+            validation_type_id=taxonomy_values["initial"].value_id,
+            priority_id=taxonomy_values["priority_standard"].value_id,
+            status_id=taxonomy_values["status_pending_approval"].value_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+
+        create_payload = {
+            "assigned_approver_id": second_user.user_id,
+            "reason": "Manual user signoff"
+        }
+        response = client.post(
+            f"/validation-workflow/requests/{validation_request.request_id}/add-manual-approval",
+            json=create_payload,
+            headers=admin_headers
+        )
+        assert response.status_code == 200
+        approval_id = response.json()["approval_id"]
+
+        submit_payload = {
+            "approval_status": "Approved"
+        }
+        response = client.post(
+            f"/validation-workflow/approvals/{approval_id}/submit-additional",
+            json=submit_payload,
+            headers=second_user_headers
+        )
+        assert response.status_code == 200
+
+        approval = db_session.query(ValidationApproval).filter(
+            ValidationApproval.approval_id == approval_id
+        ).first()
+        assert approval.approval_status == "Approved"
+        assert approval.approver_id == second_user.user_id
+        assert approval.approval_evidence is None
+
+        db_session.refresh(model)
+        assert model.use_approval_date is not None
+
+    def test_non_assigned_user_cannot_submit_manual_user_approval(self, client, db_session, admin_headers, auth_headers, second_user, test_user, taxonomy_values):
+        validation_request = ValidationRequest(
+            requestor_id=test_user.user_id,
+            validation_type_id=taxonomy_values["initial"].value_id,
+            priority_id=taxonomy_values["priority_standard"].value_id,
+            target_completion_date=date(2025, 12, 31),
+            current_status_id=taxonomy_values["status_pending_approval"].value_id
+        )
+        db_session.add(validation_request)
+        db_session.commit()
+
+        create_payload = {
+            "assigned_approver_id": second_user.user_id,
+            "reason": "Manual user signoff"
+        }
+        response = client.post(
+            f"/validation-workflow/requests/{validation_request.request_id}/add-manual-approval",
+            json=create_payload,
+            headers=admin_headers
+        )
+        assert response.status_code == 200
+        approval_id = response.json()["approval_id"]
+
+        submit_payload = {
+            "approval_status": "Approved",
+            "approval_evidence": "Attempt by non-assigned user"
+        }
+        response = client.post(
+            f"/validation-workflow/approvals/{approval_id}/submit-additional",
+            json=submit_payload,
+            headers=auth_headers
+        )
+        assert response.status_code == 403
+
+    def test_admin_can_submit_manual_user_approval(self, client, db_session, admin_headers, admin_user, second_user, test_user, taxonomy_values):
+        validation_request = ValidationRequest(
+            requestor_id=test_user.user_id,
+            validation_type_id=taxonomy_values["initial"].value_id,
+            priority_id=taxonomy_values["priority_standard"].value_id,
+            target_completion_date=date(2025, 12, 31),
+            current_status_id=taxonomy_values["status_pending_approval"].value_id
+        )
+        db_session.add(validation_request)
+        db_session.commit()
+
+        create_payload = {
+            "assigned_approver_id": second_user.user_id,
+            "reason": "Manual user signoff"
+        }
+        response = client.post(
+            f"/validation-workflow/requests/{validation_request.request_id}/add-manual-approval",
+            json=create_payload,
+            headers=admin_headers
+        )
+        assert response.status_code == 200
+        approval_id = response.json()["approval_id"]
+
+        submit_payload = {
+            "approval_status": "Approved",
+            "approval_evidence": "Admin proxy approval"
+        }
+        response = client.post(
+            f"/validation-workflow/approvals/{approval_id}/submit-additional",
+            json=submit_payload,
+            headers=admin_headers
+        )
+        assert response.status_code == 200
+
+        approval = db_session.query(ValidationApproval).filter(
+            ValidationApproval.approval_id == approval_id
+        ).first()
+        assert approval.approver_id == admin_user.user_id
+        assert approval.approval_status == "Approved"
+
+    def test_admin_proxy_requires_approval_evidence(self, client, db_session, admin_headers, second_user, test_user, taxonomy_values):
+        validation_request = ValidationRequest(
+            requestor_id=test_user.user_id,
+            validation_type_id=taxonomy_values["initial"].value_id,
+            priority_id=taxonomy_values["priority_standard"].value_id,
+            target_completion_date=date(2025, 12, 31),
+            current_status_id=taxonomy_values["status_pending_approval"].value_id
+        )
+        db_session.add(validation_request)
+        db_session.commit()
+
+        create_payload = {
+            "assigned_approver_id": second_user.user_id,
+            "reason": "Manual user signoff"
+        }
+        response = client.post(
+            f"/validation-workflow/requests/{validation_request.request_id}/add-manual-approval",
+            json=create_payload,
+            headers=admin_headers
+        )
+        assert response.status_code == 200
+        approval_id = response.json()["approval_id"]
+
+        submit_payload = {
+            "approval_status": "Approved"
+        }
+        response = client.post(
+            f"/validation-workflow/approvals/{approval_id}/submit-additional",
+            json=submit_payload,
+            headers=admin_headers
+        )
+        assert response.status_code == 400
+        assert response.json()["detail"] == (
+            "Admin must provide approval_evidence when approving on behalf "
+            "(e.g., meeting minutes, email confirmation)"
+        )
+
+    def test_sent_back_requires_comments(self, client, db_session, admin_headers, test_user, taxonomy_values):
+        role = ApproverRole(role_name="Manual Review Committee")
+        db_session.add(role)
+        db_session.flush()
+
+        validation_request = ValidationRequest(
+            requestor_id=test_user.user_id,
+            validation_type_id=taxonomy_values["initial"].value_id,
+            priority_id=taxonomy_values["priority_standard"].value_id,
+            target_completion_date=date(2025, 12, 31),
+            current_status_id=taxonomy_values["status_pending_approval"].value_id
+        )
+        db_session.add(validation_request)
+        db_session.commit()
+
+        create_payload = {
+            "approver_role_id": role.role_id,
+            "reason": "Manual committee review"
+        }
+        response = client.post(
+            f"/validation-workflow/requests/{validation_request.request_id}/add-manual-approval",
+            json=create_payload,
+            headers=admin_headers
+        )
+        assert response.status_code == 200
+        approval_id = response.json()["approval_id"]
+
+        submit_payload = {
+            "approver_role_id": role.role_id,
+            "approval_status": "Sent Back",
+            "approval_evidence": "Committee discussion notes"
+        }
+        response = client.post(
+            f"/validation-workflow/approvals/{approval_id}/submit-additional",
+            json=submit_payload,
+            headers=admin_headers
+        )
+        assert response.status_code == 400
+        assert response.json()["detail"] == "Comments are required when sending back for revision"
+
+        submit_payload["comments"] = "Please update the validation scope before resubmitting."
+        response = client.post(
+            f"/validation-workflow/approvals/{approval_id}/submit-additional",
+            json=submit_payload,
+            headers=admin_headers
+        )
+        assert response.status_code == 200
+
+        approval = db_session.query(ValidationApproval).filter(
+            ValidationApproval.approval_id == approval_id
+        ).first()
+        assert approval.approval_status == "Sent Back"
+        assert approval.comments == "Please update the validation scope before resubmitting."
+
+    def test_use_approval_date_set_after_all_additional_approvals_complete(self, client, db_session, admin_headers, second_user_headers, second_user, test_user, taxonomy_values, usage_frequency):
+        model, validation_request = create_validation_request_with_model(
+            db_session,
+            requestor_id=test_user.user_id,
+            validation_type_id=taxonomy_values["initial"].value_id,
+            priority_id=taxonomy_values["priority_standard"].value_id,
+            status_id=taxonomy_values["status_pending_approval"].value_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+
+        role = ApproverRole(role_name="Conditional Committee")
+        db_session.add(role)
+        db_session.flush()
+
+        conditional_approval = ValidationApproval(
+            request_id=validation_request.request_id,
+            approver_role_id=role.role_id,
+            approver_id=None,
+            approval_status="Pending",
+            approver_role="Conditional",
+            approval_type="Conditional"
+        )
+        db_session.add(conditional_approval)
+        db_session.commit()
+
+        create_payload = {
+            "assigned_approver_id": second_user.user_id,
+            "reason": "Manual user signoff"
+        }
+        response = client.post(
+            f"/validation-workflow/requests/{validation_request.request_id}/add-manual-approval",
+            json=create_payload,
+            headers=admin_headers
+        )
+        assert response.status_code == 200
+        manual_approval_id = response.json()["approval_id"]
+
+        submit_conditional_payload = {
+            "approver_role_id": role.role_id,
+            "approval_status": "Approved",
+            "approval_evidence": "Committee minutes"
+        }
+        response = client.post(
+            f"/validation-workflow/approvals/{conditional_approval.approval_id}/submit-additional",
+            json=submit_conditional_payload,
+            headers=admin_headers
+        )
+        assert response.status_code == 200
+
+        db_session.refresh(model)
+        assert model.use_approval_date is None
+
+        submit_manual_payload = {
+            "approval_status": "Approved",
+            "approval_evidence": "Signed off via email"
+        }
+        response = client.post(
+            f"/validation-workflow/approvals/{manual_approval_id}/submit-additional",
+            json=submit_manual_payload,
+            headers=second_user_headers
+        )
+        assert response.status_code == 200
+
+        db_session.refresh(model)
+        assert model.use_approval_date is not None
+
+    def test_void_manual_approval(self, client, db_session, admin_headers, second_user, test_user, taxonomy_values):
+        validation_request = ValidationRequest(
+            requestor_id=test_user.user_id,
+            validation_type_id=taxonomy_values["initial"].value_id,
+            priority_id=taxonomy_values["priority_standard"].value_id,
+            target_completion_date=date(2025, 12, 31),
+            current_status_id=taxonomy_values["status_review"].value_id
+        )
+        db_session.add(validation_request)
+        db_session.commit()
+
+        create_payload = {
+            "assigned_approver_id": second_user.user_id,
+            "reason": "Manual user signoff"
+        }
+        response = client.post(
+            f"/validation-workflow/requests/{validation_request.request_id}/add-manual-approval",
+            json=create_payload,
+            headers=admin_headers
+        )
+        assert response.status_code == 200
+        approval_id = response.json()["approval_id"]
+
+        response = client.post(
+            f"/validation-workflow/approvals/{approval_id}/void",
+            json={"void_reason": "Manual approval no longer required"},
+            headers=admin_headers
+        )
+        assert response.status_code == 200
+
+        approval = db_session.query(ValidationApproval).filter(
+            ValidationApproval.approval_id == approval_id
+        ).first()
+        assert approval.voided_at is not None
+        assert approval.void_reason == "Manual approval no longer required"
+
+    def test_pending_additional_approvals_include_manual_user(self, client, db_session, admin_headers, second_user, test_user, taxonomy_values):
+        validation_request = ValidationRequest(
+            requestor_id=test_user.user_id,
+            validation_type_id=taxonomy_values["initial"].value_id,
+            priority_id=taxonomy_values["priority_standard"].value_id,
+            target_completion_date=date(2025, 12, 31),
+            current_status_id=taxonomy_values["status_pending_approval"].value_id
+        )
+        db_session.add(validation_request)
+        db_session.commit()
+
+        create_payload = {
+            "assigned_approver_id": second_user.user_id,
+            "reason": "Manual user signoff"
+        }
+        response = client.post(
+            f"/validation-workflow/requests/{validation_request.request_id}/add-manual-approval",
+            json=create_payload,
+            headers=admin_headers
+        )
+        assert response.status_code == 200
+
+        response = client.get(
+            "/validation-workflow/dashboard/pending-additional-approvals",
+            headers=admin_headers
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 1
+        pending = data[0]["pending_approvals"][0]
+        assert pending["approval_type"] == "Manual-User"
+        assert pending["assigned_approver_id"] == second_user.user_id
+
+    def test_my_pending_approvals_endpoint(self, client, db_session, admin_headers, second_user_headers, second_user, test_user, taxonomy_values):
+        validation_request = ValidationRequest(
+            requestor_id=test_user.user_id,
+            validation_type_id=taxonomy_values["initial"].value_id,
+            priority_id=taxonomy_values["priority_standard"].value_id,
+            target_completion_date=date(2025, 12, 31),
+            current_status_id=taxonomy_values["status_pending_approval"].value_id
+        )
+        db_session.add(validation_request)
+        db_session.commit()
+
+        create_payload = {
+            "assigned_approver_id": second_user.user_id,
+            "reason": "Manual user signoff"
+        }
+        response = client.post(
+            f"/validation-workflow/requests/{validation_request.request_id}/add-manual-approval",
+            json=create_payload,
+            headers=admin_headers
+        )
+        assert response.status_code == 200
+
+        response = client.get(
+            "/validation-workflow/dashboard/my-pending-approvals",
+            headers=second_user_headers
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["count"] == 1
+        assert data["pending_approvals"][0]["approval_id"] is not None
+
+    def test_pending_additional_approvals_marks_inactive_users(self, client, db_session, admin_headers, second_user, test_user, taxonomy_values):
+        entra_id = "00000000-0000-0000-0000-000000000001"
+        entra_user = EntraUser(
+            entra_id=entra_id,
+            user_principal_name="disabled@example.com",
+            display_name="Disabled User",
+            mail="disabled@example.com",
+            account_enabled=False
+        )
+        db_session.add(entra_user)
+        db_session.flush()
+
+        second_user.entra_id = entra_id
+        db_session.add(second_user)
+        db_session.commit()
+
+        validation_request = ValidationRequest(
+            requestor_id=test_user.user_id,
+            validation_type_id=taxonomy_values["initial"].value_id,
+            priority_id=taxonomy_values["priority_standard"].value_id,
+            target_completion_date=date(2025, 12, 31),
+            current_status_id=taxonomy_values["status_pending_approval"].value_id
+        )
+        db_session.add(validation_request)
+        db_session.commit()
+
+        create_payload = {
+            "assigned_approver_id": second_user.user_id,
+            "reason": "Manual user signoff"
+        }
+        response = client.post(
+            f"/validation-workflow/requests/{validation_request.request_id}/add-manual-approval",
+            json=create_payload,
+            headers=admin_headers
+        )
+        assert response.status_code == 200
+
+        response = client.get(
+            "/validation-workflow/dashboard/pending-additional-approvals",
+            headers=admin_headers
+        )
+        assert response.status_code == 200
+        pending = response.json()[0]["pending_approvals"][0]
+        assert pending["assigned_approver_active"] is False

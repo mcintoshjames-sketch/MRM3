@@ -2,6 +2,7 @@
 import os
 import re
 import sys
+import uuid
 from datetime import datetime, date, timedelta
 from typing import Any, Dict, List, Mapping, Sequence
 from sqlalchemy.orm import Session
@@ -1576,7 +1577,9 @@ def seed_database():
 
         for entra_data in entra_users:
             existing = db.query(EntraUser).filter(
-                EntraUser.entra_id == entra_data["entra_id"]
+                (EntraUser.entra_id == entra_data["entra_id"])
+                | (EntraUser.user_principal_name == entra_data["user_principal_name"])
+                | (EntraUser.mail == entra_data["mail"])
             ).first()
             if not existing:
                 entra_user = EntraUser(**entra_data)
@@ -1587,6 +1590,30 @@ def seed_database():
                     f"✓ Entra user already exists: {entra_data['display_name']}")
 
         db.commit()
+
+        # Ensure all application users link to an Entra record
+        users_missing_entra = db.query(User).filter(User.entra_id.is_(None)).all()
+        for user in users_missing_entra:
+            entra_user = db.query(EntraUser).filter(
+                (EntraUser.mail == user.email)
+                | (EntraUser.user_principal_name == user.email)
+            ).first()
+            if not entra_user:
+                entra_user = EntraUser(
+                    entra_id=str(uuid.uuid4()),
+                    user_principal_name=user.email,
+                    display_name=user.full_name,
+                    mail=user.email,
+                    account_enabled=True,
+                    created_at=utc_now()
+                )
+                db.add(entra_user)
+                db.flush()
+            user.entra_id = entra_user.entra_id
+            db.add(user)
+
+        if users_missing_entra:
+            db.commit()
 
         # Create taxonomies
         taxonomies_data = [

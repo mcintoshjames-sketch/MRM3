@@ -78,7 +78,7 @@ interface ValidationApproval {
     request_id: number;
     approver: UserSummary;
     approver_role: string;
-    approval_type: string;  // Global, Regional, Conditional
+    approval_type: string;  // Global, Regional, Conditional, Manual-Role, Manual-User
     is_required: boolean;
     approval_status: string;
     comments: string | null;
@@ -722,6 +722,14 @@ export default function ValidationRequestDetailPage() {
             case 'Sent Back': return 'bg-amber-100 text-amber-800';
             default: return 'bg-gray-100 text-gray-800';
         }
+    };
+
+    const isAdditionalApproval = (approval: ValidationApproval) => {
+        const approvalType = approval.approval_type || '';
+        return approvalType === 'Conditional'
+            || approvalType.startsWith('Manual-')
+            || approval.approver_role === 'Conditional'
+            || approval.approver_role === 'Manual';
     };
 
     // Helper to check for unsaved plan changes before status transitions
@@ -2841,7 +2849,7 @@ export default function ValidationRequestDetailPage() {
                         </div>
 
                         {/* Info box explaining how regional approvals are determined */}
-                        {request.approvals.filter(a => a.approver_role !== 'Conditional' && a.approver_role !== 'Global' && !a.voided_at).length > 0 && (
+                        {request.approvals.filter(a => !isAdditionalApproval(a) && a.approval_type === 'Regional' && !a.voided_at).length > 0 && (
                             <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-md text-sm">
                                 <strong>Regional Approvals:</strong> Based on {
                                     request.regions && request.regions.length > 0
@@ -2855,10 +2863,10 @@ export default function ValidationRequestDetailPage() {
                             </div>
                         )}
 
-                        {/* Filter out Conditional approvals - they're shown in the ConditionalApprovalsSection below */}
-                        {request.approvals.filter(a => a.approver_role !== 'Conditional' && !a.voided_at).length === 0 ? (
+                        {/* Filter out Conditional/manual approvals - they're shown in the ConditionalApprovalsSection below */}
+                        {request.approvals.filter(a => !isAdditionalApproval(a) && !a.voided_at).length === 0 ? (
                             <div className="text-gray-500 text-center py-8">
-                                {request.approvals.filter(a => a.approver_role !== 'Conditional' && a.voided_at).length > 0
+                                {request.approvals.filter(a => !isAdditionalApproval(a) && a.voided_at).length > 0
                                     ? 'All approvals have been voided. New approvals will be created when status returns to Pending Approval.'
                                     : 'No approvals configured for this project.'}
                             </div>
@@ -2866,7 +2874,7 @@ export default function ValidationRequestDetailPage() {
                             <div className="space-y-4">
                                 {/* Active (non-voided) Global/Regional approvals */}
                                 {request.approvals
-                                    .filter(a => a.approver_role !== 'Conditional' && !a.voided_at)
+                                    .filter(a => !isAdditionalApproval(a) && !a.voided_at)
                                     .map((approval) => (
                                         <div key={approval.approval_id} className="border rounded-lg p-4">
                                             <div className="flex justify-between items-start">
@@ -2976,16 +2984,16 @@ export default function ValidationRequestDetailPage() {
                                     ))}
 
                                 {/* Voided approvals (historical, shown collapsed) */}
-                                {request.approvals.filter(a => a.approver_role !== 'Conditional' && a.voided_at).length > 0 && (
+                                {request.approvals.filter(a => !isAdditionalApproval(a) && a.voided_at).length > 0 && (
                                     <details className="mt-4 border border-gray-200 rounded-lg">
                                         <summary className="px-4 py-2 bg-gray-50 cursor-pointer text-sm text-gray-600 hover:bg-gray-100 rounded-t-lg">
                                             <span className="ml-1">
-                                                Voided Approvals ({request.approvals.filter(a => a.approver_role !== 'Conditional' && a.voided_at).length})
+                                                Voided Approvals ({request.approvals.filter(a => !isAdditionalApproval(a) && a.voided_at).length})
                                             </span>
                                         </summary>
                                         <div className="p-4 space-y-3">
                                             {request.approvals
-                                                .filter(a => a.approver_role !== 'Conditional' && a.voided_at)
+                                                .filter(a => !isAdditionalApproval(a) && a.voided_at)
                                                 .map((approval) => (
                                                     <div key={approval.approval_id} className="border border-gray-200 rounded-lg p-3 bg-gray-50 opacity-60">
                                                         <div className="flex justify-between items-start">
@@ -3177,13 +3185,20 @@ export default function ValidationRequestDetailPage() {
                                             const audit = item.data as AuditLog;
                                             const actionColors = {
                                                 'APPROVAL_SUBMITTED': 'border-green-500',
-                                                'APPROVAL_WITHDRAWN': 'border-orange-500'
+                                                'APPROVAL_WITHDRAWN': 'border-orange-500',
+                                                'MANUAL_APPROVAL_ADDED': 'border-blue-500',
+                                                'CONDITIONAL_APPROVAL_SUBMIT': 'border-green-500',
+                                                'CONDITIONAL_APPROVAL_VOID': 'border-red-500'
                                             };
                                             const actionLabels = {
                                                 'APPROVAL_SUBMITTED': 'APPROVAL SUBMITTED',
-                                                'APPROVAL_WITHDRAWN': 'APPROVAL WITHDRAWN'
+                                                'APPROVAL_WITHDRAWN': 'APPROVAL WITHDRAWN',
+                                                'MANUAL_APPROVAL_ADDED': 'ADDITIONAL APPROVER ADDED',
+                                                'CONDITIONAL_APPROVAL_SUBMIT': 'ADDITIONAL APPROVAL SUBMITTED',
+                                                'CONDITIONAL_APPROVAL_VOID': 'ADDITIONAL APPROVAL VOIDED'
                                             };
                                             const isProxyApproval = audit.changes?.proxy_approval === true;
+                                            const statusLabel = audit.changes?.status;
                                             return (
                                                 <div key={`audit-${audit.log_id}`} className={`border-l-4 ${actionColors[audit.action as keyof typeof actionColors] || 'border-purple-500'} pl-4 py-2`}>
                                                     <div className="flex items-center gap-2">
@@ -3203,15 +3218,43 @@ export default function ValidationRequestDetailPage() {
                                                                 <span className="font-medium">{audit.changes.approver_role}</span>
                                                             </div>
                                                         )}
+                                                        {audit.changes?.assigned_approver_name && (
+                                                            <div>
+                                                                <span className="text-gray-500">Assigned Approver:</span>{' '}
+                                                                <span className="font-medium">{audit.changes.assigned_approver_name}</span>
+                                                            </div>
+                                                        )}
+                                                        {audit.changes?.approval_type && (
+                                                            <div>
+                                                                <span className="text-gray-500">Approval Type:</span>{' '}
+                                                                <span className="text-gray-700">{audit.changes.approval_type}</span>
+                                                            </div>
+                                                        )}
                                                         {audit.changes?.status && (
                                                             <div>
                                                                 <span className="text-gray-500">Status:</span>{' '}
-                                                                <span className={`px-2 py-1 text-xs rounded ${audit.changes.status === 'Approved' ? 'bg-green-100 text-green-800' :
-                                                                        audit.changes.status === 'Rejected' ? 'bg-red-100 text-red-800' :
-                                                                            'bg-gray-100 text-gray-800'
+                                                                <span className={`px-2 py-1 text-xs rounded ${statusLabel === 'Approved'
+                                                                        ? 'bg-green-100 text-green-800'
+                                                                        : statusLabel === 'Sent Back'
+                                                                            ? 'bg-red-100 text-red-800'
+                                                                            : statusLabel === 'Voided'
+                                                                                ? 'bg-gray-200 text-gray-700'
+                                                                                : 'bg-gray-100 text-gray-800'
                                                                     }`}>
-                                                                    {audit.changes.status}
+                                                                    {statusLabel}
                                                                 </span>
+                                                            </div>
+                                                        )}
+                                                        {audit.changes?.reason && (
+                                                            <div>
+                                                                <span className="text-gray-500">Reason:</span>{' '}
+                                                                <span className="text-gray-700">{audit.changes.reason}</span>
+                                                            </div>
+                                                        )}
+                                                        {audit.changes?.void_reason && (
+                                                            <div>
+                                                                <span className="text-gray-500">Void Reason:</span>{' '}
+                                                                <span className="text-gray-700">{audit.changes.void_reason}</span>
                                                             </div>
                                                         )}
                                                         {isProxyApproval && (

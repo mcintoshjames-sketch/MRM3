@@ -536,7 +536,9 @@ def _build_model_list_response(
             regions_list.append({
                 "region_id": mr.region.region_id,
                 "region_code": mr.region.code,
-                "region_name": mr.region.name
+                "region_name": mr.region.name,
+                "shared_model_owner_id": mr.shared_model_owner_id,
+                "shared_model_owner": _build_user_list_item(mr.shared_model_owner)
             })
 
     # Build users list
@@ -715,6 +717,7 @@ def list_models(
         selectinload(Model.users).joinedload(User.lob),
         selectinload(Model.regulatory_categories),
         selectinload(Model.model_regions).joinedload(ModelRegion.region),
+        selectinload(Model.model_regions).joinedload(ModelRegion.shared_model_owner).joinedload(User.lob),
         selectinload(Model.versions),
         # IRPs for MRSAs - load contact user for display
         selectinload(Model.irps).joinedload(IRP.contact_user)
@@ -3695,6 +3698,10 @@ def list_all_pending_edits(
     for pe in pending_edits:
         requested_at = cast(Optional[datetime], pe.requested_at)
         reviewed_at = cast(Optional[datetime], pe.reviewed_at)
+        original_values = pe.original_values or {}
+        proposed_changes = pe.proposed_changes or {}
+        resolved_original = _resolve_pending_edit_values(db, original_values)
+        resolved_proposed = _resolve_pending_edit_values(db, proposed_changes)
         results.append({
             "pending_edit_id": pe.pending_edit_id,
             "model_id": pe.model_id,
@@ -3710,8 +3717,10 @@ def list_all_pending_edits(
                 "email": pe.requested_by.email
             },
             "requested_at": requested_at.isoformat() if requested_at else None,
-            "proposed_changes": pe.proposed_changes,
-            "original_values": pe.original_values,
+            "proposed_changes": proposed_changes,
+            "original_values": original_values,
+            "resolved_original_values": resolved_original,
+            "resolved_proposed_changes": resolved_proposed,
             "status": pe.status,
             "reviewed_by": {
                 "user_id": pe.reviewed_by.user_id,
@@ -3748,11 +3757,36 @@ def _resolve_pending_edit_values(
     if 'user_ids' in values and values['user_ids']:
         user_ids_to_fetch.update(values['user_ids'])
 
+    model_regions_payload = values.get('model_regions')
+    model_regions_list = model_regions_payload if isinstance(model_regions_payload, list) else []
+    for item in model_regions_list:
+        if isinstance(item, dict):
+            owner_id = item.get('shared_model_owner_id')
+            if owner_id is not None:
+                user_ids_to_fetch.add(owner_id)
+
     # Fetch users in bulk
     user_map: Dict[int, str] = {}
     if user_ids_to_fetch:
         users = db.query(User).filter(User.user_id.in_(user_ids_to_fetch)).all()
         user_map = {u.user_id: u.full_name for u in users}
+
+    # Collect region IDs to fetch in one query
+    region_ids_to_fetch = set()
+    if 'wholly_owned_region_id' in values and values['wholly_owned_region_id'] is not None:
+        region_ids_to_fetch.add(values['wholly_owned_region_id'])
+    if 'region_ids' in values and values['region_ids']:
+        region_ids_to_fetch.update(values['region_ids'])
+    for item in model_regions_list:
+        if isinstance(item, dict):
+            region_id = item.get('region_id')
+            if region_id is not None:
+                region_ids_to_fetch.add(region_id)
+
+    region_map: Dict[int, str] = {}
+    if region_ids_to_fetch:
+        regions = db.query(Region).filter(Region.region_id.in_(region_ids_to_fetch)).all()
+        region_map = {region.region_id: region.name for region in regions}
 
     # Resolve user ID fields
     for field in user_id_fields:
@@ -3787,8 +3821,34 @@ def _resolve_pending_edit_values(
         if val is None:
             resolved['wholly_owned_region_id'] = ""
         else:
-            region = db.query(Region).filter(Region.region_id == val).first()
-            resolved['wholly_owned_region_id'] = region.name if region else str(val)
+            resolved['wholly_owned_region_id'] = region_map.get(val, str(val))
+
+    if 'region_ids' in values:
+        region_ids = values['region_ids']
+        if region_ids:
+            names = [region_map.get(region_id, str(region_id)) for region_id in region_ids]
+            resolved['region_ids'] = ", ".join(names)
+        else:
+            resolved['region_ids'] = ""
+
+    if 'model_regions' in values:
+        if model_regions_list:
+            entries = []
+            for item in model_regions_list:
+                if not isinstance(item, dict):
+                    entries.append(str(item))
+                    continue
+                region_id = item.get('region_id')
+                region_name = region_map.get(region_id, str(region_id) if region_id is not None else "")
+                owner_id = item.get('shared_model_owner_id')
+                owner_name = "None" if owner_id is None else user_map.get(owner_id, str(owner_id))
+                if region_name:
+                    entries.append(f"{region_name}: {owner_name}")
+                else:
+                    entries.append(owner_name)
+            resolved['model_regions'] = "; ".join(entries)
+        else:
+            resolved['model_regions'] = ""
 
     # Model type lookup
     if 'model_type_id' in values:

@@ -59,6 +59,9 @@ const setupApiMocks = () => {
         if (url === '/recommendations/my-tasks') {
             return Promise.resolve({ data: { total_tasks: 0, overdue_count: 0, tasks: [] } });
         }
+        if (url === '/validation-workflow/dashboard/my-pending-approvals') {
+            return Promise.resolve({ data: { count: 0, pending_approvals: [] } });
+        }
         if (url === '/irps/mrsa-review-status') return Promise.resolve({ data: sampleMrsaStatuses });
         return Promise.reject(new Error('Unknown URL: ' + url));
     });

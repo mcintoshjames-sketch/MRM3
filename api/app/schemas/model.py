@@ -205,16 +205,6 @@ class ModelResponse(ModelBase):
     model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
-class ModelRegionListItem(BaseModel):
-    """Simplified model-region info for list views."""
-    region_id: int
-    region_code: str
-    region_name: str
-
-    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
-
-
-# Lightweight schemas for list view performance
 class LOBListItem(BaseModel):
     """Minimal LOB info for list views."""
     lob_id: int
@@ -229,6 +219,17 @@ class UserListItem(BaseModel):
     full_name: str
     email: str
     lob: Optional[LOBListItem] = None  # Nested for frontend compatibility
+
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
+
+
+class ModelRegionListItem(BaseModel):
+    """Simplified model-region info for list views."""
+    region_id: int
+    region_code: str
+    region_name: str
+    shared_model_owner_id: Optional[int] = None
+    shared_model_owner: Optional[UserListItem] = None
 
     model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 

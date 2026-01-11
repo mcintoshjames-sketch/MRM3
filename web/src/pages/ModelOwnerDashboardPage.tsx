@@ -5,6 +5,7 @@ import api from '../api/client';
 import Layout from '../components/Layout';
 import OverdueCommentaryModal, { OverdueType } from '../components/OverdueCommentaryModal';
 import MRSAReviewStatusBadge, { MRSAReviewStatusCode } from '../components/MRSAReviewStatusBadge';
+import PendingManualApprovalsBanner from '../components/PendingManualApprovalsBanner';
 
 interface OverdueItem {
     overdue_type: 'PRE_SUBMISSION' | 'VALIDATION_IN_PROGRESS';
@@ -361,6 +362,8 @@ export default function ModelOwnerDashboardPage() {
                 <h2 className="text-2xl font-bold">My Dashboard</h2>
                 <p className="text-gray-600 mt-1">Welcome back, {user?.full_name}</p>
             </div>
+
+            <PendingManualApprovalsBanner />
 
             {/* Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">

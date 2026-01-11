@@ -493,6 +493,8 @@ Data can be exported from various screens for reporting and analysis:
 | Model Dependencies | CSV (Inbound and Outbound separately) |
 | Model Hierarchy | CSV |
 
+Models List exports reflect the active column selection. Use the **Columns** picker to include per-region **Regional Owner (XX)** fields (one column per region code). Cells are blank when no regional owner is assigned.
+
 ### How to Export
 
 1. Navigate to the relevant screen

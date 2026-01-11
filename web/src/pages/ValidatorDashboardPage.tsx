@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../api/client';
 import Layout from '../components/Layout';
+import PendingManualApprovalsBanner from '../components/PendingManualApprovalsBanner';
 
 interface ValidationRequest {
     request_id: number;
@@ -402,6 +403,8 @@ export default function ValidatorDashboardPage() {
                     Welcome back, {user?.full_name}. Here's your validation workload.
                 </p>
             </div>
+
+            <PendingManualApprovalsBanner />
 
             {error && (
                 <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">

@@ -6,6 +6,7 @@ from typing import List, Optional, TYPE_CHECKING
 from app.models.base import Base
 
 if TYPE_CHECKING:
+    from app.models.entra_user import EntraUser
     from app.models.lob import LOBUnit
     from app.models.region import Region
     from app.models.role import Role
@@ -31,6 +32,12 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     role_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("roles.role_id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    entra_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        ForeignKey("entra_users.entra_id", ondelete="SET NULL"),
+        nullable=True,
+        index=True
     )
     # Attestation: high fluctuation flag for quarterly attestation requirement
     high_fluctuation_flag: Mapped[bool] = mapped_column(
@@ -64,6 +71,10 @@ class User(Base):
     # Regions relationship (for Regional Approvers)
     regions: Mapped[List["Region"]] = relationship(
         "Region", secondary=user_regions, back_populates="approvers"
+    )
+    entra_user: Mapped[Optional["EntraUser"]] = relationship(
+        "EntraUser",
+        foreign_keys=[entra_id]
     )
 
     @hybrid_property

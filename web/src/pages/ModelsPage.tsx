@@ -37,6 +37,8 @@ interface ModelRegionItem {
     region_id: number;
     region_code: string;
     region_name: string;
+    shared_model_owner_id?: number | null;
+    shared_model_owner?: User | null;
 }
 
 interface ModelType {
@@ -474,9 +476,11 @@ export default function ModelsPage() {
     const [editingViewId, setEditingViewId] = useState<number | null>(null);
     const [dbViews, setDbViews] = useState<ExportView[]>([]);
 
-    // Define available columns for table and export
-    // 'default' determines which columns are shown initially in the table
-    const availableColumns = [
+    const sortedRegions = useMemo(() => (
+        [...regions].sort((a, b) => a.code.localeCompare(b.code))
+    ), [regions]);
+
+    const baseColumns = useMemo(() => ([
         { key: 'model_id', label: 'Model ID', default: false },
         { key: 'external_model_id', label: 'External Model ID', default: false },
         { key: 'model_name', label: 'Model Name', default: true },
@@ -527,7 +531,30 @@ export default function ModelsPage() {
         { key: 'days_overdue', label: 'Days Overdue', default: false },
         { key: 'penalty_notches', label: 'Penalty Notches', default: false },
         { key: 'adjusted_scorecard_outcome', label: 'Adjusted Outcome', default: false }
-    ];
+    ]), []);
+
+    const regionOwnerColumns = useMemo(() => (
+        sortedRegions.map((region) => ({
+            key: `regional_owner_${region.code}`,
+            label: `Regional Owner (${region.code})`,
+            default: false
+        }))
+    ), [sortedRegions]);
+
+    // Define available columns for table and export
+    // 'default' determines which columns are shown initially in the table
+    const availableColumns = useMemo(() => {
+        const base = [...baseColumns];
+        const regionsIndex = base.findIndex((column) => column.key === 'regions');
+        if (regionsIndex === -1) {
+            return [...base, ...regionOwnerColumns];
+        }
+        return [
+            ...base.slice(0, regionsIndex + 1),
+            ...regionOwnerColumns,
+            ...base.slice(regionsIndex + 1)
+        ];
+    }, [baseColumns, regionOwnerColumns]);
 
     const mrsaReviewStatusOptions = [
         { value: 'OVERDUE', label: 'Overdue' },
@@ -539,7 +566,7 @@ export default function ModelsPage() {
     ];
 
     // Define default preset views
-    const defaultViews = {
+    const defaultViews = useMemo(() => ({
         'default': {
             id: 'default',
             name: 'Default View',
@@ -564,7 +591,7 @@ export default function ModelsPage() {
             columns: ['model_name', 'development_type', 'owner', 'developer', 'vendor', 'status'],
             isDefault: true
         }
-    };
+    }), [availableColumns]);
 
     // Combined views: default views + database views
     const allViews: Record<string, any> = React.useMemo(() => {
@@ -581,7 +608,7 @@ export default function ModelsPage() {
             };
         });
         return combined;
-    }, [dbViews]);
+    }, [dbViews, defaultViews]);
 
     const [currentViewId, setCurrentViewId] = useState<string>('default');
     const [selectedColumns, setSelectedColumns] = useState<string[]>(
@@ -1295,6 +1322,11 @@ export default function ModelsPage() {
         return value.split('T')[0];
     };
 
+    const getRegionalOwnerName = (model: Model, regionCode: string) => {
+        const match = model.regions?.find((region) => region.region_code === regionCode);
+        return match?.shared_model_owner?.full_name || '';
+    };
+
     const selectedOwner = users.find((u) => u.user_id === formData.owner_id);
     const selectedDeveloper = users.find((u) => u.user_id === formData.developer_id);
     const selectedSharedOwner = users.find((u) => u.user_id === formData.shared_owner_id);
@@ -1311,6 +1343,26 @@ export default function ModelsPage() {
     const monitoringManagerMatches = monitoringManagerSearchTerm.trim()
         ? filterUsersBySearch(monitoringManagerSearchTerm)
         : [];
+
+    const regionOwnerRenderers = useMemo(() => {
+        const renderers: Record<string, {
+            header: string;
+            sortKey?: string;
+            cell: (model: Model) => React.ReactNode;
+            csvValue: (model: Model) => string;
+        }> = {};
+
+        sortedRegions.forEach((region) => {
+            const key = `regional_owner_${region.code}`;
+            renderers[key] = {
+                header: `Regional Owner (${region.code})`,
+                cell: (model) => getRegionalOwnerName(model, region.code),
+                csvValue: (model) => getRegionalOwnerName(model, region.code)
+            };
+        });
+
+        return renderers;
+    }, [sortedRegions]);
 
     // Column renderers: define how each column renders in table and CSV
     const columnRenderers: Record<string, {
@@ -1878,7 +1930,8 @@ export default function ModelsPage() {
                 );
             },
             csvValue: (model) => model.adjusted_scorecard_outcome || ''
-        }
+        },
+        ...regionOwnerRenderers
     };
 
     const saveCurrentView = async () => {

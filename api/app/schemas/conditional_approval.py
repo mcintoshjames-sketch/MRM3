@@ -124,22 +124,46 @@ class AppliedRuleInfo(BaseModel):
     explanation: str
 
 
+class ManualApprovalSummary(BaseModel):
+    approval_id: int
+    approval_type: str
+    approval_status: str
+    approver_role_id: Optional[int] = None
+    approver_role_name: Optional[str] = None
+    assigned_approver_id: Optional[int] = None
+    assigned_approver_name: Optional[str] = None
+    assigned_approver_active: Optional[bool] = None
+    manually_added_by_name: Optional[str] = None
+    manual_add_reason: Optional[str] = None
+    manually_added_at: Optional[datetime] = None
+    voided_at: Optional[datetime] = None
+    void_reason: Optional[str] = None
+
+
 class ConditionalApprovalsEvaluationResponse(BaseModel):
     required_roles: List[RequiredApproverRole]
     rules_applied: List[AppliedRuleInfo]
     explanation_summary: str
+    manual_approvals: List[ManualApprovalSummary] = []
 
 
 # Submit conditional approval
 class SubmitConditionalApprovalRequest(BaseModel):
-    approver_role_id: int
+    approver_role_id: Optional[int] = None
     approval_status: str = Field(
         ...,
         pattern="^(Approved|Sent Back)$",
         description="'Approved' or 'Sent Back' for revision. To reject entirely, cancel the validation workflow instead."
     )
-    approval_evidence: str = Field(..., min_length=1, description="Description of approval evidence (meeting minutes, email, etc.)")
-    comments: Optional[str] = None
+    approval_evidence: Optional[str] = Field(
+        None,
+        min_length=1,
+        description="Description of approval evidence (meeting minutes, email, etc.). Required for Admin proxy approvals."
+    )
+    comments: Optional[str] = Field(
+        None,
+        description="Optional additional comments. Required when approval_status is 'Sent Back'."
+    )
 
 
 class SubmitConditionalApprovalResponse(BaseModel):

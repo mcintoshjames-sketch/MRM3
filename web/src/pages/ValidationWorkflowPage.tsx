@@ -75,15 +75,21 @@ interface ValidationWarningsResponse {
     warnings: ValidationWarning[];
 }
 
+interface PendingManualApprovalSummary {
+    request_id: number;
+}
+
 export default function ValidationWorkflowPage() {
-    const [searchParams] = useSearchParams();
+    const [searchParams, setSearchParams] = useSearchParams();
     const location = useLocation();
+    const assignedToMe = searchParams.get('assigned_to_me') === 'true';
     const [requests, setRequests] = useState<ValidationRequest[]>([]);
     const [models, setModels] = useState<Model[]>([]);
     const [validationTypes, setValidationTypes] = useState<TaxonomyValue[]>([]);
     const [priorities, setPriorities] = useState<TaxonomyValue[]>([]);
     const [regions, setRegions] = useState<Region[]>([]);
     const [loading, setLoading] = useState(true);
+    const [loadingAssignedRequests, setLoadingAssignedRequests] = useState(false);
     const [showForm, setShowForm] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [suggestedModels, setSuggestedModels] = useState<Model[]>([]);
@@ -99,6 +105,37 @@ export default function ValidationWorkflowPage() {
     const [validationWarnings, setValidationWarnings] = useState<ValidationWarning[]>([]);
     const [canProceedWithWarnings, setCanProceedWithWarnings] = useState(false);
     const [versionBlockers, setVersionBlockers] = useState<VersionBlocker[]>([]);
+    const [assignedRequestIds, setAssignedRequestIds] = useState<number[] | null>(null);
+
+    const clearAssignedToMe = () => {
+        const nextParams = new URLSearchParams(searchParams);
+        nextParams.delete('assigned_to_me');
+        setSearchParams(nextParams);
+    };
+
+    const setAssignedToMeFilter = (enabled: boolean) => {
+        const nextParams = new URLSearchParams(searchParams);
+        if (enabled) {
+            nextParams.set('assigned_to_me', 'true');
+        } else {
+            nextParams.delete('assigned_to_me');
+        }
+        setSearchParams(nextParams);
+    };
+
+    const handleClearFilters = () => {
+        setFilters({
+            search: '',
+            status_filter: [],
+            priority_filter: [],
+            validation_type_filter: [],
+            region_ids: [],
+            overdue_only: false,
+            unassigned_only: false,
+            show_cancelled: false
+        });
+        clearAssignedToMe();
+    };
 
     const [formData, setFormData] = useState({
         model_ids: [] as number[],  // Support multiple models
@@ -176,6 +213,14 @@ export default function ValidationWorkflowPage() {
 
     // Apply filters
     const filteredRequests = requests.filter(req => {
+        if (assignedToMe) {
+            if (!assignedRequestIds) {
+                return false;
+            }
+            if (!assignedRequestIds.includes(req.request_id)) {
+                return false;
+            }
+        }
         // Hide cancelled items by default (unless show_cancelled is true or user explicitly filtered for Cancelled)
         if (!filters.show_cancelled && req.current_status === 'Cancelled' && !filters.status_filter.includes('Cancelled')) {
             return false;
@@ -255,7 +300,7 @@ export default function ValidationWorkflowPage() {
     }, [sortedData, currentPage, pageSize]);
     useEffect(() => {
         setCurrentPage(1);
-    }, [filters, sortConfig.key, sortConfig.direction]);
+    }, [filters, sortConfig.key, sortConfig.direction, assignedRequestIds, assignedToMe]);
     useEffect(() => {
         if (currentPage > totalPages) {
             setCurrentPage(totalPages);
@@ -288,6 +333,40 @@ export default function ValidationWorkflowPage() {
             }));
         }
     }, [searchParams]);
+
+    useEffect(() => {
+        if (!assignedToMe) {
+            setAssignedRequestIds(null);
+            return;
+        }
+        let active = true;
+        const fetchAssignedApprovals = async () => {
+            setLoadingAssignedRequests(true);
+            try {
+                const response = await api.get('/validation-workflow/dashboard/my-pending-approvals');
+                const approvals = (response.data?.pending_approvals || []) as PendingManualApprovalSummary[];
+                const requestIds = Array.from(
+                    new Set(approvals.map(approval => approval.request_id).filter(Number.isFinite))
+                );
+                if (active) {
+                    setAssignedRequestIds(requestIds);
+                }
+            } catch (err) {
+                console.error('Failed to load assigned approvals:', err);
+                if (active) {
+                    setAssignedRequestIds([]);
+                }
+            } finally {
+                if (active) {
+                    setLoadingAssignedRequests(false);
+                }
+            }
+        };
+        fetchAssignedApprovals();
+        return () => {
+            active = false;
+        };
+    }, [assignedToMe]);
 
     // Auto-select "Initial" validation type if all selected models have no prior validations
     useEffect(() => {
@@ -855,7 +934,9 @@ export default function ValidationWorkflowPage() {
     const startItem = totalRows === 0 ? 0 : (currentPage - 1) * pageSize + 1;
     const endItem = Math.min(currentPage * pageSize, totalRows);
 
-    if (loading) {
+    const isLoading = loading || (assignedToMe && loadingAssignedRequests);
+
+    if (isLoading) {
         return (
             <Layout>
                 <div className="flex items-center justify-center h-full">Loading...</div>
@@ -1393,6 +1474,17 @@ export default function ValidationWorkflowPage() {
                             Show cancelled
                         </span>
                     </label>
+                    <label className="flex items-center cursor-pointer">
+                        <input
+                            type="checkbox"
+                            className="h-4 w-4 text-yellow-600 focus:ring-yellow-500 border-gray-300 rounded"
+                            checked={assignedToMe}
+                            onChange={(e) => setAssignedToMeFilter(e.target.checked)}
+                        />
+                        <span className="ml-2 text-sm font-medium text-gray-700">
+                            Assigned approvals only
+                        </span>
+                    </label>
                 </div>
 
                 {/* Clear Filters and Results Count */}
@@ -1402,16 +1494,7 @@ export default function ValidationWorkflowPage() {
                         <span className="font-semibold">{requests.length}</span> projects
                     </div>
                     <button
-                        onClick={() => setFilters({
-                            search: '',
-                            status_filter: [],
-                            priority_filter: [],
-                            validation_type_filter: [],
-                            region_ids: [],
-                            overdue_only: false,
-                            unassigned_only: false,
-                            show_cancelled: false
-                        })}
+                        onClick={handleClearFilters}
                         className="text-sm text-blue-600 hover:text-blue-800"
                     >
                         Clear Filters

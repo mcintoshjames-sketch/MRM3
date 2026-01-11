@@ -967,11 +967,30 @@ class ValidationApproval(Base):
     )
     voided_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
+    # Manual approval fields
+    manually_added_by_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("users.user_id", ondelete="SET NULL"), nullable=True,
+        comment="Admin who manually added this approval requirement"
+    )
+    manual_add_reason: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True,
+        comment="Justification for manually adding this approval requirement"
+    )
+    manually_added_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, nullable=True
+    )
+    assigned_approver_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("users.user_id", ondelete="SET NULL"), nullable=True,
+        comment="For individual user assignments - the specific user who must approve"
+    )
+
     # Relationships
     request = relationship("ValidationRequest", back_populates="approvals")
     approver = relationship("User", foreign_keys=[approver_id])
     unlinked_by = relationship("User", foreign_keys=[unlinked_by_id])
     voided_by = relationship("User", foreign_keys=[voided_by_id])
+    manually_added_by = relationship("User", foreign_keys=[manually_added_by_id])
+    assigned_approver = relationship("User", foreign_keys=[assigned_approver_id])
     region = relationship("Region", foreign_keys=[region_id])  # Region for regional approvals
     represented_region = relationship("Region", foreign_keys=[represented_region_id])  # Historical role context
     approver_role_ref = relationship("ApproverRole", foreign_keys=[approver_role_id])  # Conditional approval role

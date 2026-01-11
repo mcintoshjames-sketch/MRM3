@@ -121,8 +121,8 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
 - Styling: Tailwind classes via `index.css` and Vite config; iconography via emojis/SVG inline.
 
 ## Data Model (conceptual)
-- User & EntraUser directory entries; roles drive permissions.
-- Model with vendor, owner/developer, **shared_owner** (co-owner), **shared_developer** (co-developer), **monitoring_manager** (responsible for ongoing monitoring), taxonomy links (risk tier, model type, etc.), regulatory categories, delegates, and region assignments via ModelRegion (including optional per-region owner `shared_model_owner_id`). Optional `external_model_id` stores a legacy/external system identifier. **Required fields**: `model_name`, `owner_id`, `usage_frequency_id`, `description` (purpose), `initial_implementation_date` (context-aware: Actual for Active, Planned for In Development). **Validation rules**: shared_owner ≠ owner, shared_developer ≠ developer, developer required for In-House models. **Note**: Validation Type is associated with ValidationRequest, not Model (deprecated from Model UI). **MRSA fields**: `is_mrsa` (bool), `mrsa_risk_level_id` (taxonomy FK), `mrsa_risk_rationale` (text) - for Model Risk-Sensitive Application classification.
+- User & EntraUser directory entries; `users.entra_id` links application users to directory entries; roles drive permissions.
+- Model with vendor, owner/developer, **shared_owner** (co-owner), **shared_developer** (co-developer), **monitoring_manager** (responsible for ongoing monitoring), taxonomy links (risk tier, model type, etc.), regulatory categories, delegates, and region assignments via ModelRegion (including optional per-region owner `shared_model_owner_id`). Model list payloads include per-region shared owner details to support list/CSV regional owner columns. Optional `external_model_id` stores a legacy/external system identifier. **Required fields**: `model_name`, `owner_id`, `usage_frequency_id`, `description` (purpose), `initial_implementation_date` (context-aware: Actual for Active, Planned for In Development). **Validation rules**: shared_owner ≠ owner, shared_developer ≠ developer, developer required for In-House models. **Note**: Validation Type is associated with ValidationRequest, not Model (deprecated from Model UI). **MRSA fields**: `is_mrsa` (bool), `mrsa_risk_level_id` (taxonomy FK), `mrsa_risk_rationale` (text) - for Model Risk-Sensitive Application classification.
 - **Teams**: `Team` provides reporting groupings; LOB units can have an optional direct `team_id`. Effective team is computed by walking the LOB hierarchy with “closest ancestor wins” (direct assignment overrides parent). Models inherit team via Owner → LOB → Team and display as “Unassigned” when no team is found.
 - **IRP (Independent Review Process)**: Governance mechanism covering high-risk MRSAs. Fields: irp_id, process_name, description, contact_user_id, is_active. Relationships: covered_mrsas (many-to-many via mrsa_irp), reviews (one-to-many), certifications (one-to-many). **IRPReview**: Periodic assessment with review_date, outcome_id (taxonomy), notes, reviewed_by_user_id. **IRPCertification**: MRM sign-off with certification_date, certified_by_user_id, conclusion_summary.
 - **MRSA Review Policies**: Risk-level scheduling rules for independent reviews (frequency, initial review window, warning thresholds) with MRSAReviewException overrides for approved due date extensions.
@@ -136,7 +136,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
 - ModelVersion tracks version metadata, change types, production dates, scope (global/regional) and links to ValidationRequest.
 - ValidationRequest lifecycle with status history, assignments (validators), plan (components and deviations), approvals (traditional + conditional), outcomes/review outcomes, deployment tasks, and policies/SLA settings per risk tier. **Prior Validation Linking**: `prior_validation_request_id` (most recent APPROVED validation) and `prior_full_validation_request_id` (most recent APPROVED INITIAL/COMPREHENSIVE validation) are auto-populated when creating new validation requests.
 - **ValidationPolicy**: Per-risk-tier configuration for validation scheduling with `frequency_months` (re-validation frequency), `grace_period_months` (additional time after submission due before overdue), and `model_change_lead_time_days` (days to complete validation after grace period). All fields are admin-configurable via `/validation-workflow/policies/` endpoints.
-- **Conditional Model Use Approvals**: ApproverRole (committees/roles), ConditionalApprovalRule (configurable rules based on validation type, risk tier, governance region, deployed regions), RuleRequiredApprover (many-to-many link). ValidationApproval extended with approver_role_id, approval_evidence, voiding fields. Model extended with use_approval_date timestamp.
+- **Conditional Model Use Approvals**: ApproverRole (committees/roles), ConditionalApprovalRule (configurable rules based on validation type, risk tier, governance region, deployed regions), RuleRequiredApprover (many-to-many link). ValidationApproval extended with approver_role_id, approval_evidence, voiding fields, plus manual approval metadata (manually_added_by_id/manual_add_reason/manually_added_at) and assigned_approver_id for user-specific approvals; approval_type includes Manual-Role/Manual-User. Model extended with use_approval_date timestamp.
 - Taxonomy/TaxonomyValue for configurable lists (risk tier, validation types, statuses, priorities, **Model Hierarchy Type, Model Dependency Type, Application Relationship Type**, etc.). **Bucket Taxonomies**: `taxonomy_type='bucket'` enables range-based values with `min_days`/`max_days` columns for contiguous day ranges (e.g., Past Due Level taxonomy classifies overdue models into Current/Minimal/Moderate/Significant/Critical/Obsolete buckets). Bucket taxonomies also support `downgrade_notches` column for configuring scorecard penalty in Final Risk Ranking calculation. Bucket taxonomies enforce contiguity validation (no gaps/overlaps), require admin role for modifications, and are used in Overdue Revalidation Report for severity classification and Final Risk Ranking for overdue penalty computation.
 - MapApplication (mock MAP inventory) and ModelApplication (model-application links with relationship type, effective/end dates for soft delete).
 - **Model Decommissioning**: DecommissioningRequest (model retirement workflow with status PENDING → VALIDATOR_APPROVED → APPROVED/REJECTED/WITHDRAWN), DecommissioningStatusHistory (audit trail), DecommissioningApproval (GLOBAL and REGIONAL approvals). Tracks reason (from Model Decommission Reason taxonomy), replacement model (required for REPLACEMENT/CONSOLIDATION reasons), last production date, gap analysis with justification, archive location. **Stage 1 Dual Approval**: When requestor is NOT the model owner, both Validator AND Owner approval are required before Stage 2 (tracked via `owner_approval_required`, `owner_reviewed_by_id`, `owner_reviewed_at`, `owner_comment`). Either can approve first; status stays PENDING until both complete. **Update Support**: PATCH endpoint allows creator or Admin to update requests while in PENDING status (with audit logging for all field changes).
@@ -223,21 +223,28 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - When validation request is created
   - When validation request moves to "Pending Approval" status (handles cases where risk tier was null initially)
   - Admin can void approval requirements with reason
+- **Manual Approvals**:
+  - Admins can add per-request approvals for a role/committee or a specific user with a required justification.
+  - Stored on ValidationApproval with approval_type Manual-Role/Manual-User plus manually_added_* metadata and assigned_approver_id for user assignments.
 - **Approval Workflow**:
-  - Any Admin can approve on behalf of any approver role
+  - Any Admin can approve on behalf of any approver role or manual assignment
+  - Assigned users can submit their own Manual-User approvals
   - Evidence description required (e.g., meeting minutes reference, email approval)
-  - Model.use_approval_date updated when all conditional approvals complete
+  - Model.use_approval_date updated when all conditional/manual approvals complete
+- **Dashboards**:
+  - `/validation-workflow/dashboard/pending-additional-approvals` includes pending conditional and manual approvals.
+  - `/validation-workflow/dashboard/my-pending-approvals` returns manual approvals assigned to the current user.
 - **English Translation**: Rules automatically generate human-readable explanations (e.g., "US Model Risk Management Committee approval required because validation type is Initial Validation AND model inherent risk tier is High (Tier 1) AND model governance region is US wholly-owned")
 - **UI Components**:
   - `/approver-roles` - Admin management of approver roles/committees (CRUD with soft delete)
   - `/additional-approval-rules` - Admin management of rules with live English preview
-  - ValidationRequestDetailPage Approvals tab - Shows required approvals, applied rules, submit/void actions
+  - ValidationRequestDetailPage Approvals tab - Shows required and manual approvals with submit/void actions; admin can add manual approvals
 - **Backend Components**:
   - `app/core/rule_evaluation.py` - Rule matching and English translation logic
   - `app/api/approver_roles.py` - Approver role CRUD endpoints
 - `app/api/conditional_approval_rules.py` - Additional approval rule CRUD with preview endpoint
   - `app/api/validation_workflow.py` - Integrated evaluation and approval submission
-- **Audit Logging**: CONDITIONAL_APPROVAL_SUBMIT and CONDITIONAL_APPROVAL_VOID actions tracked with evidence/reason
+- **Audit Logging**: CONDITIONAL_APPROVAL_SUBMIT, CONDITIONAL_APPROVAL_VOID, and MANUAL_APPROVAL_ADDED actions tracked with evidence/reason
 
 ## Validation Workflow Model Changes
 - **Purpose**: Allow Admins/Validators to add or remove models from a validation request during INTAKE or PLANNING.

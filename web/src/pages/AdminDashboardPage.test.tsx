@@ -156,6 +156,7 @@ const setupApiMocks = (overrides: Partial<Record<string, any>> = {}) => {
         pendingModelSubmissions: samplePendingModelSubmissions,
         pendingModelEdits: [],
         pendingAdditionalApprovals: [],
+        myPendingApprovals: { count: 0, pending_approvals: [] },
         myOverdueItems: [],
         monitoringOverview: { cycles: [] },
         recommendationsOpen: { total_open: 0, overdue_count: 0, by_status: [], by_priority: [] },
@@ -186,6 +187,8 @@ const setupApiMocks = (overrides: Partial<Record<string, any>> = {}) => {
                 return Promise.resolve({ data: data.pendingModelEdits });
             case '/validation-workflow/dashboard/pending-additional-approvals':
                 return Promise.resolve({ data: data.pendingAdditionalApprovals });
+            case '/validation-workflow/dashboard/my-pending-approvals':
+                return Promise.resolve({ data: data.myPendingApprovals });
             case '/validation-workflow/dashboard/my-overdue-items':
                 return Promise.resolve({ data: data.myOverdueItems });
             case '/monitoring/admin-overview':

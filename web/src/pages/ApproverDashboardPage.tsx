@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../api/client';
 import Layout from '../components/Layout';
+import PendingManualApprovalsBanner from '../components/PendingManualApprovalsBanner';
 import { useTableSort } from '../hooks/useTableSort';
 import { getRoleDisplay, getUserRoleCode } from '../utils/roleUtils';
 
@@ -475,6 +476,8 @@ export default function ApproverDashboardPage() {
                     Review and finalize approvals across validation, recommendation, monitoring, and decommissioning workflows.
                 </p>
             </div>
+
+            <PendingManualApprovalsBanner />
 
             {errorMessages.length > 0 && (
                 <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
