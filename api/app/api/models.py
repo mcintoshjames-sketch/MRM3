@@ -193,6 +193,88 @@ def get_model_last_updated(model: Model) -> Optional[date]:
     return None
 
 
+def _normalize_model_region_payload(
+    region_ids: Optional[List[int]],
+    model_regions: Optional[List[Any]],
+    wholly_owned_region_id: Optional[int]
+) -> List[dict[str, Optional[int]]]:
+    payload: dict[int, Optional[int]] = {}
+    if model_regions is not None:
+        for item in model_regions:
+            if isinstance(item, dict):
+                region_id = item.get("region_id")
+                owner_id = item.get("shared_model_owner_id")
+            else:
+                region_id = item.region_id
+                owner_id = item.shared_model_owner_id
+            if region_id is not None:
+                payload[region_id] = owner_id
+    elif region_ids is not None:
+        for region_id in region_ids:
+            payload[region_id] = None
+
+    if wholly_owned_region_id is not None:
+        payload.setdefault(wholly_owned_region_id, None)
+
+    return [
+        {"region_id": region_id, "shared_model_owner_id": owner_id}
+        for region_id, owner_id in payload.items()
+    ]
+
+
+def _validate_model_region_payload(db: Session, payload: List[dict[str, Optional[int]]]) -> None:
+    if not payload:
+        return
+
+    region_ids = {item["region_id"] for item in payload}
+    regions = db.query(Region).filter(Region.region_id.in_(region_ids)).all()
+    if len(regions) != len(region_ids):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="One or more regions not found"
+        )
+
+    owner_ids = {item["shared_model_owner_id"] for item in payload if item["shared_model_owner_id"] is not None}
+    if owner_ids:
+        owners = db.query(User).filter(User.user_id.in_(owner_ids)).all()
+        if len(owners) != len(owner_ids):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="One or more shared model owners not found"
+            )
+
+
+def _sync_model_regions(db: Session, model_id: int, payload: List[dict[str, Optional[int]]]) -> bool:
+    existing_regions = db.query(ModelRegion).filter(
+        ModelRegion.model_id == model_id
+    ).all()
+    existing_by_region = {mr.region_id: mr for mr in existing_regions}
+    desired_region_ids = {item["region_id"] for item in payload}
+    changed = False
+
+    for item in payload:
+        existing = existing_by_region.get(item["region_id"])
+        if existing:
+            if existing.shared_model_owner_id != item["shared_model_owner_id"]:
+                existing.shared_model_owner_id = item["shared_model_owner_id"]
+                changed = True
+        else:
+            db.add(ModelRegion(
+                model_id=model_id,
+                region_id=item["region_id"],
+                shared_model_owner_id=item["shared_model_owner_id"],
+                created_at=utc_now()
+            ))
+            changed = True
+
+    for existing in existing_regions:
+        if existing.region_id not in desired_region_ids:
+            db.delete(existing)
+            changed = True
+
+    return changed
+
+
 def _format_audit_changes(changes: dict, db: Session) -> Optional[str]:
     """Convert audit log changes dict to human-readable description with resolved names.
 
@@ -814,10 +896,12 @@ def create_model(
                 detail="Monitoring manager user not found"
             )
 
-    # Extract user_ids, regulatory_category_ids, region_ids, irp_ids, initial_version_number, initial_implementation_date, and validation request fields before creating model
+    # Extract user_ids, regulatory_category_ids, region_ids/model_regions, irp_ids,
+    # initial_version_number, initial_implementation_date, and validation request fields before creating model
     user_ids = model_data.user_ids or []
     regulatory_category_ids = model_data.regulatory_category_ids or []
-    region_ids = model_data.region_ids or []
+    region_ids = model_data.region_ids
+    model_regions_payload = model_data.model_regions
     irp_ids = model_data.irp_ids or []
     initial_version_number = model_data.initial_version_number or "1.0"
     initial_implementation_date = model_data.initial_implementation_date
@@ -829,7 +913,7 @@ def create_model(
         'trigger_reason': model_data.validation_request_trigger_reason
     }
     model_dict = model_data.model_dump(exclude={
-        'user_ids', 'regulatory_category_ids', 'region_ids', 'irp_ids',
+        'user_ids', 'regulatory_category_ids', 'region_ids', 'model_regions', 'irp_ids',
         'initial_version_number', 'initial_implementation_date',
         'auto_create_validation', 'validation_request_type_id',
         'validation_request_priority_id', 'validation_request_target_date',
@@ -880,31 +964,21 @@ def create_model(
     db.commit()
     db.refresh(model)
 
-    # Add deployment regions
-    # Combine wholly-owned region and additional regions, removing duplicates
-    all_region_ids = set(region_ids)
-    if model.wholly_owned_region_id is not None:
-        all_region_ids.add(model.wholly_owned_region_id)
-
-    if all_region_ids:
-        # Validate all regions exist
-        from app.models import Region
-        regions = db.query(Region).filter(
-            Region.region_id.in_(all_region_ids)).all()
-        if len(regions) != len(all_region_ids):
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="One or more regions not found"
-            )
-
-        # Create ModelRegion entries
-        for region_id in all_region_ids:
-            new_model_region = ModelRegion(
+    # Add deployment regions (with optional regional owners)
+    region_payload = _normalize_model_region_payload(
+        region_ids,
+        model_regions_payload,
+        model.wholly_owned_region_id
+    )
+    if region_payload:
+        _validate_model_region_payload(db, region_payload)
+        for item in region_payload:
+            db.add(ModelRegion(
                 model_id=model.model_id,
-                region_id=region_id,
+                region_id=item["region_id"],
+                shared_model_owner_id=item["shared_model_owner_id"],
                 created_at=utc_now()
-            )
-            db.add(new_model_region)
+            ))
         db.commit()
 
     # Create initial version with change_type_id = 1 (New Model Development)
@@ -1977,6 +2051,16 @@ def update_model(
                 original_values[field] = [c.value_id for c in model.regulatory_categories]
             elif field == 'initial_implementation_date':
                 original_values[field] = current_initial_date.isoformat() if current_initial_date else None
+            elif field == 'region_ids':
+                original_values[field] = [mr.region_id for mr in model.model_regions]
+            elif field == 'model_regions':
+                original_values[field] = [
+                    {
+                        "region_id": mr.region_id,
+                        "shared_model_owner_id": mr.shared_model_owner_id
+                    }
+                    for mr in model.model_regions
+                ]
             else:
                 original_values[field] = getattr(model, field, None)
 
@@ -2163,28 +2247,47 @@ def update_model(
             model.irps = irps
             irps_changed = True
 
-    # Handle region_ids separately (deployment regions)
+    # Handle deployment regions (region_ids/model_regions)
     regions_changed = False
-    if 'region_ids' in update_data:
-        region_ids = update_data.pop('region_ids')
-        if region_ids is not None:
-            from app.models.region import Region
-            regions = db.query(Region).filter(Region.region_id.in_(region_ids)).all()
-            if len(regions) != len(region_ids):
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="One or more regions not found"
+    regions_sync_applied = False
+    if 'model_regions' in update_data or 'region_ids' in update_data:
+        model_regions_payload = update_data.pop('model_regions', None)
+        region_ids = update_data.pop('region_ids', None)
+        region_payload = None
+        new_wholly_owned_region_id = update_data.get(
+            'wholly_owned_region_id',
+            model.wholly_owned_region_id
+        )
+
+        if model_regions_payload is not None:
+            region_payload = _normalize_model_region_payload(
+                None,
+                model_regions_payload,
+                new_wholly_owned_region_id
+            )
+        elif region_ids is not None:
+            existing_owner_map = {
+                mr.region_id: mr.shared_model_owner_id
+                for mr in db.query(ModelRegion).filter(ModelRegion.model_id == model_id).all()
+            }
+            payload_map = {
+                region_id: existing_owner_map.get(region_id)
+                for region_id in region_ids
+            }
+            if new_wholly_owned_region_id is not None:
+                payload_map.setdefault(
+                    new_wholly_owned_region_id,
+                    existing_owner_map.get(new_wholly_owned_region_id)
                 )
-            # Clear existing model regions and add new ones
-            db.query(ModelRegion).filter(ModelRegion.model_id == model_id).delete()
-            for region_id in region_ids:
-                new_model_region = ModelRegion(
-                    model_id=model_id,
-                    region_id=region_id,
-                    created_at=utc_now()
-                )
-                db.add(new_model_region)
-            regions_changed = True
+            region_payload = [
+                {"region_id": region_id, "shared_model_owner_id": owner_id}
+                for region_id, owner_id in payload_map.items()
+            ]
+
+        if region_payload is not None:
+            _validate_model_region_payload(db, region_payload)
+            regions_changed = _sync_model_regions(db, model_id, region_payload)
+            regions_sync_applied = True
 
     # Track changes for audit log
     changes_made = {}
@@ -2244,7 +2347,11 @@ def update_model(
         changes_made["region_ids"] = "modified"
 
     # Auto-sync deployment regions when wholly_owned_region_id changes
-    if 'wholly_owned_region_id' in update_data and update_data['wholly_owned_region_id'] is not None:
+    if (
+        not regions_sync_applied
+        and 'wholly_owned_region_id' in update_data
+        and update_data['wholly_owned_region_id'] is not None
+    ):
         new_region_id = update_data['wholly_owned_region_id']
 
         # Check if this region already exists in deployment regions
@@ -3860,11 +3967,52 @@ def approve_pending_edit(
         )
 
     # Apply the proposed changes to the model
-    proposed_changes = pending_edit.proposed_changes
+    proposed_changes = dict(pending_edit.proposed_changes or {})
     changes_applied = {}
     version_changes = {}
     initial_version = None
     initial_version_created = False
+    regions_changed = False
+    regions_sync_applied = False
+
+    if "model_regions" in proposed_changes or "region_ids" in proposed_changes:
+        model_regions_payload = proposed_changes.pop("model_regions", None)
+        region_ids = proposed_changes.pop("region_ids", None)
+        new_wholly_owned_region_id = proposed_changes.get(
+            "wholly_owned_region_id",
+            model.wholly_owned_region_id
+        )
+        region_payload = None
+
+        if model_regions_payload is not None:
+            region_payload = _normalize_model_region_payload(
+                None,
+                model_regions_payload,
+                new_wholly_owned_region_id
+            )
+        elif region_ids is not None:
+            existing_owner_map = {
+                mr.region_id: mr.shared_model_owner_id
+                for mr in db.query(ModelRegion).filter(ModelRegion.model_id == model_id).all()
+            }
+            payload_map = {
+                region_id: existing_owner_map.get(region_id)
+                for region_id in region_ids
+            }
+            if new_wholly_owned_region_id is not None:
+                payload_map.setdefault(
+                    new_wholly_owned_region_id,
+                    existing_owner_map.get(new_wholly_owned_region_id)
+                )
+            region_payload = [
+                {"region_id": region_id, "shared_model_owner_id": owner_id}
+                for region_id, owner_id in payload_map.items()
+            ]
+
+        if region_payload is not None:
+            _validate_model_region_payload(db, region_payload)
+            regions_changed = _sync_model_regions(db, model_id, region_payload)
+            regions_sync_applied = True
 
     for field, value in proposed_changes.items():
         if field == 'user_ids':
@@ -3926,6 +4074,27 @@ def approve_pending_edit(
             if old_value != value:
                 setattr(model, field, value)
                 changes_applied[field] = {"old": old_value, "new": value}
+
+    if regions_changed:
+        changes_applied["region_ids"] = "modified"
+
+    if (
+        not regions_sync_applied
+        and "wholly_owned_region_id" in proposed_changes
+        and proposed_changes["wholly_owned_region_id"] is not None
+    ):
+        new_region_id = proposed_changes["wholly_owned_region_id"]
+        existing_region = db.query(ModelRegion).filter(
+            ModelRegion.model_id == model_id,
+            ModelRegion.region_id == new_region_id
+        ).first()
+        if not existing_region:
+            db.add(ModelRegion(
+                model_id=model_id,
+                region_id=new_region_id,
+                created_at=utc_now()
+            ))
+            changes_applied["auto_added_deployment_region"] = new_region_id
 
     # Update pending edit status
     review_comment = review_data.get("comment") if review_data else None

@@ -71,10 +71,12 @@ To register a new model in the inventory:
 | **Model Developer** | The individual or team who built the model | No |
 | **Vendor** | Required if Development Type is "Third-Party" | Conditional |
 | **Usage Frequency** ⚙ | How often the model is used (e.g., Daily, Monthly) | Yes |
+| **Deployment Regions** | Regions where the model is deployed (multi-select) | No |
+| **Regional Owner (per region)** | Optional owner for a specific deployment region | No |
 
 4. Click **Submit** to create the model record
 
-> **Note**: Additional fields such as Risk Tier, deployed regions, and model users can be added after the initial submission by editing the model details.
+> **Note**: Additional fields such as Risk Tier, regional owners, and model users can be added after the initial submission by editing the model details.
 
 ---
 
@@ -114,8 +116,14 @@ These fields can be modified by users with appropriate permissions:
 | External Model ID | Optional legacy/external system identifier |
 | Usage Frequency ⚙ | Operational frequency of model use |
 | Model Users | Individuals using the model |
-| Deployed Regions | Geographic deployment locations |
+| Deployment Regions | Geographic deployment locations and optional regional owners |
 | Methodology ⚙ | Underlying methodology type |
+
+#### Deployment Regions & Regional Owners
+
+- Select one or more deployment regions in the model edit form (or during creation).
+- For each selected region, you can optionally assign a **Regional Owner** to reflect local accountability.
+- The wholly-owned region (if selected) is automatically included in the deployment list.
 
 ### Calculated (Read-Only) Fields
 

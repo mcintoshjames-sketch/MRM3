@@ -11,9 +11,12 @@ class TestModelDevelopmentType:
             headers=auth_headers,
             json={
                 "model_name": "In-House Model",
+                "description": "In-house model description",
                 "development_type": "In-House",
                 "owner_id": test_user.user_id,
+                "developer_id": test_user.user_id,
                 "usage_frequency_id": usage_frequency["daily"].value_id,
+                "initial_implementation_date": "2024-01-01",
                 "user_ids": [test_user.user_id]
             }
         )
@@ -28,10 +31,12 @@ class TestModelDevelopmentType:
             headers=auth_headers,
             json={
                 "model_name": "Third-Party Model",
+                "description": "Third-party model description",
                 "development_type": "Third-Party",
                 "owner_id": test_user.user_id,
                 "vendor_id": sample_vendor.vendor_id,
                 "usage_frequency_id": usage_frequency["daily"].value_id,
+                "initial_implementation_date": "2024-01-01",
                 "user_ids": [test_user.user_id]
             }
         )
@@ -47,9 +52,11 @@ class TestModelDevelopmentType:
             headers=auth_headers,
             json={
                 "model_name": "Invalid Third-Party",
+                "description": "Invalid third-party description",
                 "development_type": "Third-Party",
                 "owner_id": test_user.user_id,
                 "usage_frequency_id": usage_frequency["daily"].value_id,
+                "initial_implementation_date": "2024-01-01",
                 "user_ids": [test_user.user_id]
             }
         )
@@ -100,9 +107,11 @@ class TestModelOwnerDeveloper:
             headers=auth_headers,
             json={
                 "model_name": "Model with Developer",
+                "description": "Model with developer description",
                 "owner_id": test_user.user_id,
                 "developer_id": second_user.user_id,
                 "usage_frequency_id": usage_frequency["daily"].value_id,
+                "initial_implementation_date": "2024-01-01",
                 "user_ids": [test_user.user_id]
             }
         )
@@ -117,9 +126,12 @@ class TestModelOwnerDeveloper:
             headers=auth_headers,
             json={
                 "model_name": "Invalid Owner",
+                "description": "Invalid owner description",
                 "development_type": "In-House",
                 "owner_id": 9999,
+                "developer_id": test_user.user_id,
                 "usage_frequency_id": usage_frequency["daily"].value_id,
+                "initial_implementation_date": "2024-01-01",
                 "user_ids": [test_user.user_id, 9999]  # Include self AND invalid owner
             }
         )
@@ -133,10 +145,12 @@ class TestModelOwnerDeveloper:
             headers=auth_headers,
             json={
                 "model_name": "Invalid Developer",
+                "description": "Invalid developer description",
                 "development_type": "In-House",
                 "owner_id": test_user.user_id,
                 "developer_id": 9999,
                 "usage_frequency_id": usage_frequency["daily"].value_id,
+                "initial_implementation_date": "2024-01-01",
                 "user_ids": [test_user.user_id]  # Must include self as model user
             }
         )
@@ -180,8 +194,11 @@ class TestModelUsers:
             headers=auth_headers,
             json={
                 "model_name": "Model with Users",
+                "description": "Model with users description",
                 "owner_id": test_user.user_id,
+                "developer_id": test_user.user_id,
                 "usage_frequency_id": usage_frequency["daily"].value_id,
+                "initial_implementation_date": "2024-01-01",
                 "user_ids": [test_user.user_id, second_user.user_id]
             }
         )
@@ -198,8 +215,11 @@ class TestModelUsers:
             headers=auth_headers,
             json={
                 "model_name": "Invalid Users",
+                "description": "Invalid users description",
                 "owner_id": test_user.user_id,
+                "developer_id": test_user.user_id,
                 "usage_frequency_id": usage_frequency["daily"].value_id,
+                "initial_implementation_date": "2024-01-01",
                 "user_ids": [test_user.user_id, 9999]
             }
         )
@@ -247,10 +267,12 @@ class TestModelVendorValidation:
             headers=auth_headers,
             json={
                 "model_name": "Invalid Vendor",
+                "description": "Invalid vendor description",
                 "development_type": "Third-Party",
                 "owner_id": test_user.user_id,
                 "vendor_id": 9999,
                 "usage_frequency_id": usage_frequency["daily"].value_id,
+                "initial_implementation_date": "2024-01-01",
                 "user_ids": [test_user.user_id]
             }
         )
@@ -281,12 +303,13 @@ class TestModelVendorValidation:
 class TestAuthUsersEndpoint:
     """Test the /auth/users endpoint."""
 
-    def test_list_users(self, client, auth_headers, test_user, second_user):
-        response = client.get("/auth/users", headers=auth_headers)
+    def test_list_users(self, client, admin_headers, test_user, second_user):
+        response = client.get("/auth/users", headers=admin_headers)
         assert response.status_code == 200
         data = response.json()
-        assert len(data) == 2
+        assert len(data) == 3
         emails = [u["email"] for u in data]
+        assert "admin@example.com" in emails
         assert "test@example.com" in emails
         assert "developer@example.com" in emails
 

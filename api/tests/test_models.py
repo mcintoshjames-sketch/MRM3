@@ -1,6 +1,8 @@
 """Tests for models CRUD endpoints."""
 from datetime import date
 import pytest
+from app.models.model_region import ModelRegion
+from app.models.region import Region
 
 
 class TestListModels:
@@ -147,6 +149,50 @@ class TestCreateModel:
         )
         assert response.status_code == 400
 
+    def test_create_model_with_region_owner(
+        self,
+        client,
+        auth_headers,
+        test_user,
+        second_user,
+        usage_frequency,
+        db_session
+    ):
+        region = Region(code="US", name="United States")
+        db_session.add(region)
+        db_session.commit()
+        db_session.refresh(region)
+
+        response = client.post(
+            "/models/",
+            headers=auth_headers,
+            json={
+                "model_name": "Regional Owner Model",
+                "description": "Model with regional owner",
+                "development_type": "In-House",
+                "status": "In Development",
+                "owner_id": test_user.user_id,
+                "developer_id": test_user.user_id,
+                "usage_frequency_id": usage_frequency["daily"].value_id,
+                "initial_implementation_date": date.today().isoformat(),
+                "user_ids": [test_user.user_id],
+                "model_regions": [
+                    {
+                        "region_id": region.region_id,
+                        "shared_model_owner_id": second_user.user_id
+                    }
+                ]
+            }
+        )
+        assert response.status_code == 201
+        model_id = response.json()["model_id"]
+        model_region = db_session.query(ModelRegion).filter(
+            ModelRegion.model_id == model_id,
+            ModelRegion.region_id == region.region_id
+        ).first()
+        assert model_region is not None
+        assert model_region.shared_model_owner_id == second_user.user_id
+
 
 class TestGetModel:
     """Test GET /models/{model_id} endpoint."""
@@ -222,6 +268,49 @@ class TestUpdateModel:
             json={"model_name": "Hacked"}
         )
         assert response.status_code == 403  # FastAPI OAuth2 returns 403 for missing token
+
+    def test_update_model_regions_preserves_owner_on_region_ids_update(
+        self,
+        client,
+        auth_headers,
+        sample_model,
+        second_user,
+        db_session
+    ):
+        us_region = Region(code="US", name="United States")
+        eu_region = Region(code="EU", name="Europe")
+        db_session.add_all([us_region, eu_region])
+        db_session.commit()
+        db_session.refresh(us_region)
+        db_session.refresh(eu_region)
+
+        response = client.patch(
+            f"/models/{sample_model.model_id}",
+            headers=auth_headers,
+            json={
+                "model_regions": [
+                    {
+                        "region_id": us_region.region_id,
+                        "shared_model_owner_id": second_user.user_id
+                    }
+                ]
+            }
+        )
+        assert response.status_code == 200
+
+        response = client.patch(
+            f"/models/{sample_model.model_id}",
+            headers=auth_headers,
+            json={"region_ids": [us_region.region_id, eu_region.region_id]}
+        )
+        assert response.status_code == 200
+
+        model_region = db_session.query(ModelRegion).filter(
+            ModelRegion.model_id == sample_model.model_id,
+            ModelRegion.region_id == us_region.region_id
+        ).first()
+        assert model_region is not None
+        assert model_region.shared_model_owner_id == second_user.user_id
 
     def test_update_model_cannot_clear_description(self, client, auth_headers, sample_model):
         """Test that description cannot be cleared once set."""

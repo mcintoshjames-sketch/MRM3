@@ -68,6 +68,12 @@ class ModelBase(BaseModel):
 
 
     model_config = ConfigDict(protected_namespaces=())
+
+
+class ModelRegionCreatePayload(BaseModel):
+    """Lightweight model-region payload for create/update."""
+    region_id: int
+    shared_model_owner_id: Optional[int] = None
 class ModelCreate(ModelBase):
     description: str
     owner_id: int
@@ -87,6 +93,7 @@ class ModelCreate(ModelBase):
     user_ids: Optional[List[int]] = None
     regulatory_category_ids: Optional[List[int]] = None
     region_ids: Optional[List[int]] = None
+    model_regions: Optional[List[ModelRegionCreatePayload]] = None
     initial_version_number: Optional[str] = None
     initial_implementation_date: date
     is_model: bool = True  # True for models, False for non-models
@@ -150,6 +157,7 @@ class ModelUpdate(BaseModel):
     user_ids: Optional[List[int]] = None
     regulatory_category_ids: Optional[List[int]] = None
     region_ids: Optional[List[int]] = None  # Deployment regions for the model
+    model_regions: Optional[List[ModelRegionCreatePayload]] = None
     is_model: Optional[bool] = None  # True for models, False for non-models
     # MRSA (Model Risk-Sensitive Application) fields
     is_mrsa: Optional[bool] = None  # True for MRSAs requiring IRP oversight

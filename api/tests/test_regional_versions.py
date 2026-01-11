@@ -14,6 +14,12 @@ def test_region(db_session):
     return region
 
 
+@pytest.fixture(autouse=True)
+def _seed_validation_taxonomies(taxonomy_values):
+    """Ensure validation taxonomies exist for version auto-validation."""
+    return taxonomy_values
+
+
 class TestRegionalVersionScope:
     """Test regional scope fields on model versions."""
 
@@ -191,7 +197,7 @@ class TestAutoValidationWithRegionalScope:
             assert data.get("validation_type") == "INTERIM"
             # Warning should be present for insufficient lead time
             validation_warning = data.get("validation_warning", "")
-            assert "WARNING" in validation_warning.upper() or "INTERIM" in validation_warning.upper()
+            assert "lead time" in validation_warning.lower()
 
     def test_minor_version_no_validation(self, client, auth_headers, sample_model):
         """Test that MINOR version does not create validation request."""

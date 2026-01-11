@@ -11,6 +11,7 @@ from app.models.audit_log import AuditLog
 from app.models.kpm import KpmCategory, Kpm
 from app.models.monitoring import (
     MonitoringCycle,
+    MonitoringCycleStatus,
     MonitoringFrequency,
     MonitoringPlan,
     MonitoringPlanMetric,
@@ -403,6 +404,9 @@ class TestCreateOverlay:
         db_session.add(plan_b)
         db_session.flush()
 
+        monitoring_setup["cycle"].status = MonitoringCycleStatus.APPROVED.value
+        db_session.commit()
+
         MonitoringMembershipService(db_session).transfer_model(
             model_id=sample_model.model_id,
             to_plan_id=plan_b.plan_id,
@@ -424,7 +428,7 @@ class TestCreateOverlay:
             headers=validator_headers,
             json=payload
         )
-        assert response.status_code == 200
+        assert response.status_code == 201
         assert response.json()["trigger_monitoring_cycle_id"] == monitoring_setup["cycle"].cycle_id
 
     def test_create_overlay_rejects_mismatched_limitation(

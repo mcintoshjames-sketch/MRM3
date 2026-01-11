@@ -7,6 +7,7 @@ import Layout from '../components/Layout';
 import { useTableSort } from '../hooks/useTableSort';
 import MultiSelectDropdown from '../components/MultiSelectDropdown';
 import MRSAReviewStatusBadge, { MRSAReviewStatusCode } from '../components/MRSAReviewStatusBadge';
+import RegionOwnerConfigList, { RegionOwnerConfig } from '../components/RegionOwnerConfigList';
 import { Region } from '../api/regions';
 import { exportViewsApi, ExportView } from '../api/exportViews';
 import { linkChangeToAttestationIfPresent } from '../api/attestation';
@@ -271,6 +272,7 @@ export default function ModelsPage() {
         validation_request_target_date: '' as string,
         validation_request_trigger_reason: '' as string
     });
+    const [regionOwnerConfigs, setRegionOwnerConfigs] = useState<RegionOwnerConfig[]>([]);
     const [includeNonModels, setIncludeNonModels] = useState(false);
     const [mrsaRiskLevels, setMrsaRiskLevels] = useState<TaxonomyValue[]>([]);
     // View mode: 'models' = Models only, 'mrsas' = MRSAs only, 'all' = All entities
@@ -340,6 +342,30 @@ export default function ModelsPage() {
             setMonitoringManagerLookupError(null);
         }
     }, [monitoringManagerSearchTerm]);
+
+    const selectedRegionIds = useMemo(() => {
+        const ids = new Set(formData.region_ids);
+        if (formData.wholly_owned_region_id) {
+            ids.add(formData.wholly_owned_region_id);
+        }
+        return Array.from(ids);
+    }, [formData.region_ids, formData.wholly_owned_region_id]);
+
+    useEffect(() => {
+        setRegionOwnerConfigs((prev) => {
+            const ownerMap = new Map(prev.map((config) => [config.region_id, config.shared_model_owner_id]));
+            const next = selectedRegionIds.map((regionId) => ({
+                region_id: regionId,
+                shared_model_owner_id: ownerMap.get(regionId) ?? null
+            }));
+            const isSame = next.length === prev.length && next.every((item, index) => {
+                const current = prev[index];
+                return current?.region_id === item.region_id
+                    && current?.shared_model_owner_id === item.shared_model_owner_id;
+            });
+            return isSame ? prev : next;
+        });
+    }, [selectedRegionIds]);
 
     // Check if form has unsaved changes
     const formIsDirty = showForm && (
@@ -420,6 +446,7 @@ export default function ModelsPage() {
             validation_request_target_date: '',
             validation_request_trigger_reason: ''
         });
+        setRegionOwnerConfigs([]);
         setOwnerSearchTerm('');
         setDeveloperSearchTerm('');
         setSharedOwnerSearchTerm('');
@@ -939,7 +966,15 @@ export default function ModelsPage() {
         }
 
         try {
-            const payload = {
+            const ownerMap = new Map(
+                regionOwnerConfigs.map((config) => [config.region_id, config.shared_model_owner_id])
+            );
+            const modelRegionsPayload = selectedRegionIds.map((regionId) => ({
+                region_id: regionId,
+                shared_model_owner_id: ownerMap.get(regionId) ?? null
+            }));
+
+            const payload: Record<string, any> = {
                 ...formData,
                 developer_id: formData.developer_id || null,
                 shared_owner_id: formData.shared_owner_id || null,
@@ -952,7 +987,6 @@ export default function ModelsPage() {
                 methodology_id: formData.methodology_id || null,
                 usage_frequency_id: formData.usage_frequency_id,
                 user_ids: formData.user_ids.length > 0 ? formData.user_ids : null,
-                region_ids: formData.region_ids.length > 0 ? formData.region_ids : null,
                 regulatory_category_ids: formData.regulatory_category_ids.length > 0 ? formData.regulatory_category_ids : null,
                 initial_version_number: formData.initial_version_number || null,
                 initial_implementation_date: formData.initial_implementation_date || null,
@@ -966,6 +1000,12 @@ export default function ModelsPage() {
                 mrsa_risk_level_id: formData.is_mrsa ? formData.mrsa_risk_level_id : null,
                 mrsa_risk_rationale: formData.is_mrsa ? (formData.mrsa_risk_rationale || null) : null
             };
+            if (modelRegionsPayload.length > 0) {
+                payload.model_regions = modelRegionsPayload;
+                payload.region_ids = null;
+            } else {
+                payload.region_ids = formData.region_ids.length > 0 ? formData.region_ids : null;
+            }
             console.log('DEBUG: Creating model with payload:', JSON.stringify(payload, null, 2));
             console.log('DEBUG: usage_frequency_id value:', formData.usage_frequency_id, 'type:', typeof formData.usage_frequency_id);
             const response = await api.post('/models/', payload);
@@ -1023,6 +1063,7 @@ export default function ModelsPage() {
                 validation_request_target_date: '',
                 validation_request_trigger_reason: ''
             });
+            setRegionOwnerConfigs([]);
             setOwnerSearchTerm('');
             setDeveloperSearchTerm('');
             setSharedOwnerSearchTerm('');
@@ -2615,15 +2656,18 @@ export default function ModelsPage() {
                                     <label htmlFor="wholly_owned_region_id" className="block text-sm font-medium mb-2">
                                         Wholly-Owned By Region
                                     </label>
-                                    <select
-                                        id="wholly_owned_region_id"
-                                        className="input-field"
-                                        value={formData.wholly_owned_region_id || ''}
-                                        onChange={(e) => setFormData({
-                                            ...formData,
-                                            wholly_owned_region_id: e.target.value ? parseInt(e.target.value) : null
-                                        })}
-                                    >
+                                <select
+                                    id="wholly_owned_region_id"
+                                    className="input-field"
+                                    value={formData.wholly_owned_region_id || ''}
+                                    onChange={(e) => setFormData({
+                                        ...formData,
+                                        wholly_owned_region_id: e.target.value ? parseInt(e.target.value) : null,
+                                        region_ids: e.target.value
+                                            ? formData.region_ids.filter((id) => id !== parseInt(e.target.value))
+                                            : formData.region_ids
+                                    })}
+                                >
                                         <option value="">None (Global)</option>
                                         {regions.map(r => (
                                             <option key={r.region_id} value={r.region_id}>{r.name} ({r.code})</option>
@@ -2648,11 +2692,35 @@ export default function ModelsPage() {
                                         selectedValues={formData.region_ids}
                                         onChange={(values) => setFormData({
                                             ...formData,
-                                            region_ids: values as number[]
+                                            region_ids: formData.wholly_owned_region_id
+                                                ? (values as number[]).filter((id) => id !== formData.wholly_owned_region_id)
+                                                : (values as number[])
                                         })}
                                     />
                                     <p className="text-xs text-gray-500 mt-1">
                                         Select regions where this model will be deployed. The wholly-owned region (if selected) will be automatically included.
+                                    </p>
+                                </div>
+
+                                <div className="mb-4">
+                                    <label className="block text-sm font-medium mb-2">
+                                        Regional Owners (Optional)
+                                    </label>
+                                    <RegionOwnerConfigList
+                                        regions={regions}
+                                        selectedRegionIds={selectedRegionIds}
+                                        configs={regionOwnerConfigs}
+                                        onChange={setRegionOwnerConfigs}
+                                        users={users}
+                                        setUsers={setUsers}
+                                        whollyOwnedRegionId={formData.wholly_owned_region_id}
+                                        onRemoveRegion={(regionId) => setFormData((prev) => ({
+                                            ...prev,
+                                            region_ids: prev.region_ids.filter((id) => id !== regionId)
+                                        }))}
+                                    />
+                                    <p className="text-xs text-gray-500 mt-1">
+                                        Regional owners are optional and apply only to the selected deployment regions.
                                     </p>
                                 </div>
 

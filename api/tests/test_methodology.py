@@ -509,8 +509,10 @@ class TestModelMethodologyLinkage:
                 "development_type": "In-House",
                 "status": "Active",
                 "owner_id": 1,  # admin user
+                "developer_id": 1,
                 "usage_frequency_id": usage_frequency["daily"].value_id,
-                "methodology_id": methodology_id
+                "methodology_id": methodology_id,
+                "initial_implementation_date": "2024-01-01"
             },
             headers=admin_headers
         )

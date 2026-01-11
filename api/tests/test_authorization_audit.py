@@ -74,11 +74,14 @@ class TestAuditLogging:
             headers=auth_headers,
             json={
                 "model_name": "Audit Test Model",
+                "description": "Audit test model description",
                 "development_type": "In-House",
                 "status": "In Development",
                 "owner_id": test_user.user_id,
+                "developer_id": test_user.user_id,
                 "user_ids": [test_user.user_id],
-                "usage_frequency_id": usage_frequency["daily"].value_id
+                "usage_frequency_id": usage_frequency["daily"].value_id,
+                "initial_implementation_date": "2024-01-01"
             }
         )
         assert response.status_code == 201

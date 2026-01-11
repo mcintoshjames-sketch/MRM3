@@ -749,6 +749,7 @@ class TestStatusTransitions:
 
         # Link model to enforcing region
         sample_model.wholly_owned_region_id = region.region_id
+        db_session.add(ModelRegion(model_id=sample_model.model_id, region_id=region.region_id))
         db_session.commit()
 
         target_date = (date.today() + timedelta(days=30)).isoformat()
@@ -838,6 +839,7 @@ class TestStatusTransitions:
         db_session.refresh(region)
 
         sample_model.wholly_owned_region_id = region.region_id
+        db_session.add(ModelRegion(model_id=sample_model.model_id, region_id=region.region_id))
         db_session.commit()
 
         target_date = (date.today() + timedelta(days=30)).isoformat()
@@ -2727,6 +2729,7 @@ class TestSmartApproverAssignment:
                 region_id=region.region_id
             )
         )
+        db_session.add(ModelRegion(model_id=sample_model.model_id, region_id=region.region_id))
         db_session.commit()
 
         # Create a regional validation
@@ -2784,6 +2787,8 @@ class TestSmartApproverAssignment:
             lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add(global_approver)
+        db_session.commit()
+        db_session.add(ModelRegion(model_id=sample_model.model_id, region_id=region.region_id))
         db_session.commit()
 
         # Create a regional validation
@@ -3839,6 +3844,7 @@ class TestSendBackWorkflow:
         # Create snapshot history entry (simulating the send-back)
         snapshot = {
             "snapshot_at": datetime.now().isoformat(),
+            "context_type": "revision_sendback",
             "overall_rating": None,
             "recommendation_ids": [],
             "limitation_ids": [],

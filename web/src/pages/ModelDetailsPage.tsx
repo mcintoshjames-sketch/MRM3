@@ -1,8 +1,10 @@
-import { useState, useEffect, useRef, type ReactNode } from 'react';
+import { useState, useEffect, useRef, useMemo, type ReactNode } from 'react';
 import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
 import api from '../api/client';
 import Layout from '../components/Layout';
 import ModelRegionsSection from '../components/ModelRegionsSection';
+import MultiSelectDropdown from '../components/MultiSelectDropdown';
+import RegionOwnerConfigList, { RegionOwnerConfig } from '../components/RegionOwnerConfigList';
 import SubmitChangeModal from '../components/SubmitChangeModal';
 import VersionsList from '../components/VersionsList';
 import VersionDetailModal from '../components/VersionDetailModal';
@@ -105,6 +107,18 @@ interface Region {
     requires_regional_approval: boolean;
 }
 
+interface ModelRegionSummary {
+    region_id: number;
+    region_code: string;
+    region_name: string;
+}
+
+interface ModelRegionItem {
+    region_id: number;
+    shared_model_owner_id?: number | null;
+    shared_model_owner?: User | null;
+}
+
 interface SubmissionComment {
     comment_id: number;
     model_id: number;
@@ -171,6 +185,7 @@ interface Model {
     status_value: TaxonomyValue | null;
     wholly_owned_region: Region | null;
     users: User[];
+    regions: ModelRegionSummary[];
     regulatory_categories: TaxonomyValue[];
     submitted_by_user: User | null;
     submission_comments: SubmissionComment[];
@@ -556,12 +571,15 @@ export default function ModelDetailsPage() {
         status: 'In Development',
         status_id: null as number | null,
         user_ids: [] as number[],
+        region_ids: [] as number[],
         regulatory_category_ids: [] as number[],
         is_model: true,
         is_mrsa: false,
         mrsa_risk_level_id: null as number | null,
         mrsa_risk_rationale: ''
     });
+    const [regionOwnerConfigs, setRegionOwnerConfigs] = useState<RegionOwnerConfig[]>([]);
+    const [originalRegionOwnerConfigs, setOriginalRegionOwnerConfigs] = useState<RegionOwnerConfig[]>([]);
     const [mrsaRiskLevels, setMrsaRiskLevels] = useState<TaxonomyValue[]>([]);
     const editSearchInitialized = useRef(false);
 
@@ -655,18 +673,33 @@ export default function ModelDetailsPage() {
     const fetchData = async () => {
         try {
             // Fetch critical model data first - these are required
-            const [modelRes, assigneesRes, vendorsRes, regionsRes, taxonomiesRes, modelTypesRes, methodologyCategoriesRes] = await Promise.all([
+            const [
+                modelRes,
+                assigneesRes,
+                vendorsRes,
+                regionsRes,
+                modelRegionsRes,
+                taxonomiesRes,
+                modelTypesRes,
+                methodologyCategoriesRes
+            ] = await Promise.all([
                 api.get(`/models/${id}`),
                 api.get(`/models/${id}/assignees`),
                 api.get('/vendors/'),
                 api.get('/regions/'),
+                api.get(`/models/${id}/regions`),
                 api.get('/taxonomies/'),
                 api.get('/model-types/categories'),
                 api.get('/methodology-library/categories')
             ]);
             const modelData = modelRes.data;
+            const modelRegionsData: ModelRegionItem[] = modelRegionsRes.data || [];
             setModel(modelData);
-            setUsers(buildScopedUsers(assigneesRes.data || [], modelData));
+            const baseUsers = buildScopedUsers(assigneesRes.data || [], modelData);
+            const regionOwners = modelRegionsData
+                .map((item) => item.shared_model_owner)
+                .filter(Boolean) as User[];
+            setUsers(mergeUsers(baseUsers, regionOwners));
             setVendors(vendorsRes.data);
             setRegions(regionsRes.data);
             setModelTypes(modelTypesRes.data);
@@ -685,6 +718,10 @@ export default function ModelDetailsPage() {
                 setMrsaRiskLevels(mrsaTax.values.filter((v: TaxonomyValue) => v.is_active));
             }
 
+            const regionIdsFromModel = (modelData.regions || []).map((region: { region_id: number }) => region.region_id);
+            const additionalRegionIds = modelData.wholly_owned_region_id
+                ? regionIdsFromModel.filter((regionId: number) => regionId !== modelData.wholly_owned_region_id)
+                : regionIdsFromModel;
             const initialFormData = {
                 model_name: modelData.model_name,
                 external_model_id: modelData.external_model_id || '',
@@ -705,6 +742,7 @@ export default function ModelDetailsPage() {
                 status: modelData.status,
                 status_id: modelData.status_id,
                 user_ids: modelData.users.map((u: User) => u.user_id),
+                region_ids: additionalRegionIds,
                 regulatory_category_ids: modelData.regulatory_categories.map((c: TaxonomyValue) => c.value_id),
                 is_model: modelData.is_model ?? true,
                 is_mrsa: modelData.is_mrsa ?? false,
@@ -713,6 +751,20 @@ export default function ModelDetailsPage() {
             };
             setFormData(initialFormData);
             setOriginalFormData(initialFormData);
+
+            const ownerMap = new Map(
+                modelRegionsData.map((item) => [item.region_id, item.shared_model_owner_id ?? null])
+            );
+            const initialSelectedRegionIds = Array.from(new Set([
+                ...additionalRegionIds,
+                ...(modelData.wholly_owned_region_id ? [modelData.wholly_owned_region_id] : [])
+            ]));
+            const initialRegionConfigs: RegionOwnerConfig[] = initialSelectedRegionIds.map((regionId) => ({
+                region_id: regionId,
+                shared_model_owner_id: ownerMap.get(regionId) ?? null
+            }));
+            setRegionOwnerConfigs(initialRegionConfigs);
+            setOriginalRegionOwnerConfigs(initialRegionConfigs);
 
             // Fetch validation requests and versions separately - this is optional and shouldn't break the page
             try {
@@ -959,9 +1011,23 @@ export default function ModelDetailsPage() {
                 if (formData.mrsa_risk_rationale !== originalFormData.mrsa_risk_rationale) {
                     payload.mrsa_risk_rationale = formData.mrsa_risk_rationale || null;
                 }
+
+                const currentRegionPayload = buildRegionPayload(
+                    formData.region_ids,
+                    formData.wholly_owned_region_id,
+                    regionOwnerConfigs
+                );
+                const originalRegionPayload = buildRegionPayload(
+                    originalFormData.region_ids,
+                    originalFormData.wholly_owned_region_id,
+                    originalRegionOwnerConfigs
+                );
+                if (!regionPayloadsEqual(currentRegionPayload, originalRegionPayload)) {
+                    payload.model_regions = currentRegionPayload;
+                }
             } else {
                 // Fallback: send all fields if original data not available (shouldn't happen)
-                const { status, status_id, ...formDataWithoutStatus } = formData;
+                const { status, status_id, region_ids, ...formDataWithoutStatus } = formData;
                 Object.assign(payload, formDataWithoutStatus, {
                     external_model_id: formData.external_model_id || null,
                     developer_id: formData.developer_id || null,
@@ -973,6 +1039,14 @@ export default function ModelDetailsPage() {
                     user_ids: formData.user_ids.length > 0 ? formData.user_ids : [],
                     regulatory_category_ids: formData.regulatory_category_ids.length > 0 ? formData.regulatory_category_ids : []
                 });
+                const currentRegionPayload = buildRegionPayload(
+                    formData.region_ids,
+                    formData.wholly_owned_region_id,
+                    regionOwnerConfigs
+                );
+                if (currentRegionPayload.length > 0) {
+                    payload.model_regions = currentRegionPayload;
+                }
             }
 
             // Validate MRSA fields if is_mrsa is true
@@ -1070,6 +1144,33 @@ export default function ModelDetailsPage() {
                 return { ...prev, regulatory_category_ids: [...ids, valueId] };
             }
         });
+    };
+
+    const buildRegionPayload = (
+        regionIds: number[],
+        whollyOwnedRegionId: number | null,
+        configs: RegionOwnerConfig[]
+    ) => {
+        const ids = new Set(regionIds);
+        if (whollyOwnedRegionId) {
+            ids.add(whollyOwnedRegionId);
+        }
+        const ownerMap = new Map(configs.map((config) => [config.region_id, config.shared_model_owner_id]));
+        return Array.from(ids).map((regionId) => ({
+            region_id: regionId,
+            shared_model_owner_id: ownerMap.get(regionId) ?? null
+        })).sort((a, b) => a.region_id - b.region_id);
+    };
+
+    const regionPayloadsEqual = (
+        left: RegionOwnerConfig[],
+        right: RegionOwnerConfig[]
+    ) => {
+        if (left.length !== right.length) return false;
+        return left.every((item, index) => (
+            item.region_id === right[index]?.region_id
+            && item.shared_model_owner_id === right[index]?.shared_model_owner_id
+        ));
     };
 
     const normalizeUser = (item?: Partial<User> | null): User | null => {
@@ -1238,6 +1339,30 @@ export default function ModelDetailsPage() {
         formData.developer_id ? [formData.developer_id] : []
     );
     const monitoringManagerMatches = filterUsersBySearch(monitoringManagerSearchTerm);
+
+    const selectedRegionIds = useMemo(() => {
+        const ids = new Set(formData.region_ids);
+        if (formData.wholly_owned_region_id) {
+            ids.add(formData.wholly_owned_region_id);
+        }
+        return Array.from(ids);
+    }, [formData.region_ids, formData.wholly_owned_region_id]);
+
+    useEffect(() => {
+        setRegionOwnerConfigs((prev) => {
+            const ownerMap = new Map(prev.map((config) => [config.region_id, config.shared_model_owner_id]));
+            const next = selectedRegionIds.map((regionId) => ({
+                region_id: regionId,
+                shared_model_owner_id: ownerMap.get(regionId) ?? null
+            }));
+            const isSame = next.length === prev.length && next.every((item, index) => {
+                const current = prev[index];
+                return current?.region_id === item.region_id
+                    && current?.shared_model_owner_id === item.shared_model_owner_id;
+            });
+            return isSame ? prev : next;
+        });
+    }, [selectedRegionIds]);
 
     useEffect(() => {
         if (!editing) {
@@ -2938,7 +3063,10 @@ export default function ModelDetailsPage() {
                                     value={formData.wholly_owned_region_id || ''}
                                     onChange={(e) => setFormData({
                                         ...formData,
-                                        wholly_owned_region_id: e.target.value ? parseInt(e.target.value) : null
+                                        wholly_owned_region_id: e.target.value ? parseInt(e.target.value) : null,
+                                        region_ids: e.target.value
+                                            ? formData.region_ids.filter((id) => id !== parseInt(e.target.value))
+                                            : formData.region_ids
                                     })}
                                 >
                                     <option value="">None (Global)</option>
@@ -2948,6 +3076,52 @@ export default function ModelDetailsPage() {
                                 </select>
                                 <p className="text-xs text-gray-500 mt-1">
                                     Select a region if this model is wholly-owned by that region's governance structure
+                                </p>
+                            </div>
+
+                            <div className="mb-4 col-span-2">
+                                <label className="block text-sm font-medium mb-2">
+                                    Deployment Regions (Optional)
+                                </label>
+                                <MultiSelectDropdown
+                                    label=""
+                                    placeholder="Select Regions"
+                                    options={regions.map(r => ({
+                                        value: r.region_id,
+                                        label: `${r.name} (${r.code})`
+                                    }))}
+                                    selectedValues={formData.region_ids}
+                                    onChange={(values) => setFormData({
+                                        ...formData,
+                                        region_ids: formData.wholly_owned_region_id
+                                            ? (values as number[]).filter((id) => id !== formData.wholly_owned_region_id)
+                                            : (values as number[])
+                                    })}
+                                />
+                                <p className="text-xs text-gray-500 mt-1">
+                                    Select regions where this model is deployed. The wholly-owned region (if selected) will be automatically included.
+                                </p>
+                            </div>
+
+                            <div className="mb-4 col-span-2">
+                                <label className="block text-sm font-medium mb-2">
+                                    Regional Owners (Optional)
+                                </label>
+                                <RegionOwnerConfigList
+                                    regions={regions}
+                                    selectedRegionIds={selectedRegionIds}
+                                    configs={regionOwnerConfigs}
+                                    onChange={setRegionOwnerConfigs}
+                                    users={users}
+                                    setUsers={setUsers}
+                                    whollyOwnedRegionId={formData.wholly_owned_region_id}
+                                    onRemoveRegion={(regionId) => setFormData((prev) => ({
+                                        ...prev,
+                                        region_ids: prev.region_ids.filter((id) => id !== regionId)
+                                    }))}
+                                />
+                                <p className="text-xs text-gray-500 mt-1">
+                                    Regional owners are optional and apply only to the selected deployment regions.
                                 </p>
                             </div>
                         </div>
@@ -3620,6 +3794,7 @@ export default function ModelDetailsPage() {
                             modelId={model.model_id}
                             whollyOwnedRegionId={model.wholly_owned_region_id}
                             whollyOwnedRegion={model.wholly_owned_region}
+                            readOnly
                         />
                     </div>
 

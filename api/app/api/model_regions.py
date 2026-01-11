@@ -1,7 +1,7 @@
 """Model-Region API endpoints."""
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.core.rls import can_manage_model_region
@@ -38,7 +38,9 @@ def get_model_regions(
     if not model:
         raise HTTPException(status_code=404, detail="Model not found")
 
-    model_regions = db.query(ModelRegionModel).filter(
+    model_regions = db.query(ModelRegionModel).options(
+        joinedload(ModelRegionModel.shared_model_owner)
+    ).filter(
         ModelRegionModel.model_id == model_id
     ).all()
     return model_regions

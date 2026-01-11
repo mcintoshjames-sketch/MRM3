@@ -2,6 +2,7 @@
 from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional
+from app.schemas.user_lookup import ModelAssigneeResponse
 
 
 class ModelRegionBase(BaseModel):
@@ -31,6 +32,7 @@ class ModelRegion(ModelRegionBase):
     model_id: int
     region_id: int
     shared_model_owner_id: Optional[int] = None
+    shared_model_owner: Optional[ModelAssigneeResponse] = None
     created_at: datetime
     updated_at: datetime
 

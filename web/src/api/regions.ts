@@ -15,6 +15,11 @@ export interface ModelRegion {
     model_id: number;
     region_id: number;
     shared_model_owner_id?: number | null;
+    shared_model_owner?: {
+        user_id: number;
+        full_name: string;
+        email: string;
+    } | null;
     regional_risk_level?: string | null;
     notes?: string | null;
     created_at: string;

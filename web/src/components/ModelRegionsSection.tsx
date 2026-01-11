@@ -10,6 +10,7 @@ interface ModelRegionsSectionProps {
         code: string;
         name: string;
     } | null;
+    readOnly?: boolean;
 }
 
 interface User {
@@ -18,7 +19,12 @@ interface User {
     full_name: string;
 }
 
-export default function ModelRegionsSection({ modelId, whollyOwnedRegionId, whollyOwnedRegion }: ModelRegionsSectionProps) {
+export default function ModelRegionsSection({
+    modelId,
+    whollyOwnedRegionId,
+    whollyOwnedRegion,
+    readOnly = false
+}: ModelRegionsSectionProps) {
     const [regions, setRegions] = useState<Region[]>([]);
     const [modelRegions, setModelRegions] = useState<ModelRegion[]>([]);
     const [users, setUsers] = useState<User[]>([]);
@@ -106,8 +112,11 @@ export default function ModelRegionsSection({ modelId, whollyOwnedRegionId, whol
         }
     };
 
-    const getUserName = (userId: number) => {
-        const user = users.find(u => u.user_id === userId);
+    const getUserName = (modelRegion: ModelRegion) => {
+        if (modelRegion.shared_model_owner?.full_name) {
+            return modelRegion.shared_model_owner.full_name;
+        }
+        const user = users.find(u => u.user_id === modelRegion.shared_model_owner_id);
         return user ? user.full_name : 'Unknown';
     };
 
@@ -123,7 +132,7 @@ export default function ModelRegionsSection({ modelId, whollyOwnedRegionId, whol
         <div className="mt-6">
             <div className="flex justify-between items-center mb-4">
                 <h3 className="text-lg font-semibold">Deployment Regions</h3>
-                {availableRegions.length > 0 && (
+                {!readOnly && availableRegions.length > 0 && (
                     <button
                         onClick={() => setShowForm(!showForm)}
                         className="text-sm btn-secondary"
@@ -143,7 +152,9 @@ export default function ModelRegionsSection({ modelId, whollyOwnedRegionId, whol
                             <p className="text-xs text-indigo-700 mt-1">
                                 This model is wholly-owned by <strong>{whollyOwnedRegion.name} ({whollyOwnedRegion.code})</strong>.
                                 Governance approvals will require {whollyOwnedRegion.code} Regional Approvers.
-                                Add additional deployment regions below if this model operates in other regions.
+                                {readOnly
+                                    ? 'Use Edit Model to manage deployment regions and regional owners.'
+                                    : 'Add additional deployment regions below if this model operates in other regions.'}
                             </p>
                         </div>
                     </div>
@@ -156,7 +167,7 @@ export default function ModelRegionsSection({ modelId, whollyOwnedRegionId, whol
                 </div>
             )}
 
-            {showForm && (
+            {!readOnly && showForm && (
                 <div className="bg-gray-50 p-4 rounded-lg mb-4">
                     <h4 className="text-sm font-medium mb-3">Add Deployment Region</h4>
                     <form onSubmit={handleSubmit}>
@@ -258,7 +269,7 @@ export default function ModelRegionsSection({ modelId, whollyOwnedRegionId, whol
                                         </div>
                                         {mr.shared_model_owner_id && (
                                             <div className="text-xs text-gray-600 mb-1">
-                                                Regional Owner: {getUserName(mr.shared_model_owner_id)}
+                                                Regional Owner: {getUserName(mr)}
                                             </div>
                                         )}
                                         {mr.notes && (
@@ -277,14 +288,14 @@ export default function ModelRegionsSection({ modelId, whollyOwnedRegionId, whol
                                             </svg>
                                             Governance Region
                                         </span>
-                                    ) : (
+                                    ) : !readOnly ? (
                                         <button
                                             onClick={() => handleDelete(mr.id)}
                                             className="text-red-600 hover:text-red-800 text-xs"
                                         >
                                             Remove
                                         </button>
-                                    )}
+                                    ) : null}
                                 </div>
                             </div>
                         );

@@ -1,6 +1,7 @@
 """Pytest fixtures for API testing."""
 import os
 import uuid
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -20,37 +21,46 @@ from app.models.vendor import Vendor
 from app.models.model_pending_edit import ModelPendingEdit  # For pending edit workflow tests
 from app.models.lob import LOBUnit
 
-# In-memory SQLite for testing
-SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
 
-engine = create_engine(
-    SQLALCHEMY_DATABASE_URL,
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool,
-)
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+def _build_sqlite_url(base_dir: Path, worker_id: str) -> tuple[str, Path]:
+    db_dir = base_dir / f"sqlite_{worker_id}"
+    db_dir.mkdir(parents=True, exist_ok=True)
+    db_path = db_dir / "test.db"
+    return f"sqlite:///{db_path}", db_path
 
 
-def override_get_db():
-    """Override database dependency for testing."""
-    try:
-        db = TestingSessionLocal()
-        yield db
-    finally:
-        db.close()
+@pytest.fixture(scope="session")
+def sqlite_engine(tmp_path_factory):
+    """Create a per-worker SQLite engine for parallel test isolation."""
+    worker_id = os.getenv("PYTEST_XDIST_WORKER", "gw0")
+    db_url, db_path = _build_sqlite_url(tmp_path_factory.getbasetemp(), worker_id)
+    engine = create_engine(
+        db_url,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    yield engine
+    engine.dispose()
+    if db_path.exists():
+        db_path.unlink()
+
+
+@pytest.fixture(scope="session")
+def session_factory(sqlite_engine):
+    return sessionmaker(autocommit=False, autoflush=False, bind=sqlite_engine)
 
 
 @pytest.fixture(scope="function")
-def db_session():
+def db_session(sqlite_engine, session_factory):
     """Create a fresh database for each test."""
-    Base.metadata.create_all(bind=engine)
-    db = TestingSessionLocal()
+    Base.metadata.create_all(bind=sqlite_engine)
+    db = session_factory()
     for code, display_name in ROLE_CODE_TO_DISPLAY.items():
         db.add(Role(code=code, display_name=display_name, is_system=True, is_active=True))
     db.commit()
     yield db
     db.close()
-    Base.metadata.drop_all(bind=engine)
+    Base.metadata.drop_all(bind=sqlite_engine)
 
 
 @pytest.fixture(scope="session")
@@ -101,11 +111,18 @@ def postgres_db_session(postgres_engine):
 
 
 @pytest.fixture(scope="function")
-def client(db_session):
+def client(db_session, session_factory):
     """Test client with database override.
 
     Note: db_session already created tables, so we don't need to create them again.
     """
+    def override_get_db():
+        try:
+            db = session_factory()
+            yield db
+        finally:
+            db.close()
+
     app.dependency_overrides[get_db] = override_get_db
 
     with TestClient(app) as test_client:
@@ -387,12 +404,16 @@ def taxonomy_values(db_session):
     tier2 = TaxonomyValue(taxonomy_id=risk_tier_tax.taxonomy_id, code="TIER_2", label="Tier 2", sort_order=2)
     initial = TaxonomyValue(taxonomy_id=val_type_tax.taxonomy_id, code="INITIAL", label="Initial", sort_order=1)
     comprehensive = TaxonomyValue(taxonomy_id=val_type_tax.taxonomy_id, code="COMPREHENSIVE", label="Comprehensive", sort_order=2)
+    targeted = TaxonomyValue(taxonomy_id=val_type_tax.taxonomy_id, code="TARGETED", label="Targeted", sort_order=3)
+    interim = TaxonomyValue(taxonomy_id=val_type_tax.taxonomy_id, code="INTERIM", label="Interim", sort_order=4)
     pass_outcome = TaxonomyValue(taxonomy_id=outcome_tax.taxonomy_id, code="PASS", label="Pass", sort_order=1)
     pass_findings = TaxonomyValue(taxonomy_id=outcome_tax.taxonomy_id, code="PASS_WITH_FINDINGS", label="Pass with Findings", sort_order=2)
     fail_outcome = TaxonomyValue(taxonomy_id=outcome_tax.taxonomy_id, code="FAIL", label="Fail", sort_order=3)
     full_scope = TaxonomyValue(taxonomy_id=scope_tax.taxonomy_id, code="FULL_SCOPE", label="Full Scope", sort_order=1)
     priority_urgent = TaxonomyValue(taxonomy_id=priority_tax.taxonomy_id, code="URGENT", label="Urgent", sort_order=1)
     priority_standard = TaxonomyValue(taxonomy_id=priority_tax.taxonomy_id, code="STANDARD", label="Standard", sort_order=2)
+    priority_medium = TaxonomyValue(taxonomy_id=priority_tax.taxonomy_id, code="MEDIUM", label="Medium", sort_order=3)
+    priority_high = TaxonomyValue(taxonomy_id=priority_tax.taxonomy_id, code="HIGH", label="High", sort_order=4)
     status_intake = TaxonomyValue(taxonomy_id=status_tax.taxonomy_id, code="INTAKE", label="Intake", sort_order=1)
     status_planning = TaxonomyValue(taxonomy_id=status_tax.taxonomy_id, code="PLANNING", label="Planning", sort_order=2)
     status_in_progress = TaxonomyValue(taxonomy_id=status_tax.taxonomy_id, code="IN_PROGRESS", label="In Progress", sort_order=3)
@@ -400,7 +421,28 @@ def taxonomy_values(db_session):
     status_pending_approval = TaxonomyValue(taxonomy_id=status_tax.taxonomy_id, code="PENDING_APPROVAL", label="Pending Approval", sort_order=5)
     status_approved = TaxonomyValue(taxonomy_id=status_tax.taxonomy_id, code="APPROVED", label="Approved", sort_order=6)
 
-    db_session.add_all([tier1, tier2, initial, comprehensive, pass_outcome, pass_findings, fail_outcome, full_scope, priority_urgent, priority_standard, status_intake, status_planning, status_in_progress, status_review, status_pending_approval, status_approved])
+    db_session.add_all([
+        tier1,
+        tier2,
+        initial,
+        comprehensive,
+        targeted,
+        interim,
+        pass_outcome,
+        pass_findings,
+        fail_outcome,
+        full_scope,
+        priority_urgent,
+        priority_standard,
+        priority_medium,
+        priority_high,
+        status_intake,
+        status_planning,
+        status_in_progress,
+        status_review,
+        status_pending_approval,
+        status_approved
+    ])
     db_session.commit()
 
     return {
@@ -408,12 +450,16 @@ def taxonomy_values(db_session):
         "tier2": tier2,
         "initial": initial,
         "comprehensive": comprehensive,
+        "targeted": targeted,
+        "interim": interim,
         "pass": pass_outcome,
         "pass_with_findings": pass_findings,
         "fail": fail_outcome,
         "full_scope": full_scope,
         "priority_urgent": priority_urgent,
         "priority_standard": priority_standard,
+        "priority_medium": priority_medium,
+        "priority_high": priority_high,
         "status_intake": status_intake,
         "status_planning": status_planning,
         "status_in_progress": status_in_progress,

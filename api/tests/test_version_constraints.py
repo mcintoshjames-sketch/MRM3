@@ -83,16 +83,29 @@ def version_constraint_setup(db_session, test_user, usage_frequency):
         val_type_tax = Taxonomy(name="Validation Type", is_system=True)
         db_session.add(val_type_tax)
         db_session.flush()
-        initial_type = TaxonomyValue(
-            taxonomy_id=val_type_tax.taxonomy_id,
-            code="INITIAL", label="Initial", sort_order=1
-        )
-        db_session.add(initial_type)
-    else:
-        initial_type = db_session.query(TaxonomyValue).filter(
-            TaxonomyValue.taxonomy_id == val_type_tax.taxonomy_id,
-            TaxonomyValue.code == "INITIAL"
-        ).first()
+
+    val_type_values = {
+        v.code: v for v in db_session.query(TaxonomyValue).filter(
+            TaxonomyValue.taxonomy_id == val_type_tax.taxonomy_id
+        ).all()
+    }
+
+    def ensure_validation_type(code: str, label: str, sort_order: int) -> TaxonomyValue:
+        value = val_type_values.get(code)
+        if not value:
+            value = TaxonomyValue(
+                taxonomy_id=val_type_tax.taxonomy_id,
+                code=code,
+                label=label,
+                sort_order=sort_order
+            )
+            db_session.add(value)
+            val_type_values[code] = value
+        return value
+
+    initial_type = ensure_validation_type("INITIAL", "Initial", 1)
+    ensure_validation_type("TARGETED", "Targeted", 2)
+    ensure_validation_type("INTERIM", "Interim", 3)
 
     # Add Priority taxonomy
     priority_tax = db_session.query(Taxonomy).filter(
@@ -101,16 +114,29 @@ def version_constraint_setup(db_session, test_user, usage_frequency):
         priority_tax = Taxonomy(name="Validation Priority", is_system=True)
         db_session.add(priority_tax)
         db_session.flush()
-        standard_priority = TaxonomyValue(
-            taxonomy_id=priority_tax.taxonomy_id,
-            code="STANDARD", label="Standard", sort_order=1
-        )
-        db_session.add(standard_priority)
-    else:
-        standard_priority = db_session.query(TaxonomyValue).filter(
-            TaxonomyValue.taxonomy_id == priority_tax.taxonomy_id,
-            TaxonomyValue.code == "STANDARD"
-        ).first()
+
+    priority_values = {
+        v.code: v for v in db_session.query(TaxonomyValue).filter(
+            TaxonomyValue.taxonomy_id == priority_tax.taxonomy_id
+        ).all()
+    }
+
+    def ensure_priority(code: str, label: str, sort_order: int) -> TaxonomyValue:
+        value = priority_values.get(code)
+        if not value:
+            value = TaxonomyValue(
+                taxonomy_id=priority_tax.taxonomy_id,
+                code=code,
+                label=label,
+                sort_order=sort_order
+            )
+            db_session.add(value)
+            priority_values[code] = value
+        return value
+
+    standard_priority = ensure_priority("STANDARD", "Standard", 1)
+    ensure_priority("MEDIUM", "Medium", 2)
+    ensure_priority("HIGH", "High", 3)
 
     # Create Validation Policy for Tier 1
     policy = ValidationPolicy(

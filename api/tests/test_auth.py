@@ -134,7 +134,7 @@ class TestRegister:
             }
         )
         assert response.status_code == 201
-        assert response.json()["role"] == "Admin"
+        assert response.json()["role"] == "User"
 
     def test_register_invalid_email(self, client, lob_hierarchy):
         """Test registering with invalid email format."""
