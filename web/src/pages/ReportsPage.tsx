@@ -87,6 +87,14 @@ const adminReports: Report[] = [
         icon: '⚠️',
         category: 'Risk'
     },
+    {
+        id: 'model-tags',
+        name: 'Model Tags Report',
+        description: 'Overview of model tagging across the inventory. Track tag usage by category, identify untagged models, and analyze tag coverage for regulatory and project categorization.',
+        path: '/reports/model-tags',
+        icon: '🏷️',
+        category: 'Operations'
+    },
 ];
 
 // User reports - personal portfolio view

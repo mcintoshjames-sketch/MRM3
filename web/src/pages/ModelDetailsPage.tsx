@@ -32,6 +32,9 @@ import { overdueCommentaryApi, CurrentOverdueCommentaryResponse } from '../api/o
 import { getResidualRiskBadgeClass } from '../api/residualRiskMap';
 import { linkChangeToAttestationIfPresent } from '../api/attestation';
 import { irpApi, IRP, IRPCoverageStatus } from '../api/irp';
+import TagBadge from '../components/TagBadge';
+import TagSelector from '../components/TagSelector';
+import { TagListItem, getModelTags, addModelTags, removeModelTag } from '../api/tags';
 
 interface User {
     user_id: number;
@@ -484,6 +487,8 @@ export default function ModelDetailsPage() {
     const [revalidationStatus, setRevalidationStatus] = useState<RevalidationStatus | null>(null);
     const [rolesWithLOB, setRolesWithLOB] = useState<ModelRolesWithLOB | null>(null);
     const [decommissioningRequests, setDecommissioningRequests] = useState<DecommissioningRequestListItem[]>([]);
+    const [modelTags, setModelTags] = useState<TagListItem[]>([]);
+    const [editingTags, setEditingTags] = useState(false);
     const [loading, setLoading] = useState(true);
     const [editing, setEditing] = useState(false);
     const [activeTab, setActiveTab] = useState<TabId>('details');
@@ -704,6 +709,15 @@ export default function ModelDetailsPage() {
             setRegions(regionsRes.data);
             setModelTypes(modelTypesRes.data);
             setMethodologyCategories(methodologyCategoriesRes.data);
+
+            // Fetch model tags
+            try {
+                const tagsResponse = await getModelTags(Number(id));
+                setModelTags(tagsResponse.tags);
+            } catch (err) {
+                console.error('Failed to fetch model tags:', err);
+                setModelTags([]);
+            }
 
             // Fetch full taxonomy details for dropdowns
             const taxDetails = await Promise.all(
@@ -3641,6 +3655,63 @@ export default function ModelDetailsPage() {
                                 </div>
                             ) : (
                                 <p className="text-gray-500">No regulatory categories assigned</p>
+                            )}
+                        </div>
+                        <div className="col-span-2">
+                            <div className="flex items-center justify-between mb-1">
+                                <h4 className="text-sm font-medium text-gray-500">Tags</h4>
+                                {canManageModelsFlag && !editing && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setEditingTags(!editingTags)}
+                                        className="text-xs text-blue-600 hover:text-blue-800"
+                                    >
+                                        {editingTags ? 'Done' : 'Edit Tags'}
+                                    </button>
+                                )}
+                            </div>
+                            {editingTags ? (
+                                <TagSelector
+                                    selectedTagIds={modelTags.map(t => t.tag_id)}
+                                    onChange={async (tagIds) => {
+                                        try {
+                                            // Find tags to add and remove
+                                            const currentTagIds = modelTags.map(t => t.tag_id);
+                                            const tagsToAdd = tagIds.filter(id => !currentTagIds.includes(id));
+                                            const tagsToRemove = currentTagIds.filter(id => !tagIds.includes(id));
+
+                                            // Add new tags
+                                            if (tagsToAdd.length > 0) {
+                                                await addModelTags(Number(id), tagsToAdd);
+                                            }
+
+                                            // Remove tags
+                                            for (const tagId of tagsToRemove) {
+                                                await removeModelTag(Number(id), tagId);
+                                            }
+
+                                            // Refresh tags
+                                            const tagsResponse = await getModelTags(Number(id));
+                                            setModelTags(tagsResponse.tags);
+                                        } catch (err) {
+                                            console.error('Failed to update tags:', err);
+                                        }
+                                    }}
+                                    placeholder="Search and select tags..."
+                                />
+                            ) : modelTags.length > 0 ? (
+                                <div className="flex flex-wrap gap-1.5">
+                                    {modelTags.map(tag => (
+                                        <TagBadge
+                                            key={tag.tag_id}
+                                            name={tag.name}
+                                            color={tag.effective_color}
+                                            size="sm"
+                                        />
+                                    ))}
+                                </div>
+                            ) : (
+                                <p className="text-gray-500">No tags assigned</p>
                             )}
                         </div>
                         <div>

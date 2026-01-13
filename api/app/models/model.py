@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     from app.models.recommendation import Recommendation
     from app.models.region import Region
     from app.models.risk_assessment import ModelRiskAssessment
+    from app.models.tag import ModelTag, Tag
     from app.models.taxonomy import TaxonomyValue
     from app.models.user import User
     from app.models.vendor import Vendor
@@ -307,3 +308,13 @@ class Model(Base):
         "ModelOverlay", back_populates="model", cascade="all, delete-orphan",
         order_by="desc(ModelOverlay.created_at)"
     )
+
+    # Model tags for categorization
+    model_tags: Mapped[List["ModelTag"]] = relationship(
+        "ModelTag", back_populates="model", cascade="all, delete-orphan"
+    )
+
+    @property
+    def tags(self) -> List["Tag"]:
+        """Return list of Tag objects associated with this model."""
+        return [mt.tag for mt in self.model_tags]

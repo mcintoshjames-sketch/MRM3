@@ -51,6 +51,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - `monitoring.py`: Performance monitoring teams, plans, cycles, approvals, and PDF report generation with scheduling logic for submission/report due dates; read access to cycle-scoped endpoints uses cycle/plan view gates (RLS + eligible approvers).
   - `recommendations.py`: Validation/monitoring findings lifecycle - action plans, rebuttals, closure workflow, approvals, and priority configuration with regional overrides.
   - `exceptions.py`: Model exceptions detection and workflow endpoints.
+  - `tags.py`: Model tagging system - categories, tags, model-tag assignments, bulk operations, history tracking, and usage statistics.
   - `risk_assessment.py`: Model risk assessment CRUD with qualitative/quantitative scoring, inherent risk matrix calculation, overrides at three levels, per-region assessments, and automatic tier sync.
   - `qualitative_factors.py`: Admin-configurable qualitative risk factor management (CRUD for factors and rating guidance with weighted scoring).
   - `scorecard.py`: Validation scorecard configuration (sections, criteria, weights), ratings per validation request, computed results, and configuration versioning with publish workflow.
@@ -88,6 +89,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - Model Limitations: `limitation.py` (ModelLimitation) - inherent model constraints with significance classification, conclusion tracking, and retirement workflow.
   - Model Overlays: `model_overlay.py` (ModelOverlay) - underperformance overlays and management judgements with effectiveness window, traceability links, and retirement workflow.
   - Compliance/analytics: `audit_log.py`, `export_view.py`, `saved_query.py`, `version_deployment_task.py`, `validation_grouping.py`.
+  - Model Tagging: `tag.py` (TagCategory, Tag, ModelTag, ModelTagHistory) - flexible categorization with audit trail.
   - IRP (Independent Review Process): `irp.py` (IRP, IRPReview, IRPCertification, mrsa_irp association table for many-to-many MRSA coverage).
   - MRSA review scheduling: `mrsa_review_policy.py` (MRSAReviewPolicy, MRSAReviewException) for risk-based review frequencies and approved due date overrides.
 - Schemas: mirrored Pydantic models in `app/schemas/` for requests/responses.
@@ -97,22 +99,23 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
 
 ## Frontend Architecture
 - Entry: `src/main.tsx` mounts App within `AuthProvider` and `BrowserRouter`.
-- Routing (`src/App.tsx`): guarded routes for login, role-specific dashboards (`/dashboard` Admin, `/validator-dashboard`, `/my-dashboard` Model Owner, `/approver-dashboard`), models (list/detail/change records/decommissioning), validation workflow (list/detail/new), recommendations (list/detail), monitoring (plans/cycles/my-tasks), attestation (cycles/my-attestations/bulk), vendors (list/detail), users (list/detail), taxonomy (with KPM Library tab), audit logs, workflow configuration, batch delegates, regions, teams, validation policies, MRSA review policies, component definitions, configuration history, approver roles, additional approval rules, reports hub (`/reports`), report detail pages (regional compliance, deviation trends, overdue revalidation, critical limitations, name changes, KPI report, exceptions, my portfolio), analytics, deployment tasks, pending submissions, reference data, FR Y-14 config.
+- Routing (`src/App.tsx`): guarded routes for login, role-specific dashboards (`/dashboard` Admin, `/validator-dashboard`, `/my-dashboard` Model Owner, `/approver-dashboard`), models (list/detail/change records/decommissioning), validation workflow (list/detail/new), recommendations (list/detail), monitoring (plans/cycles/my-tasks), attestation (cycles/my-attestations/bulk), vendors (list/detail), users (list/detail), taxonomy (with KPM Library and Tags tabs), audit logs, workflow configuration, batch delegates, regions, teams, validation policies, MRSA review policies, component definitions, configuration history, approver roles, additional approval rules, reports hub (`/reports`), report detail pages (regional compliance, deviation trends, overdue revalidation, critical limitations, name changes, KPI report, exceptions, model tags, my portfolio), analytics, deployment tasks, pending submissions, reference data, FR Y-14 config.
 - Shared pieces:
   - Auth context (`src/contexts/AuthContext.tsx`) manages token/user; Axios client (`src/api/client.ts`) injects Bearer tokens and redirects on 401.
   - Layout (`src/components/Layout.tsx`) provides navigation shell.
   - Hooks/utilities: table sorting (`src/hooks/useTableSort.tsx`), CSV export helpers on pages, column customization.
+  - Tagging components: `TagSelector.tsx` (searchable multi-select dropdown grouped by category), `TagBadge.tsx` (color badge with WCAG-compliant contrast).
 - **Public / Static**: `PublicLandingPage.tsx`, `PublicGuidesIndexPage.tsx`, `PublicGuidePage.tsx`, `PublicOverviewPage.tsx`, `AboutPage.tsx`, `PrivacyPolicyPage.tsx`
   - **Auth**: `LoginPage.tsx`
   - **Dashboards**: `AdminDashboardPage.tsx`, `ValidatorDashboardPage.tsx`, `ModelOwnerDashboardPage.tsx`, `ApproverDashboardPage.tsx`
-  - **Core**: `ModelsPage.tsx`, `ModelDetailsPage.tsx`, `VendorsPage.tsx`, `VendorDetailsPage.tsx`, `UsersPage.tsx`, `UserDetailsPage.tsx`, `TaxonomyPage.tsx` (with KPM Library tab), `AuditPage.tsx`, `ReadyToDeployPage.tsx`
+  - **Core**: `ModelsPage.tsx`, `ModelDetailsPage.tsx`, `VendorsPage.tsx`, `VendorDetailsPage.tsx`, `UsersPage.tsx`, `UserDetailsPage.tsx`, `TaxonomyPage.tsx` (with KPM Library tab), `TagManagementPage.tsx` (admin tag category/tag CRUD), `AuditPage.tsx`, `ReadyToDeployPage.tsx`
   - **Validation Workflow**: `ValidationWorkflowPage.tsx`, `ValidationRequestDetailPage.tsx`, `ValidationPoliciesPage.tsx`, `MRSAReviewPoliciesPage.tsx`, `WorkflowConfigurationPage.tsx`, `ComponentDefinitionsPage.tsx`, `ConfigurationHistoryPage.tsx`, `ValidationAlertsPage.tsx`
   - **Monitoring**: `MonitoringPlansPage.tsx`, `MonitoringPlanDetailPage.tsx`, `MonitoringCycleDetailPage.tsx`, `MyMonitoringPage.tsx`, `MyMonitoringTasksPage.tsx`
   - **Attestation**: `AttestationCyclesPage.tsx`, `AttestationDetailPage.tsx`, `MyAttestationsPage.tsx`, `BulkAttestationPage.tsx`, `AttestationReviewQueuePage.tsx`
   - **Recommendations**: `RecommendationsPage.tsx`, `RecommendationDetailPage.tsx`
   - **Decommissioning**: `DecommissioningRequestPage.tsx`, `PendingDecommissioningPage.tsx`
   - **Approvals**: `ApproverRolesPage.tsx`, `ConditionalApprovalRulesPage.tsx`
-  - **Reports**: `ReportsPage.tsx`, `RegionalComplianceReportPage.tsx`, `DeviationTrendsReportPage.tsx`, `OverdueRevalidationReportPage.tsx`, `CriticalLimitationsReportPage.tsx`, `ModelOverlaysReportPage.tsx`, `NameChangesReportPage.tsx`, `KPIReportPage.tsx`, `ExceptionsReportPage.tsx`, `MyPortfolioReportPage.tsx`
+  - **Reports**: `ReportsPage.tsx`, `RegionalComplianceReportPage.tsx`, `DeviationTrendsReportPage.tsx`, `OverdueRevalidationReportPage.tsx`, `CriticalLimitationsReportPage.tsx`, `ModelOverlaysReportPage.tsx`, `NameChangesReportPage.tsx`, `KPIReportPage.tsx`, `ExceptionsReportPage.tsx`, `ModelTagsReportPage.tsx`, `MyPortfolioReportPage.tsx`
   - **IRP Management**: `IRPsPage.tsx`, `IRPDetailPage.tsx`, `MyMRSAReviewsPage.tsx`
   - **Other**: `ModelChangeRecordPage.tsx`, `BatchDelegatesPage.tsx`, `RegionsPage.tsx`, `TeamsPage.tsx`, `MyDeploymentTasksPage.tsx`, `MyPendingSubmissionsPage.tsx`, `AnalyticsPage.tsx`, `ReferenceDataPage.tsx`, `FryConfigPage.tsx`
   - **DecommissioningRequestPage**: Includes downstream dependency warning (fetches outbound dependencies from model relationships API and displays amber warning banner listing consumer models before submission).
@@ -154,7 +157,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
 4. Responses serialized via Pydantic schemas; frontend renders tables/cards with sorting/export.
 
 ## Reporting & Analytics
-- Reports hub (`/reports`) lists available reports; detail pages for Regional Compliance, Deviation Trends, Overdue Revalidation, Name Changes, Critical Limitations, Model Overlays, KPI Report, Exceptions, and My Portfolio (CSV export, refresh).
+- Reports hub (`/reports`) lists available reports; detail pages for Regional Compliance, Deviation Trends, Overdue Revalidation, Name Changes, Critical Limitations, Model Overlays, KPI Report, Exceptions, Model Tags, and My Portfolio (CSV export, refresh).
 - Backend report endpoints:
   - `GET /regional-compliance-report/` - Regional deployment and compliance
   - `GET /validation-workflow/compliance-report/deviation-trends` - Deviation trends
@@ -165,6 +168,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - `GET /reports/my-portfolio` and `GET /reports/my-portfolio/pdf` - My Portfolio report and PDF export
   - `GET /exceptions` and `GET /exceptions/summary` - Exceptions reporting and summary stats
   - `GET /models/name-changes/stats` and `GET /models/{id}/name-history` - Name changes report data
+  - `GET /tags/usage-statistics` - Model tag usage statistics by category with untagged model count
   - `GET /validation-workflow/reports/risk-mismatch` - Risk mismatch report
   - `GET /validation-workflow/requests/{id}/effective-challenge-report` - Effective challenge PDF export
   - Dashboard reports (`/validation-workflow/dashboard/*`) and analytics aggregations (`/analytics`, saved queries)
@@ -994,6 +998,41 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
 - **Taxonomies**:
   - **Exception Closure Reason**: Configurable closure reason values (e.g., "Recommendation Implemented", "Validation Completed", "Scope Clarified")
 - **Testing**: Tests in `api/tests/test_exceptions.py` cover detection logic, CRUD, workflow transitions, authorization, and edge cases.
+
+## Model Tagging System
+- **Purpose**: Flexible, admin-managed taxonomy for categorizing models across regulatory, project, and operational dimensions with full audit trail.
+- **Data Model**:
+  - **TagCategory**: Groupings for tags (e.g., "Regulatory Initiative", "Project", "Technology"). Fields: category_id, name, description, color (hex), sort_order, is_system, created_at, created_by_id.
+  - **Tag**: Individual tag values within categories. Fields: tag_id, category_id, name, description, color (optional override), sort_order, is_active, created_at, created_by_id, model_count (computed).
+  - **ModelTag**: Many-to-many junction table for model-tag assignments. Fields: model_id, tag_id, added_at, added_by_id. Primary key: (model_id, tag_id).
+  - **ModelTagHistory**: Full audit trail for tag assignments/removals. Fields: history_id, model_id, tag_id, action (ADDED/REMOVED), performed_at, performed_by_id.
+- **Color System**:
+  - Categories have a required color (hex code, e.g., "#DC2626")
+  - Tags inherit category color by default, can override with tag-specific color
+  - UI uses `effective_color` (tag color if set, else category color)
+  - Automatic WCAG-compliant text contrast calculation (dark/light text based on background luminance)
+- **Business Rules**:
+  - Admin-only management for categories and tags
+  - System categories (is_system=True) cannot be deleted
+  - Categories with tags assigned to models cannot be deleted (returns 400)
+  - Categories with unused tags can be deleted (cascades to tags)
+  - Tags can be soft-deleted (is_active=False) to preserve history while hiding from selection
+  - Unique tag names within category (case-insensitive enforcement)
+  - All model owners, developers, and delegates with can_submit_changes can add/remove tags from models
+- **API Endpoints** (prefix: `/tags`):
+  - Categories: `GET /categories`, `POST /categories` (Admin), `PATCH /categories/{id}` (Admin), `DELETE /categories/{id}` (Admin)
+  - Tags: `GET /`, `GET /{id}`, `POST /` (Admin), `PATCH /{id}` (Admin), `DELETE /{id}` (Admin)
+  - Model tags: `GET /models/{id}/tags`, `PUT /models/{id}/tags` (bulk replace), `POST /models/{id}/tags/bulk-add`, `DELETE /models/{id}/tags/bulk-remove`
+  - Tag history: `GET /models/{id}/tags/history`
+  - Statistics: `GET /usage-statistics` (counts by category, untagged models count)
+- **Frontend Components**:
+  - **TagManagementPage** (`/taxonomy` with Tags tab): Admin CRUD for categories and tags with color pickers, drag-to-reorder
+  - **TagSelector**: Searchable multi-select dropdown grouped by category with color badges
+  - **TagBadge**: Display component with color styling and optional remove button
+  - **ModelTagsReportPage** (`/reports/model-tags`): Tag coverage analytics, models by tag, untagged models report with CSV export
+  - **ModelsPage**: Tags column in table, tag filter dropdown
+  - **ModelDetailsPage**: Tags section with inline edit capability
+- **Testing**: Tests in `api/tests/test_tags.py` cover category/tag CRUD, model tag operations, bulk operations, history tracking, authorization, and cascade delete rules.
 
 ## My Portfolio Report
 - **Purpose**: Consolidated dashboard for model owners showing all their responsibilities and action items across the system.

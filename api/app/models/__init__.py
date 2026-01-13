@@ -121,6 +121,7 @@ from app.models.attestation import (
     AttestationQuestionConfig,
 )
 from app.models.model_exception import ModelException, ModelExceptionStatusHistory
+from app.models.tag import TagCategory, Tag, ModelTag, ModelTagHistory
 
 __all__ = [
     # LOB (Line of Business) hierarchy
@@ -268,4 +269,9 @@ __all__ = [
     # Model Exceptions
     "ModelException",
     "ModelExceptionStatusHistory",
+    # Model Tags
+    "TagCategory",
+    "Tag",
+    "ModelTag",
+    "ModelTagHistory",
 ]

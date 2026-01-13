@@ -7,6 +7,7 @@ import ModelChangeRecordPage from './pages/ModelChangeRecordPage';
 import VendorDetailsPage from './pages/VendorDetailsPage';
 import UserDetailsPage from './pages/UserDetailsPage';
 import TaxonomyPage from './pages/TaxonomyPage';
+import TagManagementPage from './pages/TagManagementPage';
 import AuditPage from './pages/AuditPage';
 import AdminDashboardPage from './pages/AdminDashboardPage';
 import ValidationWorkflowPage from './pages/ValidationWorkflowPage';
@@ -55,6 +56,7 @@ import TeamsPage from './pages/TeamsPage';
 import MyPortfolioReportPage from './pages/MyPortfolioReportPage';
 import ExceptionsReportPage from './pages/ExceptionsReportPage';
 import ReadyToDeployPage from './pages/ReadyToDeployPage';
+import ModelTagsReportPage from './pages/ModelTagsReportPage';
 import PublicLandingPage from './pages/PublicLandingPage';
 import PublicOverviewPage from './pages/PublicOverviewPage';
 import PublicGuidesIndexPage from './pages/PublicGuidesIndexPage';
@@ -142,6 +144,7 @@ function App() {
             <Route path="/users" element={<Navigate to="/reference-data" />} />
             <Route path="/users/:id" element={canManageUsers(user) ? <UserDetailsPage /> : <Navigate to="/models" />} />
             <Route path="/taxonomy" element={canManageTaxonomy(user) ? <TaxonomyPage /> : <Navigate to="/models" />} />
+            <Route path="/tags" element={user?.capabilities?.is_admin ? <TagManagementPage /> : <Navigate to="/models" />} />
             <Route path="/audit" element={canViewAuditLogs(user) ? <AuditPage /> : <Navigate to="/models" />} />
             <Route path="/workflow-config" element={canManageWorkflowConfig(user) ? <WorkflowConfigurationPage /> : <Navigate to="/models" />} />
             <Route path="/batch-delegates" element={canManageDelegates(user) ? <BatchDelegatesPage /> : <Navigate to="/models" />} />
@@ -171,6 +174,7 @@ function App() {
             <Route path="/reports/my-portfolio" element={user ? <MyPortfolioReportPage /> : <Navigate to="/login" />} />
             <Route path="/reports/exceptions" element={user ? <ExceptionsReportPage /> : <Navigate to="/login" />} />
             <Route path="/reports/ready-to-deploy" element={user ? <ReadyToDeployPage /> : <Navigate to="/login" />} />
+            <Route path="/reports/model-tags" element={user ? <ModelTagsReportPage /> : <Navigate to="/login" />} />
             <Route path="/analytics" element={user ? <AnalyticsPage /> : <Navigate to="/login" />} />
             <Route path="/attestations" element={canManageAttestations(user) ? <AttestationCyclesPage /> : <Navigate to="/models" />} />
             <Route path="/my-attestations" element={user ? <MyAttestationsPage /> : <Navigate to="/login" />} />

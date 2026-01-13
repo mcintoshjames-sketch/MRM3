@@ -14,30 +14,31 @@ This guide explains how to work with the Model Inventory in the Quantitative Met
    - [Editable (Mutable) Fields](#editable-mutable-fields)
    - [Calculated (Read-Only) Fields](#calculated-read-only-fields)
    - [How Calculations Work](#how-calculations-work)
-4. [Risk Assessment](#risk-assessment)
+4. [Model Tags](#model-tags)
+5. [Risk Assessment](#risk-assessment)
    - [Qualitative Assessment](#qualitative-assessment)
    - [Quantitative Assessment](#quantitative-assessment)
    - [Inherent Risk Matrix](#inherent-risk-matrix)
    - [Final Risk Tier](#final-risk-tier)
-5. [Model Versions (Changes)](#model-versions-changes)
+6. [Model Versions (Changes)](#model-versions-changes)
    - [Quick Overview](#quick-overview)
    - [Deployment Process](#deployment-process)
    - [Comprehensive Documentation](#comprehensive-documentation)
-6. [Model Relationships](#model-relationships)
+7. [Model Relationships](#model-relationships)
    - [Model Hierarchy (Parent-Child)](#model-hierarchy-parent-child)
    - [Data Dependencies](#data-dependencies)
-7. [Model Limitations](#model-limitations)
+8. [Model Limitations](#model-limitations)
    - [Recording a Limitation](#recording-a-limitation)
    - [Significance Levels](#significance-levels)
    - [Managing User Awareness](#managing-user-awareness)
-8. [Model Overlays & Judgements](#model-overlays--judgements)
+9. [Model Overlays & Judgements](#model-overlays--judgements)
    - [Recording an Overlay or Judgement](#recording-an-overlay-or-judgement)
    - [Effectiveness and Retirement](#effectiveness-and-retirement)
-9. [Model Decommissioning](#model-decommissioning)
-   - [Initiating Decommissioning](#initiating-decommissioning)
-   - [Approval Workflow](#approval-workflow)
-   - [Decommissioning Reasons](#decommissioning-reasons)
-10. [Exporting Data](#exporting-data)
+10. [Model Decommissioning](#model-decommissioning)
+    - [Initiating Decommissioning](#initiating-decommissioning)
+    - [Approval Workflow](#approval-workflow)
+    - [Decommissioning Reasons](#decommissioning-reasons)
+11. [Exporting Data](#exporting-data)
 
 ---
 
@@ -122,6 +123,7 @@ These fields can be modified by users with appropriate permissions:
 | Model Users | Individuals using the model |
 | Deployment Regions | Geographic deployment locations and optional regional owners |
 | Methodology ⚙ | Underlying methodology type |
+| Tags | Assigned categorization labels |
 
 #### Deployment Regions & Regional Owners
 
@@ -188,6 +190,125 @@ This date reflects when the model was last changed in production. The system loo
 #### Is AI/ML Classification
 
 Models are automatically classified as AI/ML based on their selected methodology. When a methodology tagged as AI/ML-related is assigned to the model, this flag is set to "Yes" automatically.
+
+---
+
+## Model Tags
+
+Tags provide a flexible way to categorize and organize models across various dimensions, such as regulatory initiatives, project assignments, or technology classifications. Tags are organized into categories managed by administrators.
+
+### Understanding Tags
+
+**Tag Categories** group related tags together. Each category has:
+- **Name** - Descriptive category name (e.g., "Regulatory Initiative", "Project")
+- **Color** - Visual identifier used for display badges
+- **Sort Order** - Display order in dropdowns and reports
+
+**Tags** within categories represent individual classification values:
+- Tags inherit their category's color unless overridden
+- Tags can be marked inactive to prevent new assignments while preserving history
+- Multiple tags from different categories can be applied to a single model
+
+**Common Use Cases:**
+- **Regulatory Initiatives** - Tag models affected by specific regulations (e.g., SR 11-7, CCAR, DFAST)
+- **Projects** - Tag models involved in specific transformation projects
+- **Technology** - Tag models by technology stack (e.g., Python, SAS, R)
+- **Business Priority** - Tag models by strategic importance
+
+### Adding Tags to a Model
+
+**From the Models List:**
+1. Navigate to **Models** in the side navigation
+2. Click on a model row to open its details
+3. In the **Details** tab, locate the **Tags** section
+4. Click **Edit** to open the tag selector
+5. Search or browse categories to select applicable tags
+6. Click checkboxes to add tags (multi-select supported)
+7. Click **Save** to apply changes
+
+**From the Model Details Page:**
+1. Open the model's Details tab
+2. Find the Tags section below the basic information
+3. Click the **Edit** button (pencil icon)
+4. Use the searchable dropdown to select tags by category
+5. Remove existing tags by clicking the X on the tag badge
+6. Save your changes
+
+**Permissions:**
+- Model owners, developers, and delegates with `can_submit_changes` permission can add/remove tags
+- Administrators can manage tags for any model
+
+### Bulk Operations
+
+You can assign or remove tags for multiple models simultaneously:
+
+1. Navigate to the **Models** list view.
+2. Select the models using the checkboxes.
+3. Click **Bulk Actions** and choose **Assign Tag** or **Remove Tag**.
+4. Select the specific tag and confirm.
+
+**Tag History:**
+All tag assignments and removals are tracked in the model's audit history. You can view:
+- Who added or removed each tag
+- When the change was made
+- Full history of tag changes over time
+
+### Tag Reports
+
+The **Model Tags Report** provides analytics on tag usage across the inventory:
+
+**Accessing the Report:**
+1. Navigate to **Reports** in the side navigation
+2. Select **Model Tags Report** from the Operations category
+
+**Report Features:**
+
+| Section | Information |
+|---------|-------------|
+| **Summary Statistics** | Total tags, total categories, models with tags, untagged models |
+| **Category Breakdown** | Tag count and model usage per category |
+| **Models by Tag** | Filter to see which models have a specific tag |
+| **Untagged Models** | List of models without any tags assigned |
+
+**Filters:**
+- Filter by category to focus on specific tag groups
+- Filter by specific tag to see assigned models
+- Show only untagged models to identify gaps in categorization
+
+**Export:**
+The report supports CSV export including:
+- Model details with all assigned tags
+- Tag usage statistics
+- Untagged model lists
+
+### Tag Administration
+
+> **Note**: Tag and category management is restricted to administrators.
+
+Administrators can manage tags via **Taxonomy → Tags** tab:
+
+**Creating Categories:**
+1. Click **Add Category**
+2. Enter name, description, and color
+3. Set sort order for display positioning
+4. Save the category
+
+**Creating Tags:**
+1. Select a category from the left panel
+2. Click **Add Tag**
+3. Enter tag name and optional description
+4. Optionally override the category color
+5. Save the tag
+
+**Managing Existing Tags:**
+- **Edit** - Modify name, description, or color
+- **Deactivate** - Hide from selection while preserving existing assignments
+- **Delete** - Remove unused tags (blocked if assigned to any model)
+
+**Category Deletion Rules:**
+- System categories cannot be deleted
+- Categories with tags assigned to models cannot be deleted
+- Categories with unused tags will cascade-delete all their tags
 
 ---
 

@@ -12,6 +12,8 @@ import { Region } from '../api/regions';
 import { exportViewsApi, ExportView } from '../api/exportViews';
 import { linkChangeToAttestationIfPresent } from '../api/attestation';
 import { getTeams, Team as TeamOption } from '../api/teams';
+import TagBadge from '../components/TagBadge';
+import { TagListItem, TagWithCategory, listTags } from '../api/tags';
 
 interface User {
     user_id: number;
@@ -176,6 +178,8 @@ interface Model {
     methodology: Methodology | null;
     ownership_type: TaxonomyValue | null;
     regulatory_categories: TaxonomyValue[];
+    // Model tags for categorization
+    tags: TagListItem[];
     // IRPs covering this MRSA
     irps: IRPItem[];
     // Computed validation fields
@@ -208,6 +212,7 @@ export default function ModelsPage() {
     const [regions, setRegions] = useState<Region[]>([]);
     const [teams, setTeams] = useState<TeamOption[]>([]);
     const [modelTypes, setModelTypes] = useState<ModelTypeCategory[]>([]);
+    const [filterTags, setFilterTags] = useState<TagWithCategory[]>([]);
     const [loading, setLoading] = useState(true);
     const [showForm, setShowForm] = useState(false);
 
@@ -512,6 +517,7 @@ export default function ModelsPage() {
         { key: 'ownership_type', label: 'Ownership Type', default: false },
         { key: 'model_type', label: 'Model Type', default: false },
         { key: 'regulatory_categories', label: 'Regulatory Categories', default: false },
+        { key: 'tags', label: 'Tags', default: true },
         { key: 'scorecard_outcome', label: 'Scorecard Outcome', default: false },
         { key: 'residual_risk', label: 'Residual Risk', default: false },
         { key: 'approval_status', label: 'Approval Status', default: false },
@@ -633,6 +639,7 @@ export default function ModelsPage() {
         owner_ids: [] as number[],
         vendor_ids: [] as number[],
         region_ids: [] as number[],
+        tag_ids: [] as number[],
         team_id: '' as '' | 'unassigned' | string,
         mrsa_review_statuses: [] as MRSAReviewStatusCode[],
         include_sub_models: false,
@@ -697,6 +704,19 @@ export default function ModelsPage() {
             const modelRegionIds = model.regions.map(r => r.region_id);
             const hasMatchingRegion = filters.region_ids.some(rid => modelRegionIds.includes(rid));
             if (!hasMatchingRegion) {
+                return false;
+            }
+        }
+
+        // Tag filter (multi-select)
+        if (filters.tag_ids.length > 0) {
+            // Check if model has any of the selected tags
+            if (!model.tags || model.tags.length === 0) {
+                return false;
+            }
+            const modelTagIds = model.tags.map(t => t.tag_id);
+            const hasMatchingTag = filters.tag_ids.some(tid => modelTagIds.includes(tid));
+            if (!hasMatchingTag) {
                 return false;
             }
         }
@@ -853,7 +873,8 @@ export default function ModelsPage() {
                 taxonomiesRes,
                 modelTypesRes,
                 methodologyCategoriesRes,
-                mrsaReviewRes
+                mrsaReviewRes,
+                tagsRes
             ] = await Promise.all([
                 api.get(`/models/?${params.toString()}`),
                 usersPromise,
@@ -863,7 +884,8 @@ export default function ModelsPage() {
                 api.get(`/taxonomies/by-names/?${taxonomyQueryString}`),
                 api.get('/model-types/categories'),
                 api.get('/methodology-library/categories'),
-                api.get('/irps/mrsa-review-status').catch(() => ({ data: [] }))
+                api.get('/irps/mrsa-review-status').catch(() => ({ data: [] })),
+                listTags({ is_active: true })
             ]);
             const mrsaReviewMap = new Map<number, MRSAReviewStatus>(
                 (mrsaReviewRes.data as MRSAReviewStatus[]).map((item) => [item.mrsa_id, item])
@@ -908,6 +930,7 @@ export default function ModelsPage() {
             setTeams(teamsRes.data);
             setModelTypes(modelTypesRes.data);
             setMethodologyCategories(methodologyCategoriesRes.data || []);
+            setFilterTags(tagsRes);
 
             // Extract taxonomy values from batch response
             const taxonomies = taxonomiesRes.data;
@@ -1717,6 +1740,27 @@ export default function ModelsPage() {
                 ? model.regulatory_categories.map(rc => rc.label).join(', ')
                 : '-',
             csvValue: (model) => model.regulatory_categories?.map(rc => rc.label).join('; ') || ''
+        },
+        tags: {
+            header: 'Tags',
+            cell: (model) => model.tags?.length > 0
+                ? (
+                    <div className="flex flex-wrap gap-1 max-w-xs">
+                        {model.tags.slice(0, 3).map(tag => (
+                            <TagBadge
+                                key={tag.tag_id}
+                                name={tag.name}
+                                color={tag.effective_color}
+                                size="sm"
+                            />
+                        ))}
+                        {model.tags.length > 3 && (
+                            <span className="text-xs text-gray-500">+{model.tags.length - 3} more</span>
+                        )}
+                    </div>
+                )
+                : <span className="text-gray-400">-</span>,
+            csvValue: (model) => model.tags?.map(t => t.name).join('; ') || ''
         },
         scorecard_outcome: {
             header: 'Scorecard Outcome',
@@ -3529,6 +3573,15 @@ export default function ModelsPage() {
                             onChange={(values) => setFilters({ ...filters, region_ids: values as number[] })}
                         />
 
+                        {/* Tags */}
+                        <MultiSelectDropdown
+                            label="Tags"
+                            placeholder="All Tags"
+                            options={filterTags.map(t => ({ value: t.tag_id, label: `${t.category.name}: ${t.name}` }))}
+                            selectedValues={filters.tag_ids}
+                            onChange={(values) => setFilters({ ...filters, tag_ids: values as number[] })}
+                        />
+
                         {/* Team */}
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Team</label>
@@ -3662,6 +3715,7 @@ export default function ModelsPage() {
                                     owner_ids: [],
                                     vendor_ids: [],
                                     region_ids: [],
+                                    tag_ids: [],
                                     team_id: '',
                                     mrsa_review_statuses: [],
                                     include_sub_models: false,

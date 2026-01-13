@@ -41,6 +41,7 @@ from app.models.risk_assessment import ModelRiskAssessment
 from app.models.irp import IRP
 from app.models.model_exception import ModelException, ModelExceptionStatusHistory
 from app.models.team import Team
+from app.models.tag import ModelTag, Tag, TagCategory
 from app.schemas.model_exception import ModelExceptionListResponse
 from app.schemas.model import (
     ModelCreate, ModelUpdate, ModelDetailResponse, ValidationGroupingSuggestion, ModelCreateResponse,
@@ -49,7 +50,7 @@ from app.schemas.model import (
     ModelApprovalStatusResponse, ModelApprovalStatusHistoryItem, ModelApprovalStatusHistoryResponse,
     BulkApprovalStatusRequest, BulkApprovalStatusItem, BulkApprovalStatusResponse,
     ModelListResponse, UserListItem, VendorListItem, TaxonomyListItem, MethodologyListItem,
-    ModelTypeListItem, ModelRegionListItem
+    ModelTypeListItem, ModelRegionListItem, TagListItem
 )
 from app.schemas.user_lookup import ModelAssigneeResponse
 from app.core.lob_utils import get_user_lob_rollup_name
@@ -590,6 +591,21 @@ def _build_model_list_response(
             }
         irps_list.append(irp_dict)
 
+    # Build tags list
+    tags_list = []
+    for mt in model.model_tags:
+        if mt.tag:
+            tag = mt.tag
+            tags_list.append({
+                "tag_id": tag.tag_id,
+                "name": tag.name,
+                "color": tag.color,
+                "effective_color": tag.color if tag.color else (tag.category.color if tag.category else "#6B7280"),
+                "category_id": tag.category_id,
+                "category_name": tag.category.name if tag.category else "Unknown",
+                "category_color": tag.category.color if tag.category else "#6B7280"
+            })
+
     # Compute business_line_name from owner's LOB chain
     business_line = None
     if model.owner:
@@ -641,6 +657,7 @@ def _build_model_list_response(
         "users": users_list,
         "regulatory_categories": reg_cats_list,
         "irps": irps_list,
+        "tags": tags_list,
         "scorecard_outcome": None,
         "residual_risk": None,
         "approval_status": None,
@@ -720,7 +737,9 @@ def list_models(
         selectinload(Model.model_regions).joinedload(ModelRegion.shared_model_owner).joinedload(User.lob),
         selectinload(Model.versions),
         # IRPs for MRSAs - load contact user for display
-        selectinload(Model.irps).joinedload(IRP.contact_user)
+        selectinload(Model.irps).joinedload(IRP.contact_user),
+        # Tags for categorization - load tag and category for display
+        selectinload(Model.model_tags).joinedload(ModelTag.tag).joinedload(Tag.category)
     )
 
     # Apply row-level security filtering
@@ -1511,7 +1530,9 @@ def get_model(
         joinedload(Model.methodology).joinedload(Methodology.category),
         joinedload(Model.wholly_owned_region),
         joinedload(Model.regulatory_categories),
-        joinedload(Model.versions)  # For model_last_updated computation
+        joinedload(Model.versions),  # For model_last_updated computation
+        # Tags for categorization
+        selectinload(Model.model_tags).joinedload(ModelTag.tag).joinedload(Tag.category)
     ).filter(Model.model_id == model_id).first()
 
     if not model:
@@ -1559,6 +1580,22 @@ def get_model(
         ModelException.status == 'OPEN'
     ).scalar() or 0
     model_dict['open_exception_count'] = open_exception_count
+
+    # Build tags list for response
+    tags_list = []
+    for mt in model.model_tags:
+        if mt.tag:
+            tag = mt.tag
+            tags_list.append({
+                "tag_id": tag.tag_id,
+                "name": tag.name,
+                "color": tag.color,
+                "effective_color": tag.color if tag.color else (tag.category.color if tag.category else "#6B7280"),
+                "category_id": tag.category_id,
+                "category_name": tag.category.name if tag.category else "Unknown",
+                "category_color": tag.category.color if tag.category else "#6B7280"
+            })
+    model_dict['tags'] = tags_list
 
     return model_dict
 
@@ -3040,6 +3077,21 @@ def get_model_activity_timeline(
         elif audit.action == "RESUBMIT":
             title = "Model resubmitted"
             icon = "🔄"
+        elif audit.action == "TAGS_ADDED":
+            icon = "🏷️"
+            tags_added = audit.changes.get("tags_added", []) if audit.changes else []
+            if tags_added:
+                tag_list = ", ".join(tags_added)
+                title = f"Tags added: {tag_list}"
+            else:
+                title = "Tags added"
+        elif audit.action == "TAG_REMOVED":
+            icon = "🏷️"
+            tag_removed = audit.changes.get("tag_removed", "") if audit.changes else ""
+            if tag_removed:
+                title = f"Tag removed: {tag_removed}"
+            else:
+                title = "Tag removed"
 
         activities.append(ActivityTimelineItem(
             timestamp=audit.timestamp,

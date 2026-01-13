@@ -481,6 +481,7 @@ export default function Layout({ children }: LayoutProps) {
                                         >
                                             Taxonomy
                                         </NavItem>
+                                        <NavItem to="/tags">Tags</NavItem>
 
                                         {/* Workflow & Policies subsection */}
                                         <SubsectionLabel label="Workflow & Policies" />

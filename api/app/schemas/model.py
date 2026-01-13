@@ -10,6 +10,7 @@ from app.schemas.model_submission_comment import ModelSubmissionCommentResponse
 from app.schemas.model_type_taxonomy import ModelTypeResponse
 from app.schemas.methodology import MethodologyResponse
 from app.schemas.team import TeamBasic
+from app.schemas.tag import TagListItem
 
 if TYPE_CHECKING:
     from app.schemas.irp import IRPResponse
@@ -337,6 +338,7 @@ class ModelListResponse(BaseModel):
     users: List[UserListItem] = []
     regulatory_categories: List[TaxonomyListItem] = []
     irps: List[IRPListItem] = []  # IRPs covering this MRSA
+    tags: List[TagListItem] = []  # Model tags for categorization
 
     # Computed fields (optional, expensive)
     scorecard_outcome: Optional[str] = None
@@ -380,6 +382,8 @@ class ModelDetailResponse(ModelResponse):
     # MRSA nested relationships
     mrsa_risk_level: Optional[TaxonomyValueResponse] = None  # MRSA risk classification
     irps: List[IRPSummary] = []  # IRPs covering this MRSA
+    # Model tags for categorization
+    tags: List[TagListItem] = []
     # Computed validation fields (populated from final_risk_ranking computation)
     scorecard_outcome: Optional[str] = None
     residual_risk: Optional[str] = None
@@ -468,6 +472,7 @@ class ModelCreateResponse(BaseModel):
     regulatory_categories: List[TaxonomyValueResponse] = []
     regions: List[ModelRegionListItem] = []
     irps: List[IRPSummary] = []  # IRPs covering this MRSA
+    tags: List[TagListItem] = []  # Model tags for categorization
     warnings: Optional[List[ModelCreateWarning]] = None
 
     model_config = ConfigDict(from_attributes=True, protected_namespaces=())

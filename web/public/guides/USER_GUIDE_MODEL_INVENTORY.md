@@ -26,15 +26,19 @@ This guide explains how to work with the Model Inventory in the Quantitative Met
 6. [Model Relationships](#model-relationships)
    - [Model Hierarchy (Parent-Child)](#model-hierarchy-parent-child)
    - [Data Dependencies](#data-dependencies)
-7. [Model Limitations](#model-limitations)
+7. [Model Tags](#model-tags)
+   - [Understanding Tags](#understanding-tags)
+   - [Adding Tags to a Model](#adding-tags-to-a-model)
+   - [Tag Reports](#tag-reports)
+8. [Model Limitations](#model-limitations)
    - [Recording a Limitation](#recording-a-limitation)
    - [Significance Levels](#significance-levels)
    - [Managing User Awareness](#managing-user-awareness)
-8. [Model Decommissioning](#model-decommissioning)
+9. [Model Decommissioning](#model-decommissioning)
    - [Initiating Decommissioning](#initiating-decommissioning)
    - [Approval Workflow](#approval-workflow)
    - [Decommissioning Reasons](#decommissioning-reasons)
-9. [Exporting Data](#exporting-data)
+10. [Exporting Data](#exporting-data)
 
 ---
 
@@ -367,6 +371,116 @@ on the correct side of the model.
 5. Choose **Relationship Type** and **Direction**
 
 > **Tip:** If Direction is missing, the relationship will be flagged and excluded from lineage exports until updated.
+
+---
+
+## Model Tags
+
+Tags provide a flexible way to categorize and organize models across various dimensions, such as regulatory initiatives, project assignments, or technology classifications. Tags are organized into categories managed by administrators.
+
+### Understanding Tags
+
+**Tag Categories** group related tags together. Each category has:
+- **Name** - Descriptive category name (e.g., "Regulatory Initiative", "Project")
+- **Color** - Visual identifier used for display badges
+- **Sort Order** - Display order in dropdowns and reports
+
+**Tags** within categories represent individual classification values:
+- Tags inherit their category's color unless overridden
+- Tags can be marked inactive to prevent new assignments while preserving history
+- Multiple tags from different categories can be applied to a single model
+
+**Common Use Cases:**
+- **Regulatory Initiatives** - Tag models affected by specific regulations (e.g., SR 11-7, CCAR, DFAST)
+- **Projects** - Tag models involved in specific transformation projects
+- **Technology** - Tag models by technology stack (e.g., Python, SAS, R)
+- **Business Priority** - Tag models by strategic importance
+
+### Adding Tags to a Model
+
+**From the Models List:**
+1. Navigate to **Models** in the side navigation
+2. Click on a model row to open its details
+3. In the **Details** tab, locate the **Tags** section
+4. Click **Edit** to open the tag selector
+5. Search or browse categories to select applicable tags
+6. Click checkboxes to add tags (multi-select supported)
+7. Click **Save** to apply changes
+
+**From the Model Details Page:**
+1. Open the model's Details tab
+2. Find the Tags section below the basic information
+3. Click the **Edit** button (pencil icon)
+4. Use the searchable dropdown to select tags by category
+5. Remove existing tags by clicking the X on the tag badge
+6. Save your changes
+
+**Permissions:**
+- Model owners, developers, and delegates with `can_submit_changes` permission can add/remove tags
+- Administrators can manage tags for any model
+
+**Tag History:**
+All tag assignments and removals are tracked in the model's audit history. You can view:
+- Who added or removed each tag
+- When the change was made
+- Full history of tag changes over time
+
+### Tag Reports
+
+The **Model Tags Report** provides analytics on tag usage across the inventory:
+
+**Accessing the Report:**
+1. Navigate to **Reports** in the side navigation
+2. Select **Model Tags Report** from the Operations category
+
+**Report Features:**
+
+| Section | Information |
+|---------|-------------|
+| **Summary Statistics** | Total tags, total categories, models with tags, untagged models |
+| **Category Breakdown** | Tag count and model usage per category |
+| **Models by Tag** | Filter to see which models have a specific tag |
+| **Untagged Models** | List of models without any tags assigned |
+
+**Filters:**
+- Filter by category to focus on specific tag groups
+- Filter by specific tag to see assigned models
+- Show only untagged models to identify gaps in categorization
+
+**Export:**
+The report supports CSV export including:
+- Model details with all assigned tags
+- Tag usage statistics
+- Untagged model lists
+
+### Tag Administration
+
+> **Note**: Tag and category management is restricted to administrators.
+
+Administrators can manage tags via **Taxonomy → Tags** tab:
+
+**Creating Categories:**
+1. Click **Add Category**
+2. Enter name, description, and color
+3. Set sort order for display positioning
+4. Save the category
+
+**Creating Tags:**
+1. Select a category from the left panel
+2. Click **Add Tag**
+3. Enter tag name and optional description
+4. Optionally override the category color
+5. Save the tag
+
+**Managing Existing Tags:**
+- **Edit** - Modify name, description, or color
+- **Deactivate** - Hide from selection while preserving existing assignments
+- **Delete** - Remove unused tags (blocked if assigned to any model)
+
+**Category Deletion Rules:**
+- System categories cannot be deleted
+- Categories with tags assigned to models cannot be deleted
+- Categories with unused tags will cascade-delete all their tags
 
 ---
 

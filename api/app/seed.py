@@ -24,6 +24,7 @@ from app.models.scorecard import ScorecardSection, ScorecardCriterion
 from app.models.residual_risk_map import ResidualRiskMapConfig
 from app.models.mrsa_review_policy import MRSAReviewPolicy
 from app.models.irp import IRP, IRPReview
+from app.models.tag import TagCategory, Tag
 from app.core.monitoring_constants import (
     QUALITATIVE_OUTCOME_TAXONOMY_NAME,
     OUTCOME_GREEN,
@@ -3030,6 +3031,9 @@ def seed_database():
         # Seed Methodology Library
         seed_methodology_library(db)
 
+        # Seed Tag Categories for Model Tagging
+        seed_tag_categories(db)
+
         print("Seeding completed successfully!")
 
     except Exception as e:
@@ -4914,6 +4918,70 @@ def seed_mrsa_demo_data(db: Session):
     db.commit()
     print(f"✓ Created {reviews_created} demo IRP reviews")
     print("✓ MRSA Demo data seeding complete")
+
+
+def seed_tag_categories(db: Session):
+    """Seed default tag categories for model tagging.
+
+    Creates the following categories:
+    - Regulatory: For regulatory exams and compliance tags
+    - Project: For project and initiative tags
+    - Climate: For climate and ESG related tags
+    - Technology: For technology stack tags
+    """
+    DEFAULT_TAG_CATEGORIES = [
+        {
+            "name": "Regulatory",
+            "description": "Regulatory exams and compliance tags",
+            "color": "#DC2626",  # Red
+            "sort_order": 1,
+            "is_system": True,
+        },
+        {
+            "name": "Project",
+            "description": "Projects and initiatives",
+            "color": "#2563EB",  # Blue
+            "sort_order": 2,
+            "is_system": True,
+        },
+        {
+            "name": "Climate",
+            "description": "Climate and ESG related tags",
+            "color": "#059669",  # Green
+            "sort_order": 3,
+            "is_system": True,
+        },
+        {
+            "name": "Technology",
+            "description": "Technology stack and infrastructure",
+            "color": "#7C3AED",  # Purple
+            "sort_order": 4,
+            "is_system": True,
+        },
+    ]
+
+    categories_created = 0
+    for cat_data in DEFAULT_TAG_CATEGORIES:
+        existing = db.query(TagCategory).filter(
+            TagCategory.name == cat_data["name"]
+        ).first()
+
+        if not existing:
+            category = TagCategory(
+                name=cat_data["name"],
+                description=cat_data["description"],
+                color=cat_data["color"],
+                sort_order=cat_data["sort_order"],
+                is_system=cat_data["is_system"],
+            )
+            db.add(category)
+            categories_created += 1
+
+    if categories_created > 0:
+        db.commit()
+        print(f"✓ Created {categories_created} default tag categories")
+    else:
+        print("✓ Default tag categories already exist")
 
 
 if __name__ == "__main__":
