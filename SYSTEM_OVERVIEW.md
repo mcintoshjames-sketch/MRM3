@@ -92,9 +92,27 @@ The system automatically computes and tracks each model's approval status:
 |--------|-------------|
 | **APPROVED** | Current validation is approved with all sign-offs complete |
 | **INTERIM_APPROVED** | Operating under interim validation approval |
-| **VALIDATION_IN_PROGRESS** | Overdue but active validation underway |
+| **VALIDATION_IN_PROGRESS** | Overdue but active validation underway (substantive stage) |
 | **EXPIRED** | Overdue with no active substantive validation |
 | **NEVER_VALIDATED** | No validation has been completed |
+
+### Additional Capabilities
+
+**Model Overlays & Judgements**
+- Track underperformance-driven adjustments applied to models
+- Distinguish between "Overlays" and "Management Judgements"
+- Effective date tracking (Active when within window and not retired)
+- Link overlays to monitoring results or recommendations
+
+**Model Limitations**
+- Document known constraints with significance levels (Critical vs Non-Critical)
+- **Critical Limitations**: Require documented "User Awareness" verifying users know the risk
+- Categories: Input Data, Methodology, Implementation, etc.
+- Migration to Recommendation possible if finding remediation is required
+
+**AI/ML Classification**
+- Automated `is_aiml` flag derivation based on assigned Methodology
+- System-level tracking for AI/ML inventory reporting (SR 11-7/EU AI Act readiness)
 
 ---
 
@@ -109,14 +127,15 @@ QMIS provides comprehensive end-to-end validation lifecycle management, supporti
 ```
 ┌─────────┐   ┌──────────┐   ┌─────────────┐   ┌────────┐   ┌──────────────────┐   ┌──────────┐
 │ INTAKE  │ → │ PLANNING │ → │ IN PROGRESS │ → │ REVIEW │ → │ PENDING APPROVAL │ → │ APPROVED │
-└─────────┘   └──────────┘   └─────────────┘   └────────┘   └──────────────────┘   └──────────┘
-                                                    │
-                                              ┌─────┴─────┐
-                                              │  ON HOLD  │  (with pause tracking)
-                                              └───────────┘
-                                              ┌───────────┐
-                                              │ CANCELLED │  (with justification)
-                                              └───────────┘
+└─────────┘   └──────────┘   └─────────────┘   └────────┘   └────┬─────▲───────┘   └──────────┘
+                                                                 │     │
+                                                     (Send Back) │     │ (Resubmit)
+                                                            ┌────▼─────┴────┐      ┌───────────┐
+                                                            │   REVISION    │      │  ON HOLD  │
+                                                            └───────────────┘      └───────────┘
+                                                                                   ┌───────────┐
+                                                                                   │ CANCELLED │
+                                                                                   └───────────┘
 ```
 
 ### Validation Types
@@ -127,14 +146,17 @@ QMIS provides comprehensive end-to-end validation lifecycle management, supporti
 | **Comprehensive** | Periodic revalidation (annual/biennial) | Full component coverage |
 | **Targeted Review** | Focused review of specific areas | Selected components only |
 | **Interim** | Bridge validation pending full review | Scope-only assessment |
+| **Change** | Validation of a specific draft version | Assessment of proposed changes |
 
 ### Key Features
 
 **Request Management**
 - Multi-model validation requests
 - Priority assignment (Urgent, Standard)
-- Target completion date tracking
-- Prior validation linking for revalidation chain
+- **Manage Models**: Add/remove models during "Intake" and "Planning" stages
+- **Scope Flexibility**: "Global" vs "Scoped" validations
+  - *Global*: Covers all deployed regions (default for Revalidations)
+  - *Scoped*: Limited to specific selected regions (e.g. for regional changes)
 
 **Validator Assignment**
 - Primary validator and reviewer roles
@@ -152,13 +174,20 @@ QMIS provides comprehensive end-to-end validation lifecycle management, supporti
 - Multi-criterion rating system (Green/Yellow/Red scale)
 - Section and overall score computation
 - Configurable criteria with weights (Admin: Taxonomy → Scorecard Config)
-- Version-controlled configuration—publish new versions when criteria change; existing scorecards remain linked to their original version
+- Version-controlled configuration—publish new versions when criteria change
 
 **Approval Workflow**
-- Multi-stakeholder approvals (Global + Regional)
-- Additional approval rules based on risk tier, validation type, regions
-- Approval evidence requirements
-- Admin capability to void approvals with documented reason
+- **Additional Approvals**: Rule-based additional approvals triggered by model attributes (e.g., Risk Tier 1 + Initial Validation = Risk Committee Approval)
+- **Regional Approvals**: Automatically required based on request scope and model deployments
+- **Dual Send Back**:
+  - *Standard*: Returns to Revision (minor edits, keeps existing approvals if no material change)
+  - *Admin Override*: Returns to In Progress (major rework, resets ALL approvals)
+
+**Revalidation Lifecycle**
+- **Two Due Dates**:
+  - *Compliance Due Date*: Fixed audit deadline (Last Validation + Frequency)
+  - *Team SLA Due Date*: Performance target (Submission Received + Lead Time)
+- **Grace Period**: Additional buffer (e.g., 3 months) before "Overdue" status applies
 
 ### Policy Configuration
 
@@ -214,7 +243,16 @@ QMIS includes a comprehensive ongoing monitoring framework for tracking model pe
 ### Cycle Workflow
 
 ```
-PENDING → DATA_COLLECTION → UNDER_REVIEW → PENDING_APPROVAL → APPROVED
+┌─────────┐   ┌─────────────────┐   ┌──────────────┐   ┌──────────────────┐   ┌──────────┐
+│ PENDING │ → │ DATA COLLECTION │ → │ UNDER REVIEW │ → │ PENDING APPROVAL │ → │ APPROVED │
+└─────────┘   └─────────────────┘   └───────▲──────┘   └─────────┬────────┘   └──────────┘
+                                            │                    │
+                                            │      (Reject)      │
+                                            └────────────────────┘
+
+                                            ┌───────────┐      ┌───────────┐
+                                            │  ON HOLD  │      │ CANCELLED │
+                                            └───────────┘      └───────────┘
 ```
 
 ### Threshold Configuration
@@ -433,10 +471,16 @@ QMIS provides a centralized Reports section with pre-built regulatory and operat
 |--------|---------|
 | **KPI Report** | 21 model risk management metrics across 6 categories |
 | **Regional Compliance** | Models by region with validation and approval status |
-| **Overdue Revalidation** | Comprehensive overdue tracking with commentary status |
+| **Overdue Revalidation** | Comprehensive overdue tracking with **Commentary** status |
 | **Deviation Trends** | Validation component deviations over time |
 | **Critical Limitations** | All critical model limitations by region |
 | **Name Changes** | Model name change history and trends |
+
+**Overdue Commentary Tracking**
+- **Pre-Submission Commentary**: Explains delays in owner documentation (Owner responsibility)
+- **Validation In-Progress Commentary**: Explains delays in validation work (Validator responsibility)
+- **Staleness Logic**: Comments flagged as "Stale" if older than 45 days or past target date
+- **Supersession**: New comments automatically archive previous ones for audit history
 
 **Regulatory Reporting Configuration** (Admin: Taxonomy → FRY 14 Config):
 - Federal Reserve FR Y-14 reporting structure with configurable reports, schedules, metric groups, and line items
@@ -508,11 +552,20 @@ PENDING → VALIDATOR_REVIEW → [OWNER_REVIEW if applicable] → APPROVED/REJEC
 - Archive location
 - Downstream impact verification
 
-### Approvals
+### Approval Workflow
 
-- Validator review required
-- Owner approval (if requestor is not owner)
-- Global and Regional approvals for final sign-off
+Decommissioning requests follow a multi-stage approval process:
+
+**Stage 1: Initial Review (Dual Approval)**
+- **Validator Approval**: Always required
+- **Owner Approval**: Required if the requestor is not the Model Owner
+- *Both must approve before moving to Stage 2*
+
+**Stage 2: Regional Approvals**
+- Required from all regions where the model was deployed
+
+**Stage 3: Global Approval**
+- Final sign-off to complete the retirement
 
 ---
 
@@ -593,6 +646,11 @@ The system tracks IRP coverage status for each MRSA:
 | **Regional Approver** | Region-specific approval authority |
 | **Model Owner** | Model submission, attestation, response to findings |
 | **User** | Read-only access to model information |
+
+### Organizational Structures
+
+- **LOB Hierarchy**: Multi-level business unit structure (up to 6 levels) with reporting rollups
+- **Teams**: Groups of users (Validators/Owners) assigned to specific LOB units for reporting and assignment purposes. Effective team is inherited from the LOB hierarchy if not directly assigned.
 
 ### Role-Specific Dashboards
 
