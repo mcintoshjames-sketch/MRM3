@@ -14,6 +14,8 @@ import { linkChangeToAttestationIfPresent } from '../api/attestation';
 import { getTeams, Team as TeamOption } from '../api/teams';
 import TagBadge from '../components/TagBadge';
 import { TagListItem, TagWithCategory, listTags } from '../api/tags';
+import BulkActionsToolbar from '../components/BulkActionsToolbar';
+import BulkTagModal from '../components/BulkTagModal';
 
 interface User {
     user_id: number;
@@ -215,6 +217,13 @@ export default function ModelsPage() {
     const [filterTags, setFilterTags] = useState<TagWithCategory[]>([]);
     const [loading, setLoading] = useState(true);
     const [showForm, setShowForm] = useState(false);
+
+    // Bulk mode state
+    const [bulkMode, setBulkMode] = useState(false);
+    const [selectedModelIds, setSelectedModelIds] = useState<Set<number>>(new Set());
+    const [showBulkTagModal, setShowBulkTagModal] = useState(false);
+    const [bulkTagMode, setBulkTagMode] = useState<'assign' | 'remove'>('assign');
+    const [bulkSuccessMessage, setBulkSuccessMessage] = useState<string | null>(null);
 
     // KPI drill-down filter state
     const [kpiDrillDownIds, setKpiDrillDownIds] = useState<number[] | null>(null);
@@ -964,6 +973,85 @@ export default function ModelsPage() {
         } finally {
             setLoading(false);
         }
+    };
+
+    // Bulk mode helper functions
+    const toggleModelSelection = (modelId: number) => {
+        setSelectedModelIds(prev => {
+            const next = new Set(prev);
+            if (next.has(modelId)) {
+                next.delete(modelId);
+            } else {
+                next.add(modelId);
+            }
+            return next;
+        });
+    };
+
+    const selectAllOnPage = () => {
+        const pageModelIds = paginatedModels.map(m => m.model_id);
+        setSelectedModelIds(prev => {
+            const next = new Set(prev);
+            pageModelIds.forEach(id => next.add(id));
+            return next;
+        });
+    };
+
+    const deselectAll = () => {
+        setSelectedModelIds(new Set());
+    };
+
+    const handleBulkAssignTag = () => {
+        setBulkTagMode('assign');
+        setShowBulkTagModal(true);
+    };
+
+    const handleBulkRemoveTag = () => {
+        setBulkTagMode('remove');
+        setShowBulkTagModal(true);
+    };
+
+    const handleBulkExportSelected = () => {
+        // Export only selected models
+        const selectedModels = models.filter(m => selectedModelIds.has(m.model_id));
+        const headers = selectedColumns
+            .filter(colKey => columnRenderers[colKey])
+            .map(colKey => columnRenderers[colKey].header);
+        const csvContent = [
+            headers.join(','),
+            ...selectedModels.map(model =>
+                selectedColumns
+                    .filter(colKey => columnRenderers[colKey])
+                    .map(colKey => {
+                        const renderer = columnRenderers[colKey];
+                        let value = renderer.csvValue(model);
+                        // Escape quotes and wrap in quotes if contains comma or newline
+                        if (value.includes(',') || value.includes('\n') || value.includes('"')) {
+                            value = '"' + value.replace(/"/g, '""') + '"';
+                        }
+                        return value;
+                    })
+                    .join(',')
+            )
+        ].join('\n');
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        const url = URL.createObjectURL(blob);
+        link.setAttribute('href', url);
+        link.setAttribute('download', `models_selected_${new Date().toISOString().split('T')[0]}.csv`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+    const handleBulkTagSuccess = (message: string) => {
+        setBulkSuccessMessage(message);
+        // Refresh the models list to show updated tags
+        fetchData(kpiDrillDownActive ? kpiDrillDownIds : null);
+        // Auto-clear success message after 5 seconds
+        setTimeout(() => setBulkSuccessMessage(null), 5000);
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -2141,6 +2229,22 @@ export default function ModelsPage() {
                 <div className="flex justify-between items-center mb-6">
                     <h2 className="text-2xl font-bold">Models</h2>
                     <div className="flex gap-2">
+                        {canManageModelsFlag && (
+                            <button
+                                onClick={() => {
+                                    setBulkMode(!bulkMode);
+                                    if (bulkMode) {
+                                        setSelectedModelIds(new Set());
+                                    }
+                                }}
+                                className={`btn-secondary flex items-center gap-1 ${bulkMode ? 'bg-blue-100 border-blue-400' : ''}`}
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                                </svg>
+                                {bulkMode ? 'Exit Bulk Edit' : 'Bulk Edit'}
+                            </button>
+                        )}
                         <button onClick={() => setShowColumnsModal(true)} className="btn-secondary">
                             Columns ({selectedColumns.length})
                         </button>
@@ -3731,11 +3835,76 @@ export default function ModelsPage() {
                     </div>
                 </div>
 
+                {/* Bulk Success Message */}
+                {bulkSuccessMessage && (
+                    <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                            <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            <span className="text-green-800">{bulkSuccessMessage}</span>
+                        </div>
+                        <button
+                            onClick={() => setBulkSuccessMessage(null)}
+                            className="text-green-600 hover:text-green-800"
+                        >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+                    </div>
+                )}
+
+                {/* Bulk Actions Toolbar */}
+                {bulkMode && (
+                    <BulkActionsToolbar
+                        selectedCount={selectedModelIds.size}
+                        totalOnPage={paginatedModels.length}
+                        onAssignTag={handleBulkAssignTag}
+                        onRemoveTag={handleBulkRemoveTag}
+                        onExportSelected={handleBulkExportSelected}
+                        onDeselectAll={deselectAll}
+                    />
+                )}
+
                 <div className="bg-white rounded-lg shadow-md">
                     <div className="max-h-[70vh] overflow-auto">
                         <table className="min-w-full divide-y divide-gray-200">
                             <thead className="bg-gray-50 sticky top-0 z-10">
                                 <tr>
+                                    {/* Bulk mode checkbox column */}
+                                    {bulkMode && (
+                                        <th className="w-12 px-4 py-2">
+                                            <div className="flex items-center gap-2">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={paginatedModels.length > 0 && paginatedModels.every(m => selectedModelIds.has(m.model_id))}
+                                                    ref={(el) => {
+                                                        if (el) {
+                                                            const someSelected = paginatedModels.some(m => selectedModelIds.has(m.model_id));
+                                                            const allSelected = paginatedModels.length > 0 && paginatedModels.every(m => selectedModelIds.has(m.model_id));
+                                                            el.indeterminate = someSelected && !allSelected;
+                                                        }
+                                                    }}
+                                                    onChange={(e) => {
+                                                        if (e.target.checked) {
+                                                            selectAllOnPage();
+                                                        } else {
+                                                            // Deselect only models on current page
+                                                            const pageModelIds = paginatedModels.map(m => m.model_id);
+                                                            setSelectedModelIds(prev => {
+                                                                const next = new Set(prev);
+                                                                pageModelIds.forEach(id => next.delete(id));
+                                                                return next;
+                                                            });
+                                                        }
+                                                    }}
+                                                    className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                                    title={`Select all on page (${paginatedModels.length})`}
+                                                />
+                                            </div>
+                                        </th>
+                                    )}
                                     {selectedColumns.filter(colKey => columnRenderers[colKey]).map(colKey => {
                                         const renderer = columnRenderers[colKey];
                                         const isSortable = !!renderer.sortKey;
@@ -3760,13 +3929,28 @@ export default function ModelsPage() {
                             <tbody className="bg-white divide-y divide-gray-200">
                                 {sortedData.length === 0 ? (
                                     <tr>
-                                        <td colSpan={selectedColumns.length + (canManageModelsFlag ? 1 : 0)} className="px-4 py-2 text-center text-gray-500">
+                                        <td colSpan={selectedColumns.length + (canManageModelsFlag ? 1 : 0) + (bulkMode ? 1 : 0)} className="px-4 py-2 text-center text-gray-500">
                                             No models yet. Click "Add Model" to create one.
                                         </td>
                                     </tr>
                                 ) : (
                                     paginatedModels.map((model) => (
-                                        <tr key={model.model_id} className="hover:bg-gray-50">
+                                        <tr
+                                            key={model.model_id}
+                                            className={`hover:bg-gray-50 ${bulkMode && selectedModelIds.has(model.model_id) ? 'bg-blue-50' : ''}`}
+                                        >
+                                            {/* Bulk mode checkbox */}
+                                            {bulkMode && (
+                                                <td className="px-4 py-2">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={selectedModelIds.has(model.model_id)}
+                                                        onChange={() => toggleModelSelection(model.model_id)}
+                                                        className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                                        onClick={(e) => e.stopPropagation()}
+                                                    />
+                                                </td>
+                                            )}
                                             {selectedColumns.filter(colKey => columnRenderers[colKey]).map(colKey => (
                                                 <td key={colKey} className="px-4 py-2 whitespace-nowrap text-sm">
                                                     {columnRenderers[colKey].cell(model)}
@@ -3832,6 +4016,15 @@ export default function ModelsPage() {
                         </div>
                     </div>
                 </div>
+
+                {/* Bulk Tag Modal */}
+                <BulkTagModal
+                    isOpen={showBulkTagModal}
+                    mode={bulkTagMode}
+                    selectedModelIds={Array.from(selectedModelIds)}
+                    onClose={() => setShowBulkTagModal(false)}
+                    onSuccess={handleBulkTagSuccess}
+                />
             </div>
         </Layout>
     );

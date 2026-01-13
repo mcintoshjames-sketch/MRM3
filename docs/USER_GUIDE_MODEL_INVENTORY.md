@@ -15,6 +15,10 @@ This guide explains how to work with the Model Inventory in the Quantitative Met
    - [Calculated (Read-Only) Fields](#calculated-read-only-fields)
    - [How Calculations Work](#how-calculations-work)
 4. [Model Tags](#model-tags)
+   - [Understanding Tags](#understanding-tags)
+   - [Adding Tags to a Model](#adding-tags-to-a-model)
+   - [Bulk Tagging](#bulk-tagging)
+   - [Tag Reports](#tag-reports)
 5. [Risk Assessment](#risk-assessment)
    - [Qualitative Assessment](#qualitative-assessment)
    - [Quantitative Assessment](#quantitative-assessment)
@@ -238,20 +242,55 @@ Tags provide a flexible way to categorize and organize models across various dim
 - Model owners, developers, and delegates with `can_submit_changes` permission can add/remove tags
 - Administrators can manage tags for any model
 
-### Bulk Operations
-
-You can assign or remove tags for multiple models simultaneously:
-
-1. Navigate to the **Models** list view.
-2. Select the models using the checkboxes.
-3. Click **Bulk Actions** and choose **Assign Tag** or **Remove Tag**.
-4. Select the specific tag and confirm.
-
 **Tag History:**
 All tag assignments and removals are tracked in the model's audit history. You can view:
 - Who added or removed each tag
 - When the change was made
 - Full history of tag changes over time
+
+### Bulk Tagging
+
+For administrators who need to apply tags to multiple models at once, the Models page offers bulk tagging functionality.
+
+**Entering Bulk Edit Mode:**
+1. Navigate to **Models** in the side navigation
+2. Click the **Bulk Edit** button in the top-right toolbar
+3. The table will show checkboxes next to each model row
+
+**Selecting Models:**
+- Click individual checkboxes to select specific models
+- Use the header checkbox to "Select all on page" (current page only)
+- Selection persists when navigating between pages
+- Selected rows are highlighted in blue
+
+**Bulk Actions:**
+Once models are selected, a toolbar appears with the following options:
+
+| Action | Description |
+|--------|-------------|
+| **Assign Tag** | Opens a modal to select a tag to add to all selected models |
+| **Remove Tag** | Opens a modal to select a tag to remove from all selected models |
+| **Export Selected** | Downloads a CSV containing only the selected models |
+| **Clear Selection** | Deselects all currently selected models |
+
+**Assigning a Tag in Bulk:**
+1. Select the models you want to tag
+2. Click **Assign Tag** in the toolbar
+3. Optionally filter by category, then select the tag
+4. Click **Assign Tag** to apply
+5. Success message shows: "Tagged 5 models with 'CCAR' successfully"
+
+**Removing a Tag in Bulk:**
+1. Select the models to remove the tag from
+2. Click **Remove Tag** in the toolbar
+3. Select the tag to remove
+4. Click **Remove Tag** to apply
+5. Success message shows: "Removed 'CCAR' tag from 3 models successfully"
+
+**Notes:**
+- If some models already have (or don't have) the tag, the success message includes a breakdown
+- Bulk operations are only available to administrators
+- All bulk tag changes are recorded in each model's audit history
 
 ### Tag Reports
 
