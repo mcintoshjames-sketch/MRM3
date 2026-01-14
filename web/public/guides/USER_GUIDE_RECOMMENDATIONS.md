@@ -11,8 +11,8 @@ This system ensures that all model weaknesses are documented, assigned clear own
 
 | Role | What you do |
 |------|-------------|
-| **Validator** | Creates recommendations, reviews developer responses, and approves closure evidence. |
-| **Developer / Owner** | Responds to recommendations, executes remediation tasks, and submits evidence for closure. |
+| **Validator** | Creates recommendations, reviews developer responses, and approves closure requests (evidence links optional). |
+| **Developer / Owner** | Responds to recommendations, executes remediation tasks, and optionally adds evidence links for closure. |
 | **Global / Regional Approver** | Provides final sign-off for closing high-priority or regionally sensitive recommendations. |
 | **Admin** | Can perform actions on behalf of any role and manage system configurations. |
 
@@ -42,7 +42,7 @@ Once a recommendation is sent, the assigned developer has two options:
 If you believe the finding is invalid or factually incorrect:
 1. Open the recommendation.
 2. Click **Submit Rebuttal**.
-3. Provide your **Rationale** and any **Supporting Evidence**.
+3. Provide your **Rationale** and any **Supporting Evidence** link (URL).
 4. Submit. The Validator will review your argument and either **Accept** it (dropping the recommendation) or **Override** it (requiring an action plan).
    * *Note: You only get one chance to rebut. If overridden, you must proceed with an action plan.*
 
@@ -68,11 +68,10 @@ Once the action plan has been approved by the Validator:
 
 ### 4. Closing a Recommendation (Developer & Validator)
 When all work is done:
-1. **Developer**: Upload **Evidence** in the Evidence tab.
+1. **Developer**: (Optional) Add an **Evidence Link** (URL) in the Evidence tab.
 2. **Developer**: Click **Submit for Closure**.
    - The system requires all action plan tasks to be completed.
-   - The system requires at least one piece of evidence before submission.
-2. **Validator**: Review the submission.
+3. **Validator**: Review the submission.
    - If satisfactory, click **Approve Closure**.
    - If changes are needed, click **Request Rework** to send it back to the developer (recommendation moves to **Rework Required**).
 
@@ -198,7 +197,7 @@ A: Partially. Validators/Admins can edit recommendations in **Draft**, **Pending
 A: You must submit an Action Plan. The system enforces a "one-strike" rule for rebuttals to prevent indefinite arguments.
 
 **Q: Who can close a Low priority recommendation?**
-A: By default, Low priority items are closed immediately after the Validator approves the closure evidence—they do not require Global or Regional sign-off. However, this can be changed by an Admin through the Priority Workflow Config if your organization requires additional oversight.
+A: By default, Low priority items are closed immediately after the Validator approves the closure request—they do not require Global or Regional sign-off. However, this can be changed by an Admin through the Priority Workflow Config if your organization requires additional oversight.
 
 **Q: Why do I need to provide a reason when changing the target date?**
 A: Target dates are validated against configured timeframes (when "Enforce Timeframes" is enabled for that priority level) and require an explanation when changed, to preserve an audit trail.

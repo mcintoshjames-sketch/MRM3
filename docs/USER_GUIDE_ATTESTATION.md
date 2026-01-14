@@ -281,8 +281,17 @@ Administrators can manage delegates in bulk from **"Batch Delegates"** in the Ad
 
 ### Viewing Linked Inventory Changes
 
-When model owners make inventory changes during attestation (edit models, submit model changes, register new models, or request decommissioning), these changes are automatically linked to their attestation for tracking purposes.
+When model owners make inventory changes during attestation, these changes are automatically linked to their attestation for tracking purposes.
 
+**Change Types:**
+| Type | Description |
+|------|-------------|
+| **Model Edit** | Updates to model information via "Edit Model Details" |
+| **Model Change** | Versioned changes submitted via "Submit Model Change" workflow |
+| **New Model** | New models registered via "Register New Model" |
+| **Decommission** | Decommissioning requests initiated during attestation |
+
+**Key Points:**
 - **Linked changes are displayed** in the attestation detail view under "Linked Inventory Changes"
 - **Approval happens in existing workflows** - model edits go through the Model Pending Edits approval queue, model changes follow the Submit Model Change workflow, and decommissioning requests go through the Decommissioning approval workflow
 - **No duplicate approval** is needed in the attestation system
@@ -672,4 +681,4 @@ For questions or issues with the attestation module:
 
 ---
 
-*Last Updated: December 2025*
+*Last Updated: January 2026*

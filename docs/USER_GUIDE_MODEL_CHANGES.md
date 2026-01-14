@@ -60,12 +60,29 @@ Each version record contains:
 |-------|-------------|---------|
 | **Version Number** | Semantic identifier for this release | `2.1.0`, `3.0.0` |
 | **Change Type** | MAJOR or Minor classification | MAJOR |
-| **Change Category** ⚙ | Taxonomy-driven category | "Model Theory Changes" |
+| **Change Category** ⚙ | Taxonomy-driven category (L2 type) | "Model Theory Changes" |
 | **Change Description** | Detailed explanation of what changed | "Updated credit loss methodology from vintage analysis to CECL approach" |
+| **Scope** | Geographic impact of the change | GLOBAL or REGIONAL |
+| **Affected Regions** | Specific regions affected (if REGIONAL scope) | US, EU |
 | **Planned Production Date** | Intended deployment date | 2025-06-15 |
 | **Actual Production Date** | When actually deployed (set during deployment) | 2025-06-20 |
 | **Status** | Current lifecycle state | DRAFT, IN_VALIDATION, APPROVED, ACTIVE, SUPERSEDED |
 | **Linked Validation** | Associated validation request | Request #42 |
+
+### Regional Scope
+
+Versions can have one of two scope settings:
+
+| Scope | Description | When to Use |
+|-------|-------------|-------------|
+| **GLOBAL** | Change affects all regions where the model is deployed | Methodology changes, major updates affecting all deployments |
+| **REGIONAL** | Change affects only specific regions | Region-specific calibrations, localized fixes, jurisdiction-specific adjustments |
+
+When a version has **REGIONAL** scope:
+- You must specify which regions are affected
+- Deployment tasks are only created for the affected regions
+- Other regions continue using the previous version
+- The validation scope should align with the affected regions
 
 ### Version Numbering Conventions
 
@@ -115,19 +132,19 @@ This ensures a single source of truth for "What is running in production right n
 | Status | Description | Editable | Can Delete |
 |--------|-------------|----------|------------|
 | **DRAFT** | Initial state, not yet submitted for validation | ✓ Yes | ✓ Yes |
-| **IN_VALIDATION** | Validation in progress | ✓ Conditional* | ✗ No |
+| **IN_VALIDATION** | Validation in progress | ✗ No | ✗ No |
 | **APPROVED** | Validation complete, ready for deployment | ✗ No | ✗ No |
 | **ACTIVE** | Currently deployed in production | ✗ No | ✗ No |
 | **SUPERSEDED** | Was active but replaced by newer version | ✗ No | ✗ No |
 
-*\*IN_VALIDATION versions can be edited by Validators and Admins **only while** the linked validation request is in early stages (Intake, Planning, or In Progress). Once validation reaches Review or later, the version is **locked** to preserve the validation record.*
+> **Note**: Only DRAFT versions can be edited. Once a version enters IN_VALIDATION or any later status, it is locked to preserve the integrity of the validation record. If corrections are needed, the linked validation must be cancelled or put on hold, which reverts the version to DRAFT status.
 
 ### Status Transition Rules
 
 **DRAFT → IN_VALIDATION**
 - **Trigger**: Automatic when linked validation request moves to In Progress
 - **Requirements**: Version must be linked to a validation request
-- **Effect**: Version becomes locked unless user is Validator/Admin and validation is in early stages
+- **Effect**: Version becomes locked and cannot be edited
 
 **IN_VALIDATION → APPROVED**
 - **Trigger**: Automatic when linked validation request reaches Approved status
@@ -236,7 +253,7 @@ Current undeployed version:
 
 ### Blocker B2: Version in Active Validation
 
-**Condition**: A version is currently linked to a validation request that is NOT in APPROVED status
+**Condition**: A version is currently linked to a validation request that is NOT in a terminal state (APPROVED, CANCELLED, or ON_HOLD)
 
 **Why It Matters**: A model can only have one validation in progress at a time. Starting a new change while validation is ongoing would:
 - Fragment validation efforts
@@ -288,51 +305,78 @@ Instead, it enforces:
 
 ## 6. Change Types & Categories
 
-### Change Type Classification
+### Two-Level Taxonomy System
 
-Every version must be classified as either MAJOR or Minor:
+The system uses a **hierarchical two-level taxonomy** for classifying model changes:
 
-| Type | Definition | Typical Triggers | Validation Impact |
-|------|------------|------------------|-------------------|
-| **MAJOR** | Significant changes affecting methodology, assumptions, or model behavior | • Methodology changes<br>• New data sources<br>• Algorithm updates<br>• Output definition changes | **Comprehensive re-validation typically required** |
-| **Minor** | Incremental changes that don't alter fundamental approach | • Bug fixes<br>• Parameter recalibration<br>• Documentation updates<br>• Performance optimizations | May not require full re-validation; targeted review may suffice |
+| Level | Name | Description |
+|-------|------|-------------|
+| **L1** | Change Category | Top-level grouping (e.g., "New Model", "Change to Model") |
+| **L2** | Change Type | Specific type within the category, with additional metadata |
 
-### Change Categories (Taxonomy-Driven) ⚙
+When creating a version, you select a **Change Type (L2)**, which automatically associates the version with its parent **Category (L1)**.
 
-The system provides a configurable taxonomy of change categories. **Default categories** include:
+### Change Type Metadata
 
-| Category | Description | Examples |
-|----------|-------------|----------|
-| **Model Theory Changes** | Modifications to methodology, assumptions, or conceptual foundation | Switching from logistic to neural network, changing loss calculation methodology |
-| **Implementation Changes** | Updates to code, algorithms, or calculation logic | Refactoring code, fixing calculation bugs, optimizing performance |
-| **Data/Input Changes** | Changes to data sources, inputs, or preprocessing | New data vendor, additional variables, different sampling approach |
-| **Parameter Changes** | Recalibration of model parameters or coefficients | Annual coefficient updates, threshold adjustments based on back-testing |
-| **Output/Reporting Changes** | Modifications to outputs, reports, or result presentation | New report format, additional output metrics, dashboard changes |
-| **Documentation Changes** | Updates to documentation only, no functional changes | User guide updates, technical specification corrections |
+Each L2 Change Type includes additional metadata that affects workflow:
 
-> **Note**: Administrators can customize the change category taxonomy through the Taxonomy management page. Categories can be added, modified, or deactivated based on organizational needs.
+| Field | Description |
+|-------|-------------|
+| **Code** | Unique numeric identifier for the change type |
+| **Name** | Human-readable name of the change type |
+| **Description** | Detailed explanation of what this change type covers |
+| **MV Activity** | Associated Model Validation activity type |
+| **Requires MV Approval** | Whether this change type requires formal Model Validation approval |
 
-### Matching Type to Category
+> **Note**: The "Requires MV Approval" flag is captured at version creation time as a point-in-time snapshot. This ensures consistent enforcement even if the taxonomy configuration changes later.
 
-**Best Practice Alignment**:
+### Default Change Categories (L1)
 
-```
-MAJOR Change Type → Typically paired with:
-  • Model Theory Changes
-  • Implementation Changes (if significant)
-  • Data/Input Changes (if material new sources)
+The system provides pre-configured categories:
 
-Minor Change Type → Typically paired with:
-  • Parameter Changes
-  • Output/Reporting Changes
-  • Documentation Changes
-  • Implementation Changes (if just bug fixes)
-```
+| Category | Description |
+|----------|-------------|
+| **New Model** | Introduction of a newly developed model |
+| **Change to Model** | Modifications to an existing model |
+| **Retirement** | Model being decommissioned |
+
+### Change Types (L2) Examples
+
+Within each category, specific change types provide granular classification:
+
+| Category (L1) | Change Type (L2) | MV Approval Required |
+|---------------|------------------|---------------------|
+| Change to Model | Model Theory Changes | Yes |
+| Change to Model | Implementation Changes | Depends on scope |
+| Change to Model | Data/Input Changes | Depends on materiality |
+| Change to Model | Parameter Changes | No (typically) |
+| Change to Model | Output/Reporting Changes | No (typically) |
+| Change to Model | Documentation Changes | No |
+
+### Legacy Change Type Field
+
+For backward compatibility, versions also store a simple **MAJOR/Minor** classification:
+
+| Type | Definition | Typical Triggers |
+|------|------------|------------------|
+| **MAJOR** | Significant changes affecting methodology, assumptions, or model behavior | Methodology changes, new data sources, algorithm updates |
+| **Minor** | Incremental changes that don't alter fundamental approach | Bug fixes, parameter recalibration, documentation updates |
+
+> **Note**: Administrators can customize the change taxonomy through the Taxonomy management page. Categories and types can be added, modified, or deactivated based on organizational needs.
+
+### Aligning Legacy Type with L2 Change Type
+
+When creating a version, choose both the **L2 Change Type** (from the taxonomy) and the **Legacy Type** (MAJOR/Minor). Here's typical alignment:
+
+| Legacy Type | Commonly Paired L2 Change Types |
+|-------------|--------------------------------|
+| **MAJOR** | Model Theory Changes, significant Implementation Changes, material Data/Input Changes |
+| **Minor** | Parameter Changes, Output/Reporting Changes, Documentation Changes, minor bug fixes |
 
 **Example Scenarios**:
 
-| Scenario | Type | Category | Rationale |
-|----------|------|----------|-----------|
+| Scenario | Legacy Type | L2 Change Type | Rationale |
+|----------|-------------|----------------|-----------|
 | Switching from FICO score to internal credit score | MAJOR | Data/Input Changes | Material change in primary input |
 | Annual coefficient recalibration using same methodology | Minor | Parameter Changes | Routine update, no methodology change |
 | Rewriting code in Python (was Excel) but same logic | MAJOR | Implementation Changes | Platform migration, even if logic unchanged |
@@ -376,33 +420,32 @@ Version Created (DRAFT)
 
 ### Editing Permissions During Validation
 
-The version's **editability** depends on validation stage:
+Only **DRAFT** versions can be edited. Once a version is linked to a validation and transitions to IN_VALIDATION, it becomes locked regardless of the validation stage.
 
-| Validation Stage | Who Can Edit | What Shows in UI |
-|------------------|--------------|------------------|
-| **No linked validation** | Owner, Developer, Admin | "Edit" button |
-| **INTAKE** (linked) | Validator, Admin | "Edit" button |
-| **PLANNING** (linked) | Validator, Admin | "Edit" button |
-| **IN_PROGRESS** (linked) | Validator, Admin | "Edit" button |
-| **REVIEW or later** | No one | "Locked" label |
-| **APPROVED** | No one | "Locked" label |
+| Version Status | Editable | What Shows in UI |
+|----------------|----------|------------------|
+| **DRAFT** | ✓ Yes (Owner, Developer, Admin) | "Edit" button |
+| **IN_VALIDATION** | ✗ No | "Locked" label |
+| **APPROVED** | ✗ No | "Locked" label |
+| **ACTIVE** | ✗ No | "Locked" label |
+| **SUPERSEDED** | ✗ No | "Locked" label |
 
-**Why Lock at Review?**
+**Why Lock Once Validation Begins?**
 
-Once validation reaches the Review stage, the version must be frozen to ensure:
+Once a version enters validation, it must be frozen to ensure:
 - Validators review exactly what will be deployed
-- Approvers sign off on a fixed version
-- The audit trail shows what was validated
-- No last-minute changes slip in after QA
+- The validation applies to a known, frozen state
+- The audit trail shows precisely what was validated
+- No changes can slip in during the validation process
 
 **What If I Need to Change a Locked Version?**
 
 If you discover an issue after the version is locked:
-1. **Put the validation on hold** or **send it back** to an earlier stage
+1. **Cancel the validation** or **put it on hold**
 2. The version automatically reverts to DRAFT (editable)
 3. Make the necessary corrections
-4. Resume the validation
-5. The version returns to IN_VALIDATION when work resumes
+4. Create a new validation request (or resume the held one)
+5. The version returns to IN_VALIDATION when validation resumes
 
 ---
 
@@ -541,9 +584,9 @@ Selected regions requiring regional approval: 1
 
 ## 9. Managing Deployment Tasks
 
-### My Deployment Tasks Page
+### Pending Deployments Page
 
-Navigate to **My Deployment Tasks** from the sidebar to see all deployment tasks assigned to you (as model owner, developer, or designated deployer).
+Navigate to **Pending Deployments** from the sidebar to see all deployment tasks assigned to you (as model owner, developer, or designated deployer).
 
 ### Task Status Icons
 
@@ -551,6 +594,7 @@ Navigate to **My Deployment Tasks** from the sidebar to see all deployment tasks
 |------|--------|-------------|
 | 🟢 | **Confirmed** | Deployment has been completed and confirmed |
 | 🟡 | **Pending** | Awaiting confirmation on planned date |
+| 🔵 | **Adjusted** | Planned date has been modified |
 | 🔴 | **Overdue** | Past the planned production date without confirmation |
 | ⚫ | **Cancelled** | Deployment was cancelled |
 
@@ -914,11 +958,9 @@ A: The deployment task remains in **Pending** status and cannot be confirmed unt
 
 **Q: Can I edit a version while it's IN_VALIDATION?**
 
-A: It depends on the validation stage:
-- **Intake, Planning, In Progress**: Yes, if you're a Validator or Admin
-- **Review or later**: No, version is locked
+A: No. Only DRAFT versions can be edited. Once a version enters IN_VALIDATION (or any later status), it is locked to preserve validation integrity.
 
-To edit a locked version, put the validation on hold (reverts to DRAFT), make changes, then resume.
+To edit a locked version, cancel the validation or put it on hold (reverts to DRAFT), make changes, then create a new validation request or resume the held one.
 
 **Q: What happens to the version if I cancel the validation?**
 

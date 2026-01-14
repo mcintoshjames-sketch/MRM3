@@ -6,17 +6,23 @@
 2. [Understanding Performance Monitoring](#2-understanding-performance-monitoring)
 3. [Key Concepts](#3-key-concepts)
 4. [Monitoring Plan Lifecycle](#4-monitoring-plan-lifecycle)
+   - [Deactivating a Monitoring Plan](#deactivating-a-monitoring-plan)
+   - [Manually Advancing to Next Cycle](#manually-advancing-to-next-cycle)
 5. [The Monitoring Cycle Workflow](#5-the-monitoring-cycle-workflow)
 6. [Entering Monitoring Results](#6-entering-monitoring-results)
 7. [Understanding Metrics and Thresholds](#7-understanding-metrics-and-thresholds)
+   - [KPM Category Type vs. Evaluation Type](#kpm-category-type-vs-evaluation-type)
    - [Creating Recommendations from Breaches](#creating-recommendations-from-breaches)
    - [Exception Automation (Type 1)](#exception-automation-type-1-unmitigated-performance)
+   - [Recording Overlays & Management Judgements](#recording-overlays--management-judgements)
 8. [Approvals Process](#8-approvals-process)
 9. [Plan Versioning](#9-plan-versioning)
 10. [Role-Based Workflows](#10-role-based-workflows)
 11. [My Monitoring Tasks](#11-my-monitoring-tasks)
 12. [Trend Analysis & Historical Views](#12-trend-analysis--historical-views)
 13. [Dashboards & Reporting](#13-dashboards--reporting)
+   - [Exporting Data](#exporting-data)
+   - [PDF Report Generation](#pdf-report-generation)
 14. [Frequently Asked Questions](#14-frequently-asked-questions)
 15. [Appendix A: Status Reference](#appendix-a-status-reference)
 16. [Appendix B: CSV Import Guide](#appendix-b-csv-import-guide)
@@ -188,9 +194,15 @@ Setting up a monitoring plan involves several steps:
 3. Enter the required information:
    - **Plan Name**: Descriptive name (e.g., "Credit Scorecard Monitoring")
    - **Frequency**: How often monitoring occurs
+   - **Initial reporting cycle period end date**: Sets the first cycle period end
+   - **Data Submission Lead Days**: Days after period end for submission
    - **Monitoring Team**: Team responsible for oversight
    - **Data Provider**: Person responsible for submitting results
    - **Reporting Lead Days**: Days between submission due and report due
+
+**Note**: The system calculates the first cycle due dates as:
+- **Submission Due Date** = Period End Date + Data Submission Lead Days
+- **Report Due Date** = Submission Due Date + Reporting Lead Days
 
 #### Step 2: Add Models to Scope
 
@@ -229,6 +241,57 @@ When you need to update a monitoring plan:
 3. **Publish New Version**: Changes only apply to new cycles after publishing
 
 **Important**: Cycles that are already in progress use the version that was active when they started. Your changes will not affect them.
+
+### Transferring a Model Between Monitoring Plans
+
+- A model can belong to only one monitoring plan at a time.
+- Use the transfer action (Admin) to move a model to a new plan and optionally record a reason.
+- Transfers are blocked if the source plan has an active cycle in **Data Collection**, **Under Review**, **Pending Approval**, or **On Hold**.
+- Historical cycles and reports remain visible after a transfer because cycle scope is locked at cycle start.
+
+### Deactivating a Monitoring Plan
+
+When a monitoring plan is no longer needed, administrators can deactivate it. Before deactivation, the system provides a summary of pending items.
+
+**Pre-Deactivation Summary**:
+
+Before deactivating, call the deactivation summary endpoint to review:
+
+| Item | Description |
+|------|-------------|
+| **Pending Cycles** | Cycles in DATA_COLLECTION, UNDER_REVIEW, or ON_HOLD status |
+| **Pending Approvals** | Approval requirements awaiting decision |
+| **Active Models** | Models currently in scope |
+
+**API Endpoint**: `GET /monitoring/plans/{plan_id}/deactivation-summary`
+
+**Deactivation Options**:
+
+When deactivating a plan with pending items, you can choose to:
+
+1. **Cancel Pending Approvals**: Automatically void all pending approval requirements
+2. **Preserve Pending Items**: Deactivate the plan but leave pending cycles and approvals in their current state
+
+**Process**:
+1. Review the deactivation summary
+2. Decide how to handle pending items
+3. Execute deactivation with chosen options
+4. Deactivated plans stop auto-advancing to new cycles
+
+**Important**: Deactivation is reversible—an administrator can reactivate the plan if needed. Historical cycles and results are preserved.
+
+### Manually Advancing to Next Cycle
+
+In special circumstances, administrators can manually advance a plan to its next scheduled cycle without waiting for the current cycle to complete.
+
+**When to Use**:
+- To create the next cycle ahead of schedule for planning purposes
+- When transitioning monitoring responsibilities
+- For testing or setup scenarios
+
+**API Endpoint**: `POST /monitoring/plans/{plan_id}/advance-cycle`
+
+**Important**: This creates a new cycle based on the plan's frequency configuration. The new cycle's period dates are calculated from the last cycle's period end date.
 
 ---
 
@@ -294,6 +357,43 @@ Every monitoring cycle progresses through defined stages:
 
 ---
 
+### Optional Actions During Data Collection
+
+You can adjust timing without changing the core workflow:
+
+- **Extend Due Date**: Keeps the cycle in DATA_COLLECTION and updates the submission/report due dates.
+- **Hold Cycle**: Places the cycle in **ON_HOLD** for an indefinite pause. Overdue alerts are suppressed until the cycle is resumed.
+
+To continue work on a held cycle, use **Resume Cycle** to return it to DATA_COLLECTION.
+
+**API Implementation**: Both actions use a single endpoint:
+
+`POST /monitoring/cycles/{cycle_id}/postpone`
+
+| Parameter | Effect |
+|-----------|--------|
+| `indefinite_hold: true` | Places cycle **ON_HOLD** (indefinite pause) |
+| `indefinite_hold: false` + `new_due_date` | **Extends** due date while keeping cycle in DATA_COLLECTION |
+
+**Example - Extend Due Date**:
+```json
+{
+  "indefinite_hold": false,
+  "new_due_date": "2025-04-30",
+  "reason": "Data source delayed by vendor"
+}
+```
+
+**Example - Place on Hold**:
+```json
+{
+  "indefinite_hold": true,
+  "reason": "Awaiting model remediation completion"
+}
+```
+
+---
+
 ### Stage 3: Under Review
 
 **Purpose**: Quality assurance and review period
@@ -331,6 +431,19 @@ Every monitoring cycle progresses through defined stages:
 - A report URL must be provided when requesting approval
 - Results cannot be modified once in Pending Approval
 
+**Programmatic Enforcement**: The system **blocks** the transition to PENDING_APPROVAL if any RED result lacks a narrative. Attempting to request approval will return an error response listing which metrics require justification:
+
+```json
+{
+  "detail": "Cannot request approval: RED results require narratives",
+  "missing_narratives": [
+    {"model_id": 123, "metric_id": 456, "metric_name": "KS Statistic"}
+  ]
+}
+```
+
+You must add narratives to all RED results before the system allows the status change.
+
 **Next Step**: Cycle moves to Approved when all required approvals are granted
 
 ---
@@ -353,6 +466,9 @@ Cycles can be cancelled from any status except Approved:
 - Requires documented cancellation reason
 - Cannot be undone
 - Preserves history for audit purposes
+ - Optional: Deactivate the monitoring plan on cancel
+   - **If deactivated**: The plan stops auto-advancing to new cycles
+   - **If not deactivated**: The plan auto-advances to the next cycle as usual
 
 ---
 
@@ -437,6 +553,30 @@ Results can be entered at two levels:
 ---
 
 ## 7. Understanding Metrics and Thresholds
+
+### KPM Category Type vs. Evaluation Type
+
+When working with Key Performance Metrics (KPMs), it's important to understand two distinct classification concepts:
+
+| Concept | Purpose | Values |
+|---------|---------|--------|
+| **Category Type** | Display grouping in the UI | QUANTITATIVE, QUALITATIVE |
+| **Evaluation Type** | How outcomes are determined | QUANTITATIVE, QUALITATIVE, OUTCOME_ONLY |
+
+**Category Type** controls how metrics are visually grouped in the results grid. This is purely for organization and display purposes.
+
+**Evaluation Type** determines how the system calculates or accepts outcomes:
+
+| Evaluation Type | Outcome Determination | Value Required |
+|-----------------|----------------------|----------------|
+| **QUANTITATIVE** | Automatically calculated from numeric value against thresholds | Yes (numeric) |
+| **QUALITATIVE** | Human judgment; outcome selected directly | Optional |
+| **OUTCOME_ONLY** | Direct outcome selection with no value | No |
+
+**Example**:
+- A "KS Statistic" metric has Evaluation Type = QUANTITATIVE. You enter `0.42`, and the system calculates the outcome based on thresholds.
+- A "Documentation Quality" metric has Evaluation Type = QUALITATIVE. You select GREEN/YELLOW/RED directly and provide a narrative.
+- A "Governance Sign-off" metric might use Evaluation Type = OUTCOME_ONLY for a simple pass/fail assessment.
 
 ### Quantitative Metrics
 
@@ -545,7 +685,8 @@ Type 1 (Unmitigated Performance) exceptions are created when:
 A recommendation is considered "active" if:
 - It is linked to the **same metric** (`plan_metric_id`) as the RED result
 - It is linked to the **same monitoring cycle**
-- Its status is NOT `CLOSED`, `CANCELLED`, or `COMPLETED`
+- Its status is not in terminal recommendation statuses (e.g., `REC_CLOSED`, `REC_DROPPED`, `REC_CANCELLED`,
+  `REC_COMPLETED`, `REC_VOIDED`, `REC_WITHDRAWN`)
 
 **Example Scenarios**:
 
@@ -609,6 +750,24 @@ Once exceptions are created:
   - Detection date
   - Status history
 
+### Recording Overlays & Management Judgements
+
+When monitoring confirms sustained underperformance and management applies an overlay or judgement, capture it in the Model Inventory for regulatory reporting.
+
+**When to Record**:
+- After the monitoring cycle is approved (or when underperformance is confirmed)
+- When an overlay/judgement changes model behavior or outputs in production
+
+**How to Record**:
+1. Navigate to **Model Details → Overlays**
+2. Click **Add Overlay**
+3. Fill out the required fields (kind, description, rationale, effective dates, underperformance flag)
+4. Link the overlay to the **monitoring cycle/result** and any **recommendation** or **limitation** for traceability
+
+**Why It Matters**:
+- The **Model Overlays Report** lists overlays currently in effect and underperformance-related
+- Retire overlays when no longer needed to keep reporting accurate
+
 ---
 
 ## 8. Approvals Process
@@ -660,11 +819,21 @@ In cases where the designated approver is unavailable, an Administrator can appr
 
 1. Admin navigates to the approval requirement
 2. Admin clicks **"Decision on Behalf"**
-3. Admin must provide **approval evidence** (e.g., email confirmation, meeting minutes)
+3. Admin **must** provide `approval_evidence` (e.g., email confirmation, meeting minutes)
 4. The system records:
    - That this was a proxy approval
    - The evidence provided
    - Full audit trail
+
+**IMPORTANT**: The `approval_evidence` field is **mandatory** for proxy approvals—not optional. The API will reject proxy approval requests that do not include evidence. This ensures a complete audit trail documenting the authorization for the proxy action.
+
+```json
+{
+  "decision": "APPROVED",
+  "comments": "Approved on behalf of regional head",
+  "approval_evidence": "Email authorization from J. Smith dated 2025-04-15, ref: MON-2025-042"
+}
+```
 
 ### Rejection and Voiding
 
@@ -859,6 +1028,8 @@ Each task card shows:
 | Team Member | DATA_COLLECTION | Enter results, Submit cycle |
 | Team Member | UNDER_REVIEW | Review results, Request approval |
 | Assignee | DATA_COLLECTION | Enter results, Submit cycle |
+
+**On Hold**: Cycles in ON_HOLD appear as "On Hold" and do not require action until resumed.
 
 ### Priority Sorting
 
@@ -1059,14 +1230,76 @@ Each cycle provides:
 
 **CSV Export** is available for:
 - Monitoring plans list
-- Cycle results
+- Cycle results (detailed export with all metrics, values, and outcomes)
 - Historical trend data
+- Plan version configurations
 
 Click the **"Export CSV"** button on any list view to download.
 
+#### Cycle Results Export
+
+The cycle results export provides a comprehensive CSV file containing:
+
+| Column | Description |
+|--------|-------------|
+| Model ID | Unique identifier for the model |
+| Model Name | Display name of the model |
+| Metric ID | Unique identifier for the metric |
+| Metric Name | Display name of the KPM |
+| Value | Numeric result (for quantitative metrics) |
+| Outcome | Calculated outcome (GREEN, YELLOW, RED, N/A, UNCONFIGURED) |
+| Narrative | Commentary or justification text |
+| Entry Type | Plan-level or model-specific result |
+
+**API Endpoint**: `GET /monitoring/plans/{plan_id}/cycles/{cycle_id}/export`
+
+#### Plan Version Export
+
+You can export the configuration of any published plan version, which includes:
+- All metrics with their threshold configurations
+- Models in scope at that version
+- Effective date and version metadata
+
+**API Endpoint**: `GET /monitoring/plans/{plan_id}/versions/{version_id}/export`
+
+This is useful for:
+- Auditing historical threshold configurations
+- Comparing version changes
+- Documentation for regulatory reviews
+
+### PDF Report Generation
+
+For cycles in **PENDING_APPROVAL** or **APPROVED** status, you can generate a comprehensive PDF monitoring report.
+
+**How to Generate**:
+1. Navigate to the monitoring cycle detail page
+2. Click **"Generate PDF Report"** (available only for PENDING_APPROVAL or APPROVED cycles)
+3. Configure report options:
+   - **Include Trends**: Toggle to include historical trend charts (default: enabled)
+   - **Trend Periods**: Number of historical cycles to include in trend analysis (default: 4)
+4. Download the generated PDF
+
+**Report Contents**:
+
+| Section | Description |
+|---------|-------------|
+| **Cover Page** | Plan name, cycle period, generation date, and status |
+| **Executive Summary** | Overview statistics: total metrics, breach counts by outcome |
+| **Detailed Results Table** | All metrics with values, outcomes, and narratives |
+| **Breach Analysis** | Focused section on RED and YELLOW outcomes with justifications |
+| **Trend Charts** | Time-series visualization of metric performance (if enabled) |
+
+**API Endpoint**: `GET /monitoring/cycles/{cycle_id}/report/pdf`
+
+**Query Parameters**:
+- `include_trends` (boolean, default: true) - Include historical trend charts
+- `trend_periods` (integer, default: 4) - Number of historical cycles for trends
+
+**Access Restriction**: PDF generation is only available for cycles in PENDING_APPROVAL or APPROVED status. Cycles still in DATA_COLLECTION or UNDER_REVIEW cannot generate finalized reports.
+
 ---
 
-## 13. Frequently Asked Questions
+## 14. Frequently Asked Questions
 
 ### General Questions
 
@@ -1140,11 +1373,13 @@ A: Add comments with your concerns when approving. For significant issues, rejec
 A: The system validates your CSV before importing. In preview mode, you'll see which rows have errors and why. Only valid rows are imported. See the [CSV Import Guide](#appendix-b-csv-import-guide) for details.
 
 **Q: How are outcomes calculated for quantitative metrics?**
-A: The system checks thresholds in order:
-1. If value < red_min OR value > red_max → RED
-2. If value < yellow_min OR value > yellow_max → YELLOW
-3. Otherwise → GREEN
-4. If no thresholds configured → UNCONFIGURED
+A: The system evaluates thresholds in this specific order:
+1. If no thresholds are configured → **UNCONFIGURED**
+2. If value < red_min OR value > red_max → **RED**
+3. If value < yellow_min OR value > yellow_max → **YELLOW**
+4. Otherwise → **GREEN**
+
+**Note**: The UNCONFIGURED check happens first. If a metric has no thresholds defined, the system cannot determine performance status and returns UNCONFIGURED rather than defaulting to GREEN.
 
 **Q: What's the difference between voiding and rejecting an approval?**
 A: Rejection is an approver saying "I don't approve this." Voiding (admin only) removes the approval requirement entirely—as if it was never needed. Voiding is for exceptional circumstances like organizational changes.
@@ -1180,7 +1415,8 @@ A: Navigate to **Model Details** → **Exceptions** tab. A red badge shows the c
 | Status | Description | Who Can Act | Next Statuses |
 |--------|-------------|-------------|---------------|
 | **PENDING** | Cycle created, awaiting start | Team Members | DATA_COLLECTION, CANCELLED |
-| **DATA_COLLECTION** | Active data entry period | Data Provider, Team Members | UNDER_REVIEW, CANCELLED |
+| **DATA_COLLECTION** | Active data entry period | Data Provider, Team Members | UNDER_REVIEW, ON_HOLD, CANCELLED |
+| **ON_HOLD** | Cycle paused; overdue alerts suppressed | Team Members, Data Provider | DATA_COLLECTION, CANCELLED |
 | **UNDER_REVIEW** | Team reviewing results | Team Members | PENDING_APPROVAL, CANCELLED |
 | **PENDING_APPROVAL** | Awaiting approver sign-off | Approvers | APPROVED |
 | **APPROVED** | Cycle complete | (Terminal) | — |
@@ -1283,6 +1519,7 @@ CSV import is only available when the monitoring cycle is in one of these status
 
 Import is blocked when the cycle is in:
 - Pending
+- On Hold
 - Pending Approval
 - Approved
 - Rejected

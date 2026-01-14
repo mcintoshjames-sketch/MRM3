@@ -9,37 +9,41 @@ This guide explains how to work with the Model Inventory in the Quantitative Met
 ## Table of Contents
 
 1. [Overview](#overview)
-2. [Submitting a New Model Record](#submitting-a-new-model-record)
-3. [Understanding the Model Details Page](#understanding-the-model-details-page)
+2. [Model vs Non-Model Classification](#model-vs-non-model-classification)
+3. [Submitting a New Model Record](#submitting-a-new-model-record)
+4. [Understanding the Model Details Page](#understanding-the-model-details-page)
    - [Editable (Mutable) Fields](#editable-mutable-fields)
    - [Calculated (Read-Only) Fields](#calculated-read-only-fields)
    - [How Calculations Work](#how-calculations-work)
-4. [Risk Assessment](#risk-assessment)
-   - [Qualitative Assessment](#qualitative-assessment)
-   - [Quantitative Assessment](#quantitative-assessment)
-   - [Inherent Risk Matrix](#inherent-risk-matrix)
-   - [Final Risk Tier](#final-risk-tier)
-5. [Model Versions (Changes)](#model-versions-changes)
-   - [Quick Overview](#quick-overview)
-   - [Deployment Process](#deployment-process)
-   - [Comprehensive Documentation](#comprehensive-documentation)
-6. [Model Relationships](#model-relationships)
-   - [Model Hierarchy (Parent-Child)](#model-hierarchy-parent-child)
-   - [Data Dependencies](#data-dependencies)
-7. [Model Tags](#model-tags)
+5. [Model Tags](#model-tags)
    - [Understanding Tags](#understanding-tags)
    - [Adding Tags to a Model](#adding-tags-to-a-model)
    - [Bulk Tagging](#bulk-tagging)
    - [Tag Reports](#tag-reports)
-8. [Model Limitations](#model-limitations)
+6. [Risk Assessment](#risk-assessment)
+   - [Qualitative Assessment](#qualitative-assessment)
+   - [Quantitative Assessment](#quantitative-assessment)
+   - [Inherent Risk Matrix](#inherent-risk-matrix)
+   - [Final Risk Tier](#final-risk-tier)
+7. [Model Versions (Changes)](#model-versions-changes)
+   - [Quick Overview](#quick-overview)
+   - [Deployment Process](#deployment-process)
+   - [Comprehensive Documentation](#comprehensive-documentation)
+8. [Model Relationships](#model-relationships)
+   - [Model Hierarchy (Parent-Child)](#model-hierarchy-parent-child)
+   - [Data Dependencies](#data-dependencies)
+9. [Model Limitations](#model-limitations)
    - [Recording a Limitation](#recording-a-limitation)
    - [Significance Levels](#significance-levels)
    - [Managing User Awareness](#managing-user-awareness)
-9. [Model Decommissioning](#model-decommissioning)
-   - [Initiating Decommissioning](#initiating-decommissioning)
-   - [Approval Workflow](#approval-workflow)
-   - [Decommissioning Reasons](#decommissioning-reasons)
-10. [Exporting Data](#exporting-data)
+10. [Model Overlays & Judgements](#model-overlays--judgements)
+    - [Recording an Overlay or Judgement](#recording-an-overlay-or-judgement)
+    - [Effectiveness and Retirement](#effectiveness-and-retirement)
+11. [Model Decommissioning](#model-decommissioning)
+    - [Initiating Decommissioning](#initiating-decommissioning)
+    - [Approval Workflow](#approval-workflow)
+    - [Decommissioning Reasons](#decommissioning-reasons)
+12. [Exporting Data](#exporting-data)
 
 ---
 
@@ -57,6 +61,46 @@ The Model Inventory provides a centralized repository for tracking all quantitat
 
 ---
 
+## Model vs Non-Model Classification
+
+The inventory supports tracking both actual models and non-model tools that require oversight. This distinction is important for governance and regulatory compliance.
+
+### Classification Types
+
+| Classification | Description |
+|----------------|-------------|
+| **Model** (`is_model = true`) | Traditional quantitative models requiring full validation |
+| **Non-Model** (`is_model = false`) | Tools or applications that are not models but may require oversight |
+| **MRSA** (`is_mrsa = true`) | Model Risk-Sensitive Applications - non-models requiring IRP oversight |
+
+### Model Risk-Sensitive Applications (MRSAs)
+
+MRSAs are non-model tools that, while not meeting the formal definition of a model, still pose sufficient risk to require documented oversight. Examples include:
+
+- Spreadsheet-based decision tools
+- Automated data processing pipelines
+- Simplified calculation engines
+- Rule-based systems with business impact
+
+**MRSA Fields**:
+
+| Field | Description |
+|-------|-------------|
+| **Is MRSA** | Boolean flag indicating this is an MRSA requiring oversight |
+| **MRSA Risk Level** ⚙ | Risk classification (High-Risk or Low-Risk) |
+| **MRSA Risk Rationale** | Narrative explaining the risk level assignment |
+| **Associated IRPs** | Independent Review Processes (IRPs) covering this MRSA |
+
+When creating or editing a record:
+1. Set **Is Model** to "No" for non-model entries
+2. If the non-model requires oversight, set **Is MRSA** to "Yes"
+3. Assign an **MRSA Risk Level** and provide a **Risk Rationale**
+4. Link to relevant **IRPs** that provide oversight
+
+> **Note**: Non-models with `is_mrsa = false` are tracked for inventory completeness but do not require the same governance as models or MRSAs.
+
+---
+
 ## Submitting a New Model Record
 
 To register a new model in the inventory:
@@ -69,12 +113,13 @@ To register a new model in the inventory:
 |-------|-------------|----------|
 | **Model Name** | A unique, descriptive name for the model | Yes |
 | **External Model ID** | Optional legacy/external system identifier | No |
-| **Description** | Purpose and functionality of the model | No |
+| **Description** | Purpose and functionality of the model | Yes |
 | **Products Covered** | Products, portfolios, or lines of business covered by the model | No |
 | **Development Type** | "In-House" or "Third-Party" | Yes |
 | **Model Owner** | The business user accountable for the model | Yes |
-| **Model Developer** | The individual or team who built the model | No |
+| **Model Developer** | The individual or team who built the model | Conditional (required for In-House) |
 | **Vendor** | Required if Development Type is "Third-Party" | Conditional |
+| **Initial Implementation Date** | First production deployment date | Yes |
 | **Usage Frequency** ⚙ | How often the model is used (e.g., Daily, Monthly) | Yes |
 | **Deployment Regions** | Regions where the model is deployed (multi-select) | No |
 | **Regional Owner (per region)** | Optional owner for a specific deployment region | No |
@@ -94,6 +139,7 @@ The Model Details page displays comprehensive information organized into tabs:
 - **Validations** - Related validation requests
 - **Relationships** - Hierarchy and dependencies
 - **Limitations** - Documented model limitations
+- **Overlays** - Underperformance overlays and management judgements
 - **Recommendations** - Validation recommendations for this model
 - **Exceptions** - Model exceptions and compensating controls
 - **Risk Assessment** - Risk evaluation factors and ratings
@@ -114,15 +160,19 @@ These fields can be modified by users with appropriate permissions:
 | Owner | User responsible for the model |
 | Developer | User or team who developed the model |
 | Shared Owner | Secondary owner (if applicable) |
+| Shared Developer | Secondary developer (if applicable) |
 | Monitoring Manager | Person managing ongoing monitoring |
 | Vendor | Third-party vendor (for vendor-developed models) |
-| Risk Tier ⚙ | Assigned risk classification (Tier 1/2/3) |
+| Risk Tier ⚙ | Assigned risk classification (Tier 1/2/3/4) |
 | Status ⚙ | Current model status |
 | External Model ID | Optional legacy/external system identifier |
 | Usage Frequency ⚙ | Operational frequency of model use |
+| Ownership Type ⚙ | Classification for model ownership |
+| Regulatory Categories ⚙ | Applicable regulatory regimes (CCAR/DFAST, Basel, etc.) |
 | Model Users | Individuals using the model |
 | Deployment Regions | Geographic deployment locations and optional regional owners |
 | Methodology ⚙ | Underlying methodology type |
+| Tags | Assigned categorization labels |
 
 #### Deployment Regions & Regional Owners
 
@@ -174,9 +224,24 @@ The validation approval status indicates the model's current validation state. I
 - The system first determines if the model is **overdue** based on the revalidation due date from validation policy
 - If NOT overdue: Status is APPROVED or INTERIM_APPROVED (even if a new validation has started)
 - If overdue: Status depends on whether substantive validation work is in progress
-  - **Substantive stages**: Planning, Assigned, In Progress, Review, Pending Approval
+  - **Substantive stages**: Planning, In Progress, Review, Pending Approval, Revision
   - **Non-substantive stage**: Intake (just creating the request doesn't count)
 - This means a model can show APPROVED while a new validation is in early stages, which accurately reflects its current validated state
+
+**Validation Request Workflow States**:
+The full set of validation request workflow states are:
+
+| State | Description |
+|-------|-------------|
+| **INTAKE** | Initial request submission and triage |
+| **PLANNING** | Scoping and resource allocation |
+| **IN_PROGRESS** | Active validation work underway |
+| **REVIEW** | Internal QA and compilation of results |
+| **PENDING_APPROVAL** | Awaiting stakeholder sign-offs |
+| **REVISION** | Returned for revisions after review |
+| **APPROVED** | Validation complete with all approvals |
+| **ON_HOLD** | Temporarily paused (with reason tracking) |
+| **CANCELLED** | Terminated before completion (with justification) |
 
 #### Business Line
 
@@ -189,189 +254,6 @@ This date reflects when the model was last changed in production. The system loo
 #### Is AI/ML Classification
 
 Models are automatically classified as AI/ML based on their selected methodology. When a methodology tagged as AI/ML-related is assigned to the model, this flag is set to "Yes" automatically.
-
----
-
-## Risk Assessment
-
-The Risk Assessment tab provides a comprehensive framework for evaluating model risk. The assessment combines multiple approaches to determine the final risk classification.
-
-### Qualitative Assessment ⚙
-
-> **Note**: Qualitative risk factors are administrator-configurable. Administrators can add, modify, reorder, or deactivate factors through the system's qualitative factor management interface. Factor weights can be customized and must sum to 100%. Each factor can have custom rating guidance for HIGH, MEDIUM, and LOW ratings.
-
-The qualitative assessment evaluates the model across weighted factors. **By default**, the system includes four standard factors:
-
-| Factor | Weight | Description |
-|--------|--------|-------------|
-| **Reputation, Regulatory Compliance and/or Financial Reporting Risk** | 30% | Impact on reputation, compliance, and financial reporting |
-| **Complexity of the Model** | 30% | Technical sophistication and methodology complexity |
-| **Model Usage and Model Dependency** | 20% | Business reliance and downstream model dependencies |
-| **Stability of the Model** | 20% | Likelihood and magnitude of errors |
-
-For each factor, you assign a rating:
-- **High** (Score: 3)
-- **Medium** (Score: 2)
-- **Low** (Score: 1)
-
-Each factor includes configurable guidance text to help assessors make consistent ratings.
-
-**How the Score is Calculated:**
-
-The system computes a weighted average using the active factors and their configured weights:
-
-```
-Qualitative Score = Σ(Factor Rating × Factor Weight)
-
-Example with default factors:
-  = (Reputation/Regulatory/Financial × 0.30) + (Complexity × 0.30) +
-    (Usage/Dependency × 0.20) + (Stability × 0.20)
-```
-
-The resulting score maps to a qualitative rating:
-- Score ≥ 2.1 = **HIGH**
-- Score ≥ 1.6 = **MEDIUM**
-- Score < 1.6 = **LOW**
-
-**Weight Snapshots**: When an assessment is saved, the system captures a snapshot of each factor's weight at that time. This ensures historical assessments remain accurate even if administrators later modify factor weights.
-
-### Quantitative Assessment
-
-The quantitative assessment provides a direct rating based on quantitative factors such as backtesting results, model performance metrics, and statistical validation outcomes.
-
-Ratings available:
-- **HIGH** - Significant quantitative concerns
-- **MEDIUM** - Moderate quantitative concerns
-- **LOW** - Minimal quantitative concerns
-
-### Inherent Risk Matrix
-
-The Inherent Risk combines the qualitative and quantitative assessments using a matrix lookup:
-
-| Qualitative ↓ / Quantitative → | HIGH | MEDIUM | LOW |
-|-------------------------------|------|--------|-----|
-| **HIGH** | Critical | High | Medium |
-| **MEDIUM** | High | Medium | Low |
-| **LOW** | Medium | Low | Very Low |
-
-### Final Risk Tier ⚙
-
-The Final Risk Tier represents the official risk classification used for governance and validation scheduling:
-
-- **Tier 1 (High Risk)** - Requires annual validation, strictest controls
-- **Tier 2 (Medium Risk)** - Requires validation every 2 years
-- **Tier 3 (Low Risk)** - Requires validation every 3 years
-- **Tier 4 (Very Low Risk)** - Requires validation every 4 years, lightest controls
-
-**Override Capability**: Administrators can override the calculated risk tier if business justification exists. Any override requires documented rationale, which is captured in the audit trail.
-
----
-
-## Model Versions (Changes)
-
-Model versions track all changes to the model over time, maintaining a complete audit history of modifications. The version management system ensures that model changes are properly documented, validated, and deployed in a controlled manner.
-
-### Quick Overview
-
-- **Version Lifecycle**: DRAFT → IN_VALIDATION → APPROVED → ACTIVE → SUPERSEDED
-- **Change Types**: MAJOR (significant methodology/data changes) or Minor (bug fixes, calibration updates)
-- **Change Categories** ⚙: Model Theory, Implementation, Data/Input, Parameter, Output/Reporting
-- **Version Blockers**: System prevents creating a new version if an undeployed version exists or if a version is in active validation
-
-### Deployment Process
-
-After a version is validated and approved, it must be deployed to production across the appropriate geographic regions. The deployment system provides:
-
-- **Deploy Modal**: Accessed from the Versions tab or Validation Detail page
-- **Regional Deployment**: Deploy to specific regions with separate production dates
-- **Regional Approval Locks** 🔒: Some regions require separate regional approval
-- **My Deployment Tasks**: Track pending, confirmed, and overdue deployment tasks
-- **Bulk Operations**: Confirm, adjust, or cancel multiple deployments at once
-- **Ready to Deploy Report**: Centralized view of all versions ready for production
-
-### Comprehensive Documentation
-
-For complete details on model version management and deployment, including:
-- Version lifecycle states and transitions
-- Version creation blockers and resolutions
-- Change type selection guidance
-- Regional deployment workflows
-- Deployment task management
-- Bulk deployment operations
-- Ready to Deploy report usage
-
-**See the dedicated guide**: [Model Changes User Guide](USER_GUIDE_MODEL_CHANGES.md)
-
-The standalone guide provides step-by-step instructions, visual diagrams, best practices, and frequently asked questions for managing model versions and deployments.
-
----
-
-## Model Relationships
-
-Models often operate within a network of interconnected systems. The Relationships tab documents these connections.
-
-### Model Hierarchy (Parent-Child)
-
-A hierarchical relationship exists when one model is a component of a larger model framework.
-
-**Key Points:**
-- A model can have only **one parent** (single-parent constraint)
-- A model can have **multiple children** (sub-models)
-- Hierarchy establishes governance accountability chains
-
-**Examples:**
-- Enterprise Credit Model (Parent) → Retail Scoring Model (Child)
-- ALM Framework (Parent) → Interest Rate Model (Child)
-
-**To Add a Hierarchy Relationship:**
-1. Go to the **Relationships** tab
-2. Click **Add Parent** or **Add Sub-Model**
-3. Search for and select the related model
-4. Specify the relationship type ⚙ and effective date
-
-### Data Dependencies
-
-Dependencies track data flow between models—which models provide inputs to others.
-
-**Dependency Types** ⚙:
-
-| Type | Description |
-|------|-------------|
-| **INPUT_DATA** | Model receives raw data from another model |
-| **SCORE** | Model consumes scores/outputs from another model |
-| **PARAMETER** | Model uses parameters calibrated by another model |
-| **GOVERNANCE_SIGNAL** | Model receives governance indicators |
-| **OTHER** | Other dependency relationships |
-
-**Direction:**
-- **Inbound** (Feeder Models) - Models that provide data TO this model
-- **Outbound** (Consumer Models) - Models that receive data FROM this model
-
-Understanding dependencies is critical when:
-- Decommissioning a model (downstream impact assessment)
-- Planning changes (impact on dependent models)
-- Investigating issues (tracing data lineage)
-
----
-
-### Supporting Applications
-
-Supporting Applications link MAP applications that participate in a model's end-to-end process.
-Each relationship includes a **Direction** so lineage and PDF exports can place applications
-on the correct side of the model.
-
-**Direction Options:**
-- **Upstream** - The application provides inputs or data into the model.
-- **Downstream** - The application consumes model outputs or scores.
-
-**To Add a Supporting Application:**
-1. Go to the **Relationships** tab
-2. Select **Supporting Applications**
-3. Click **Add Application**
-4. Search for the application in MAP
-5. Choose **Relationship Type** and **Direction**
-
-> **Tip:** If Direction is missing, the relationship will be flagged and excluded from lineage exports until updated.
 
 ---
 
@@ -529,6 +411,170 @@ Administrators can manage tags via **Taxonomy → Tags** tab:
 
 ---
 
+## Risk Assessment
+
+The Risk Assessment tab provides a comprehensive framework for evaluating model risk. The assessment combines multiple approaches to determine the final risk classification.
+
+### Qualitative Assessment ⚙
+
+> **Note**: Qualitative risk factors are administrator-configurable. Administrators can add, modify, reorder, or deactivate factors through the system's qualitative factor management interface. Factor weights can be customized and must sum to 100%. Each factor can have custom rating guidance for HIGH, MEDIUM, and LOW ratings.
+
+The qualitative assessment evaluates the model across weighted factors. **By default**, the system includes four standard factors:
+
+| Factor | Weight | Description |
+|--------|--------|-------------|
+| **Reputation, Regulatory Compliance and/or Financial Reporting Risk** | 30% | Impact on reputation, compliance, and financial reporting |
+| **Complexity of the Model** | 30% | Technical sophistication and methodology complexity |
+| **Model Usage and Model Dependency** | 20% | Business reliance and downstream model dependencies |
+| **Stability of the Model** | 20% | Likelihood and magnitude of errors |
+
+For each factor, you assign a rating:
+- **High** (Score: 3)
+- **Medium** (Score: 2)
+- **Low** (Score: 1)
+
+Each factor includes configurable guidance text to help assessors make consistent ratings.
+
+**How the Score is Calculated:**
+
+The system computes a weighted average using the active factors and their configured weights:
+
+```
+Qualitative Score = Σ(Factor Rating × Factor Weight)
+
+Example with default factors:
+  = (Reputation/Regulatory/Financial × 0.30) + (Complexity × 0.30) +
+    (Usage/Dependency × 0.20) + (Stability × 0.20)
+```
+
+The resulting score maps to a qualitative rating:
+- Score ≥ 2.1 = **HIGH**
+- Score ≥ 1.6 = **MEDIUM**
+- Score < 1.6 = **LOW**
+
+**Weight Snapshots**: When an assessment is saved, the system captures a snapshot of each factor's weight at that time. This ensures historical assessments remain accurate even if administrators later modify factor weights.
+
+### Quantitative Assessment
+
+The quantitative assessment provides a direct rating based on quantitative factors such as backtesting results, model performance metrics, and statistical validation outcomes.
+
+Ratings available:
+- **HIGH** - Significant quantitative concerns
+- **MEDIUM** - Moderate quantitative concerns
+- **LOW** - Minimal quantitative concerns
+
+### Inherent Risk Matrix
+
+The Inherent Risk combines the qualitative and quantitative assessments using a matrix lookup:
+
+| Qualitative ↓ / Quantitative → | HIGH | MEDIUM | LOW |
+|-------------------------------|------|--------|-----|
+| **HIGH** | High | Medium | Low |
+| **MEDIUM** | Medium | Medium | Low |
+| **LOW** | Low | Low | Very Low |
+
+> **Note**: The matrix produces a 4-tier result: High, Medium, Low, or Very Low. These map directly to Risk Tiers 1-4.
+
+### Final Risk Tier ⚙
+
+The Final Risk Tier represents the official risk classification used for governance and validation scheduling:
+
+- **Tier 1 (High Risk)** - Requires annual validation, strictest controls
+- **Tier 2 (Medium Risk)** - Requires validation every 2 years
+- **Tier 3 (Low Risk)** - Requires validation every 3 years
+- **Tier 4 (Very Low Risk)** - Requires validation every 4 years, lightest controls
+
+**Override Capability**: Administrators can override the calculated risk tier if business justification exists. Any override requires documented rationale, which is captured in the audit trail.
+
+---
+
+## Model Versions (Changes)
+
+Model versions track all changes to the model over time, maintaining a complete audit history of modifications. The version management system ensures that model changes are properly documented, validated, and deployed in a controlled manner.
+
+### Quick Overview
+
+- **Version Lifecycle**: DRAFT → IN_VALIDATION → APPROVED → ACTIVE → SUPERSEDED
+- **Change Types**: MAJOR (significant methodology/data changes) or Minor (bug fixes, calibration updates)
+- **Change Categories** ⚙: Model Theory, Implementation, Data/Input, Parameter, Output/Reporting
+- **Version Blockers**: System prevents creating a new version if an undeployed version exists or if a version is in active validation
+
+### Deployment Process
+
+After a version is validated and approved, it must be deployed to production across the appropriate geographic regions. The deployment system provides:
+
+- **Deploy Modal**: Accessed from the Versions tab or Validation Detail page
+- **Regional Deployment**: Deploy to specific regions with separate production dates
+- **Regional Approval Locks** 🔒: Some regions require separate regional approval
+- **My Deployment Tasks**: Track pending, confirmed, and overdue deployment tasks
+- **Bulk Operations**: Confirm, adjust, or cancel multiple deployments at once
+- **Ready to Deploy Report**: Centralized view of all versions ready for production
+
+### Comprehensive Documentation
+
+For complete details on model version management and deployment, including:
+- Version lifecycle states and transitions
+- Version creation blockers and resolutions
+- Change type selection guidance
+- Regional deployment workflows
+- Deployment task management
+- Bulk deployment operations
+- Ready to Deploy report usage
+
+**See the dedicated guide**: [Model Changes User Guide](USER_GUIDE_MODEL_CHANGES.md)
+
+The standalone guide provides step-by-step instructions, visual diagrams, best practices, and frequently asked questions for managing model versions and deployments.
+
+---
+
+## Model Relationships
+
+Models often operate within a network of interconnected systems. The Relationships tab documents these connections.
+
+### Model Hierarchy (Parent-Child)
+
+A hierarchical relationship exists when one model is a component of a larger model framework.
+
+**Key Points:**
+- A model can have only **one parent** (single-parent constraint)
+- A model can have **multiple children** (sub-models)
+- Hierarchy establishes governance accountability chains
+
+**Examples:**
+- Enterprise Credit Model (Parent) → Retail Scoring Model (Child)
+- ALM Framework (Parent) → Interest Rate Model (Child)
+
+**To Add a Hierarchy Relationship:**
+1. Go to the **Relationships** tab
+2. Click **Add Parent** or **Add Sub-Model**
+3. Search for and select the related model
+4. Specify the relationship type ⚙ and effective date
+
+### Data Dependencies
+
+Dependencies track data flow between models—which models provide inputs to others.
+
+**Dependency Types** ⚙:
+
+| Type | Description |
+|------|-------------|
+| **INPUT_DATA** | Model receives raw data from another model |
+| **SCORE** | Model consumes scores/outputs from another model |
+| **PARAMETER** | Model uses parameters calibrated by another model |
+| **GOVERNANCE_SIGNAL** | Model receives governance indicators |
+| **OTHER** | Other dependency relationships |
+
+**Direction:**
+- **Inbound** (Feeder Models) - Models that provide data TO this model
+- **Outbound** (Consumer Models) - Models that receive data FROM this model
+
+Understanding dependencies is critical when:
+- Decommissioning a model (downstream impact assessment)
+- Planning changes (impact on dependent models)
+- Investigating issues (tracing data lineage)
+
+---
+
 ## Model Limitations
 
 Documented limitations provide transparency about model constraints and how they are managed.
@@ -555,6 +601,8 @@ To add a limitation:
 | **Critical** | Significant impact on model reliability or business decisions | Must document User Awareness Description explaining how users are informed |
 | **Non-Critical** | Minor constraint with limited impact | No additional documentation required |
 
+> **Important**: Critical limitations **require** a User Awareness Description. The system will not allow you to save a Critical limitation without this field completed. This ensures that all significant limitations have documented user communication plans.
+
 ### Managing User Awareness
 
 For **Critical** limitations, you must document:
@@ -576,6 +624,33 @@ When a limitation is resolved:
 1. Click **Retire** on the limitation
 2. Document the resolution in the retirement notes
 3. The limitation remains in history but is marked as inactive
+
+---
+
+## Model Overlays & Judgements
+
+Model overlays and management judgements capture **underperformance-driven adjustments** applied to models. These records provide an audit-ready view of overlays that are **currently in effect**.
+
+### Recording an Overlay or Judgement
+
+To add an overlay:
+
+1. Navigate to the **Overlays** tab
+2. Click **Add Overlay** (Admin/Validator only)
+3. Complete the details:
+   - **Kind** - Overlay or Management Judgement
+   - **Underperformance-related** - Explicit flag for regulatory reporting
+   - **Description** - What adjustment is being applied
+   - **Rationale** - Why the overlay is needed
+   - **Effective From / To** - Date window for applicability
+   - **Region** - Optional; leave blank for global overlays
+4. (Optional) Link to monitoring cycles/results, recommendations, or limitations for traceability
+
+### Effectiveness and Retirement
+
+- An overlay is **in effect** when it is **not retired** and today falls within the effective date window.
+- **Retire** overlays when they are no longer needed; provide a retirement reason.
+- Core fields are immutable once recorded; if the judgement changes, retire the old overlay and create a new one.
 
 ---
 
@@ -602,8 +677,20 @@ When a model is no longer needed, the decommissioning process ensures proper ret
 Decommissioning requests progress through multiple approval stages:
 
 ```
-Submitted → Validator Review → Owner Review → Regional/Global Approvals → Completed
+PENDING → VALIDATOR_APPROVED → APPROVED (or REJECTED/WITHDRAWN)
 ```
+
+**Workflow States**:
+
+| Status | Description |
+|--------|-------------|
+| **PENDING** | Request submitted, awaiting validator review |
+| **VALIDATOR_APPROVED** | Validator has approved; awaiting owner/regional/global approvals |
+| **APPROVED** | All required approvals complete; model will be retired |
+| **REJECTED** | Request denied by an approver |
+| **WITHDRAWN** | Request withdrawn by the requestor before completion |
+
+**Approval Stages**:
 
 1. **Validator Review** - Independent validation team reviews the request
 2. **Owner Review** - Model owner confirms the retirement (if different from requestor)
@@ -614,6 +701,8 @@ At each stage, approvers can:
 - **Approve** - Move the request forward
 - **Reject** - Return the request with feedback
 - **Request Changes** - Ask for modifications before approval
+
+> **Note**: Requestors can **withdraw** a pending request at any point before final approval if circumstances change.
 
 ### Decommissioning Reasons ⚙
 
@@ -641,6 +730,7 @@ Data can be exported from various screens for reporting and analysis:
 | Model Versions | CSV and PDF |
 | Model Dependencies | CSV (Inbound and Outbound separately) |
 | Model Hierarchy | CSV |
+| Risk Assessment | PDF (comprehensive assessment report) |
 
 Models List exports reflect the active column selection. Use the **Columns** picker to include per-region **Regional Owner (XX)** fields (one column per region code). Cells are blank when no regional owner is assigned.
 

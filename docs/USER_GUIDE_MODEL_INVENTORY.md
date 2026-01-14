@@ -9,40 +9,41 @@ This guide explains how to work with the Model Inventory in the Quantitative Met
 ## Table of Contents
 
 1. [Overview](#overview)
-2. [Submitting a New Model Record](#submitting-a-new-model-record)
-3. [Understanding the Model Details Page](#understanding-the-model-details-page)
+2. [Model vs Non-Model Classification](#model-vs-non-model-classification)
+3. [Submitting a New Model Record](#submitting-a-new-model-record)
+4. [Understanding the Model Details Page](#understanding-the-model-details-page)
    - [Editable (Mutable) Fields](#editable-mutable-fields)
    - [Calculated (Read-Only) Fields](#calculated-read-only-fields)
    - [How Calculations Work](#how-calculations-work)
-4. [Model Tags](#model-tags)
+5. [Model Tags](#model-tags)
    - [Understanding Tags](#understanding-tags)
    - [Adding Tags to a Model](#adding-tags-to-a-model)
    - [Bulk Tagging](#bulk-tagging)
    - [Tag Reports](#tag-reports)
-5. [Risk Assessment](#risk-assessment)
+6. [Risk Assessment](#risk-assessment)
    - [Qualitative Assessment](#qualitative-assessment)
    - [Quantitative Assessment](#quantitative-assessment)
    - [Inherent Risk Matrix](#inherent-risk-matrix)
    - [Final Risk Tier](#final-risk-tier)
-6. [Model Versions (Changes)](#model-versions-changes)
+7. [Model Versions (Changes)](#model-versions-changes)
    - [Quick Overview](#quick-overview)
    - [Deployment Process](#deployment-process)
    - [Comprehensive Documentation](#comprehensive-documentation)
-7. [Model Relationships](#model-relationships)
+8. [Model Relationships](#model-relationships)
    - [Model Hierarchy (Parent-Child)](#model-hierarchy-parent-child)
    - [Data Dependencies](#data-dependencies)
-8. [Model Limitations](#model-limitations)
+9. [Model Limitations](#model-limitations)
    - [Recording a Limitation](#recording-a-limitation)
    - [Significance Levels](#significance-levels)
    - [Managing User Awareness](#managing-user-awareness)
-9. [Model Overlays & Judgements](#model-overlays--judgements)
-   - [Recording an Overlay or Judgement](#recording-an-overlay-or-judgement)
-   - [Effectiveness and Retirement](#effectiveness-and-retirement)
-10. [Model Decommissioning](#model-decommissioning)
+10. [Model Overlays & Judgements](#model-overlays--judgements)
+    - [Recording an Overlay or Judgement](#recording-an-overlay-or-judgement)
+    - [Effectiveness and Retirement](#effectiveness-and-retirement)
+11. [Model Decommissioning](#model-decommissioning)
     - [Initiating Decommissioning](#initiating-decommissioning)
     - [Approval Workflow](#approval-workflow)
     - [Decommissioning Reasons](#decommissioning-reasons)
-11. [Exporting Data](#exporting-data)
+12. [Exporting Data](#exporting-data)
 
 ---
 
@@ -60,6 +61,46 @@ The Model Inventory provides a centralized repository for tracking all quantitat
 
 ---
 
+## Model vs Non-Model Classification
+
+The inventory supports tracking both actual models and non-model tools that require oversight. This distinction is important for governance and regulatory compliance.
+
+### Classification Types
+
+| Classification | Description |
+|----------------|-------------|
+| **Model** (`is_model = true`) | Traditional quantitative models requiring full validation |
+| **Non-Model** (`is_model = false`) | Tools or applications that are not models but may require oversight |
+| **MRSA** (`is_mrsa = true`) | Model Risk-Sensitive Applications - non-models requiring IRP oversight |
+
+### Model Risk-Sensitive Applications (MRSAs)
+
+MRSAs are non-model tools that, while not meeting the formal definition of a model, still pose sufficient risk to require documented oversight. Examples include:
+
+- Spreadsheet-based decision tools
+- Automated data processing pipelines
+- Simplified calculation engines
+- Rule-based systems with business impact
+
+**MRSA Fields**:
+
+| Field | Description |
+|-------|-------------|
+| **Is MRSA** | Boolean flag indicating this is an MRSA requiring oversight |
+| **MRSA Risk Level** ⚙ | Risk classification (High-Risk or Low-Risk) |
+| **MRSA Risk Rationale** | Narrative explaining the risk level assignment |
+| **Associated IRPs** | Independent Review Processes (IRPs) covering this MRSA |
+
+When creating or editing a record:
+1. Set **Is Model** to "No" for non-model entries
+2. If the non-model requires oversight, set **Is MRSA** to "Yes"
+3. Assign an **MRSA Risk Level** and provide a **Risk Rationale**
+4. Link to relevant **IRPs** that provide oversight
+
+> **Note**: Non-models with `is_mrsa = false` are tracked for inventory completeness but do not require the same governance as models or MRSAs.
+
+---
+
 ## Submitting a New Model Record
 
 To register a new model in the inventory:
@@ -72,12 +113,13 @@ To register a new model in the inventory:
 |-------|-------------|----------|
 | **Model Name** | A unique, descriptive name for the model | Yes |
 | **External Model ID** | Optional legacy/external system identifier | No |
-| **Description** | Purpose and functionality of the model | No |
+| **Description** | Purpose and functionality of the model | Yes |
 | **Products Covered** | Products, portfolios, or lines of business covered by the model | No |
 | **Development Type** | "In-House" or "Third-Party" | Yes |
 | **Model Owner** | The business user accountable for the model | Yes |
-| **Model Developer** | The individual or team who built the model | No |
+| **Model Developer** | The individual or team who built the model | Conditional (required for In-House) |
 | **Vendor** | Required if Development Type is "Third-Party" | Conditional |
+| **Initial Implementation Date** | First production deployment date | Yes |
 | **Usage Frequency** ⚙ | How often the model is used (e.g., Daily, Monthly) | Yes |
 | **Deployment Regions** | Regions where the model is deployed (multi-select) | No |
 | **Regional Owner (per region)** | Optional owner for a specific deployment region | No |
@@ -118,12 +160,15 @@ These fields can be modified by users with appropriate permissions:
 | Owner | User responsible for the model |
 | Developer | User or team who developed the model |
 | Shared Owner | Secondary owner (if applicable) |
+| Shared Developer | Secondary developer (if applicable) |
 | Monitoring Manager | Person managing ongoing monitoring |
 | Vendor | Third-party vendor (for vendor-developed models) |
-| Risk Tier ⚙ | Assigned risk classification (Tier 1/2/3) |
+| Risk Tier ⚙ | Assigned risk classification (Tier 1/2/3/4) |
 | Status ⚙ | Current model status |
 | External Model ID | Optional legacy/external system identifier |
 | Usage Frequency ⚙ | Operational frequency of model use |
+| Ownership Type ⚙ | Classification for model ownership |
+| Regulatory Categories ⚙ | Applicable regulatory regimes (CCAR/DFAST, Basel, etc.) |
 | Model Users | Individuals using the model |
 | Deployment Regions | Geographic deployment locations and optional regional owners |
 | Methodology ⚙ | Underlying methodology type |
@@ -179,9 +224,24 @@ The validation approval status indicates the model's current validation state. I
 - The system first determines if the model is **overdue** based on the revalidation due date from validation policy
 - If NOT overdue: Status is APPROVED or INTERIM_APPROVED (even if a new validation has started)
 - If overdue: Status depends on whether substantive validation work is in progress
-  - **Substantive stages**: Planning, Assigned, In Progress, Review, Pending Approval
+  - **Substantive stages**: Planning, In Progress, Review, Pending Approval, Revision
   - **Non-substantive stage**: Intake (just creating the request doesn't count)
 - This means a model can show APPROVED while a new validation is in early stages, which accurately reflects its current validated state
+
+**Validation Request Workflow States**:
+The full set of validation request workflow states are:
+
+| State | Description |
+|-------|-------------|
+| **INTAKE** | Initial request submission and triage |
+| **PLANNING** | Scoping and resource allocation |
+| **IN_PROGRESS** | Active validation work underway |
+| **REVIEW** | Internal QA and compilation of results |
+| **PENDING_APPROVAL** | Awaiting stakeholder sign-offs |
+| **REVISION** | Returned for revisions after review |
+| **APPROVED** | Validation complete with all approvals |
+| **ON_HOLD** | Temporarily paused (with reason tracking) |
+| **CANCELLED** | Terminated before completion (with justification) |
 
 #### Business Line
 
@@ -409,9 +469,11 @@ The Inherent Risk combines the qualitative and quantitative assessments using a 
 
 | Qualitative ↓ / Quantitative → | HIGH | MEDIUM | LOW |
 |-------------------------------|------|--------|-----|
-| **HIGH** | Critical | High | Medium |
-| **MEDIUM** | High | Medium | Low |
-| **LOW** | Medium | Low | Very Low |
+| **HIGH** | High | Medium | Low |
+| **MEDIUM** | Medium | Medium | Low |
+| **LOW** | Low | Low | Very Low |
+
+> **Note**: The matrix produces a 4-tier result: High, Medium, Low, or Very Low. These map directly to Risk Tiers 1-4.
 
 ### Final Risk Tier ⚙
 
@@ -539,6 +601,8 @@ To add a limitation:
 | **Critical** | Significant impact on model reliability or business decisions | Must document User Awareness Description explaining how users are informed |
 | **Non-Critical** | Minor constraint with limited impact | No additional documentation required |
 
+> **Important**: Critical limitations **require** a User Awareness Description. The system will not allow you to save a Critical limitation without this field completed. This ensures that all significant limitations have documented user communication plans.
+
 ### Managing User Awareness
 
 For **Critical** limitations, you must document:
@@ -613,8 +677,20 @@ When a model is no longer needed, the decommissioning process ensures proper ret
 Decommissioning requests progress through multiple approval stages:
 
 ```
-Submitted → Validator Review → Owner Review → Regional/Global Approvals → Completed
+PENDING → VALIDATOR_APPROVED → APPROVED (or REJECTED/WITHDRAWN)
 ```
+
+**Workflow States**:
+
+| Status | Description |
+|--------|-------------|
+| **PENDING** | Request submitted, awaiting validator review |
+| **VALIDATOR_APPROVED** | Validator has approved; awaiting owner/regional/global approvals |
+| **APPROVED** | All required approvals complete; model will be retired |
+| **REJECTED** | Request denied by an approver |
+| **WITHDRAWN** | Request withdrawn by the requestor before completion |
+
+**Approval Stages**:
 
 1. **Validator Review** - Independent validation team reviews the request
 2. **Owner Review** - Model owner confirms the retirement (if different from requestor)
@@ -625,6 +701,8 @@ At each stage, approvers can:
 - **Approve** - Move the request forward
 - **Reject** - Return the request with feedback
 - **Request Changes** - Ask for modifications before approval
+
+> **Note**: Requestors can **withdraw** a pending request at any point before final approval if circumstances change.
 
 ### Decommissioning Reasons ⚙
 
@@ -652,6 +730,7 @@ Data can be exported from various screens for reporting and analysis:
 | Model Versions | CSV and PDF |
 | Model Dependencies | CSV (Inbound and Outbound separately) |
 | Model Hierarchy | CSV |
+| Risk Assessment | PDF (comprehensive assessment report) |
 
 Models List exports reflect the active column selection. Use the **Columns** picker to include per-region **Regional Owner (XX)** fields (one column per region code). Cells are blank when no regional owner is assigned.
 

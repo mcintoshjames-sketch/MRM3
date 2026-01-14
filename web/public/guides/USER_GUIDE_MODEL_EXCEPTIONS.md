@@ -256,7 +256,7 @@ The system tracks three types of exceptions, each addressing a different governa
 - Description of the issue
 - The exception description (often includes the source record IDs)
 
-**Exception count badge**: The **Exceptions** tab shows a red count badge indicating the number of **OPEN** exceptions (acknowledged exceptions are not included in the badge count).
+**Exception count badge**: The **Exceptions** tab shows a count badge indicating the number of **active** exceptions (both OPEN and ACKNOWLEDGED). Closed exceptions are not included in the badge count.
 
 ---
 
@@ -264,7 +264,7 @@ The system tracks three types of exceptions, each addressing a different governa
 
 The report page provides organization-wide visibility for **Administrators**, **Validators**, **Global Approvers**, and **Regional Approvers**. Other users can also access the report but will only see exceptions for models they have access to.
 
-1. In the left navigation, click **Model Exceptions**
+1. In the left navigation, under the **Reports** section, click **Model Exceptions**
 2. View exceptions (organization-wide for privileged roles; otherwise limited to models you can access)
 
 **Available filters**:
@@ -365,7 +365,9 @@ Some exceptions can be closed automatically by the system when the underlying co
 - Reason: "No longer an exception"
 - Closed by: System (no user attributed)
 
-**Important**: This only applies to Type 1 exceptions. Auto-closure is evaluated when results are entered/recorded (it is not tied to cycle approval).
+**Important timing distinction**:
+- **Exception detection** (creating new Type 1 exceptions): Only occurs when the monitoring cycle is **approved**. RED results in cycles that are still in progress will not trigger exceptions until the cycle is approved.
+- **Auto-closure** (closing existing Type 1 exceptions): Occurs immediately when a GREEN or YELLOW result is **recorded**, regardless of whether the cycle is approved. This allows exceptions to close as soon as improvement is documented.
 
 ---
 
@@ -424,9 +426,32 @@ Exceptions are detected automatically at specific workflow points:
 
 Administrators can manually run detection from the **Model Exceptions** report page:
 
-1. In the left navigation, click **Model Exceptions**
+1. In the left navigation, under the **Reports** section, click **Model Exceptions**
 2. Click **Detect All Exceptions**
 3. The system scans **active** models and creates any new exceptions it finds
+
+### Manual Exception Creation (Admin Only)
+
+In addition to automatic detection, Administrators can manually create exceptions when needed (e.g., for situations the system doesn't automatically detect).
+
+**How to create a manual exception:**
+
+1. Navigate to the Model Exceptions report page (under **Reports** → **Model Exceptions**), OR open the Model Details page and click the **Exceptions** tab
+2. Click the **Create Exception** button
+3. Search and select the model
+4. Choose the exception type from the dropdown
+5. Enter a description (minimum 10 characters) explaining the exception
+6. Optionally, create the exception as already **ACKNOWLEDGED** by checking the option and providing acknowledgment notes
+7. Click **Create**
+
+**Requirements:**
+- Model selection is required
+- Exception type must be selected
+- Description must be at least 10 characters
+
+**Initial status options:**
+- **OPEN** (default): Exception requires acknowledgment
+- **ACKNOWLEDGED**: Exception is created as already acknowledged (requires acknowledgment notes)
 
 ### Detection Summary
 
@@ -498,7 +523,7 @@ Model owners see their models' exceptions in:
 
 ### Accessing the Report
 
-1. In the left navigation, click **Model Exceptions**
+1. In the left navigation, under the **Reports** section, click **Model Exceptions**
 
 ### Report Features
 
@@ -727,4 +752,4 @@ A: Closed exceptions do not count toward "open exception" KPIs, but they are inc
 
 ---
 
-*Last Updated: December 2025*
+*Last Updated: January 2026*

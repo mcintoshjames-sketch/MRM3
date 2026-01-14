@@ -55,9 +55,11 @@ Rules that determine how frequently different model owners must attest. Some own
 2. You'll see a list of models requiring your attestation
 3. Each model shows:
    - Model name and risk tier
-   - Current status (Pending, Submitted, Accepted, Rejected, or Admin Review)
+   - Current status (Pending, Submitted - Pending Review, Accepted, or Rejected)
    - Due date with urgency indicator
 4. Above the model list, you'll find the **"Register New Model"** button to add new models to the inventory
+
+**Note:** If you have been granted delegate attestation rights for other models, those attestations appear here as well and can be completed the same way.
 
 ### Completing an Attestation
 
@@ -76,6 +78,22 @@ Rules that determine how frequently different model owners must attest. Some own
 5. **Submit your attestation** when complete
 
 **Note:** Clean attestations (all "Yes" answers with no comments or linked changes) are automatically accepted, so you'll see "Accepted" status immediately. Attestations with "No" answers go to the review queue.
+
+### Delegating Attestation Rights
+
+Model owners can assign delegates to attest on their behalf.
+
+1. Open the model's details page
+2. Expand **"Manage Delegates"**
+3. Click **"Add Delegate"**
+4. Select a user and enable **"Can submit attestations on behalf of the owner"**
+5. Save the delegation
+
+Delegates see the model on **"My Attestations"** and can submit attestations with the same due dates.
+
+You can also grant optional permissions to submit model changes or manage regional configurations; attestation permission is separate.
+
+**Who can manage delegates:** Model owners, validators, and administrators.
 
 ### Understanding Urgency Indicators
 
@@ -167,6 +185,7 @@ Bulk attestation supports auto-save drafts:
 
 #### Important Notes
 
+- You must answer all questions (Yes/No) before submitting; drafts can be incomplete
 - Bulk attestation **does not support inventory changes** (new model, edit, decommission)
 - If you need to make inventory changes for a model, exclude it and attest individually
 - All selected models receive the same decision (I Attest / I Attest with Updates)
@@ -207,7 +226,7 @@ The cycle starts in "Pending" status and doesn't affect model owners until opene
 When a cycle opens, the system evaluates each active model against the configured scheduling rules:
 
 1. For each model, the system finds the highest-priority applicable rule
-2. Rules are evaluated by type precedence first (Model Override > Regional Override > Owner Threshold > Global Default), then by priority within the same type
+2. Rules are evaluated in priority order: Model Override > Regional Override > Owner Threshold > Global Default
 3. The rule determines the attestation frequency (Annual or Quarterly)
 4. If the model is due based on its frequency and last attestation date, an attestation record is created
 5. The attestation is assigned to the model's owner with the cycle's submission due date
@@ -251,13 +270,39 @@ The Admin Dashboard displays a prominent **Review Queue Alert** when:
 
 This ensures administrators are promptly notified when model owners submit attestations that need approval.
 
+### Delegation Management (Admin)
+
+Administrators can manage delegates in bulk from **"Batch Delegates"** in the Admin navigation.
+
+1. Select the target owner or developer
+2. Choose the delegate user
+3. Set permissions (attest, submit changes, manage regional)
+4. Apply to all models, with an option to replace existing delegates
+
 ### Viewing Linked Inventory Changes
 
-When model owners make inventory changes during attestation (edit models, register new models, or request decommissioning), these changes are automatically linked to their attestation for tracking purposes.
+When model owners make inventory changes during attestation, these changes are automatically linked to their attestation for tracking purposes.
 
+**Change Types:**
+| Type | Description |
+|------|-------------|
+| **Model Edit** | Updates to model information via "Edit Model Details" |
+| **Model Change** | Versioned changes submitted via "Submit Model Change" workflow |
+| **New Model** | New models registered via "Register New Model" |
+| **Decommission** | Decommissioning requests initiated during attestation |
+
+**Key Points:**
 - **Linked changes are displayed** in the attestation detail view under "Linked Inventory Changes"
-- **Approval happens in existing workflows** - model edits go through the Model Pending Edits approval queue, decommissioning requests go through the Decommissioning approval workflow
+- **Approval happens in existing workflows** - model edits go through the Model Pending Edits approval queue, model changes follow the Submit Model Change workflow, and decommissioning requests go through the Decommissioning approval workflow
 - **No duplicate approval** is needed in the attestation system
+
+### Linked Changes Tab
+
+Use the **Linked Changes** tab to review all inventory changes linked to attestations across cycles.
+
+- Filter by cycle or change type (Model Edit, Model Change, New Model, Decommission)
+- Open the related attestation from the Actions column
+- Use the Target/Details links to navigate to the related model or workflow
 
 ---
 
@@ -355,9 +400,9 @@ Scheduling rules determine attestation frequency for model owners. By default, a
 
 ### Rule Priority
 
-When multiple rules could apply, type precedence is evaluated first, then priority within that type:
-- Higher priority number = higher precedence within the same rule type
-- Example: A Model Override (priority 10) still beats Global Default (priority 100)
+When multiple rules could apply, the highest priority rule wins:
+- Higher priority number = higher precedence
+- Example: A Model Override (priority 50) beats Global Default (priority 10)
 
 ### Managing Rules
 
@@ -392,9 +437,7 @@ To change these fields, deactivate the existing rule and create a new one.
 ### Validation Requirements
 
 - **Owner Threshold rules** must have at least one criterion (minimum model count or high fluctuation flag)
-- **Global Default rules**: Only one active overlapping Global Default rule can exist at a time
-- **Model/Regional Override rules**: Only one active overlapping rule per model/region is allowed
-- **Date windows**: End date cannot be earlier than the effective date
+- **Global Default rules**: Only one active Global Default rule can exist at a time
 
 ### High Fluctuation Flag
 
@@ -560,6 +603,8 @@ Each question has the following configurable properties:
 | **Annual** | Question only appears in annual attestation cycles |
 | **Quarterly** | Question only appears in quarterly attestation cycles |
 
+When a model owner opens an attestation, only questions matching the cycle's frequency appear. Annual cycles show Annual + Both questions, and quarterly cycles show Quarterly + Both.
+
 ### Important Notes
 
 - **Question codes cannot be changed** after creation to maintain data integrity
@@ -597,7 +642,7 @@ A: Clean attestations (all "Yes" answers with no comments or linked changes) are
 ### For Administrators
 
 **Q: Can I extend the deadline for a cycle?**
-A: The submission due date cannot be changed after the cycle is opened. Plan deadlines carefully before opening.
+A: After a cycle is opened, you cannot edit any cycle fields (name, period dates, submission due date, or notes). Plan and verify details before opening.
 
 **Q: What if a model owner leaves the company mid-cycle?**
 A: Reassign model ownership to another user. The new owner will see the pending attestation.
@@ -636,4 +681,4 @@ For questions or issues with the attestation module:
 
 ---
 
-*Last Updated: December 2025*
+*Last Updated: January 2026*
