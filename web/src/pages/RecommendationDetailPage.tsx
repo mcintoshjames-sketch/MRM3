@@ -78,7 +78,8 @@ export default function RecommendationDetailPage() {
 
     const fetchUsers = async () => {
         try {
-            const response = await api.get('/auth/users');
+            // Use lookup endpoint - available to all authenticated users
+            const response = await api.get('/auth/users/lookup');
             setUsers(response.data);
         } catch (err) {
             console.error('Failed to fetch users:', err);

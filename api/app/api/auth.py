@@ -32,6 +32,7 @@ from app.schemas.user import (
     UserCreate,
     UserUpdate,
     UserSelfUpdate,
+    UserLookupResponse,
     LOBUnitBrief,
 )
 from app.schemas.entra_user import EntraUserResponse, EntraUserProvisionRequest
@@ -222,6 +223,34 @@ def update_me(
     return get_user_with_lob(db, user)
 
 
+@router.get("/users/lookup", response_model=List[UserLookupResponse])
+def lookup_users(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    search: Optional[str] = None,
+    limit: int = Query(100, ge=1, le=500)
+):
+    """
+    Lookup users for dropdowns and assignments.
+
+    Available to all authenticated users. Returns minimal user info
+    (id, name, email) suitable for selection dropdowns.
+    """
+    query = db.query(User)
+    if search:
+        search_term = f"%{search}%"
+        query = query.filter(
+            or_(
+                User.full_name.ilike(search_term),
+                User.email.ilike(search_term)
+            )
+        )
+    query = query.order_by(User.full_name)
+    if limit:
+        query = query.limit(limit)
+    return query.all()
+
+
 @router.get("/users", response_model=List[UserResponse])
 def list_users(
     db: Session = Depends(get_db),
@@ -229,7 +258,7 @@ def list_users(
     search: Optional[str] = None,
     limit: Optional[int] = Query(None, ge=1, le=100)
 ):
-    """List all users."""
+    """List all users (admin only - returns full user details)."""
     require_admin_user(current_user)
     query = db.query(User).options(
         joinedload(User.regions),

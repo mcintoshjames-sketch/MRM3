@@ -59,6 +59,15 @@ class UserResponse(UserBase):
     model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
+class UserLookupResponse(BaseModel):
+    """Minimal user info for dropdowns and assignments. Available to all authenticated users."""
+    user_id: int
+    full_name: str
+    email: str
+
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
+
+
 class Token(BaseModel):
     access_token: str
     token_type: str
