@@ -375,9 +375,9 @@ export default function ActionPlanModal({ recommendation, users, onClose, onSucc
                                                             </div>
                                                         )}
                                                     </div>
-                                                    {task.owner_id && (
+                                                    {task.owner_id && users.find(u => u.user_id === task.owner_id) && (
                                                         <p className="mt-1 text-xs text-green-600">
-                                                            ✓ Selected: {users.find(u => u.user_id === task.owner_id)?.full_name || 'Loading...'}
+                                                            ✓ Selected: {users.find(u => u.user_id === task.owner_id)!.full_name}
                                                         </p>
                                                     )}
                                                 </div>
