@@ -1,4 +1,5 @@
 """Model Exceptions API routes."""
+from datetime import date
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session, joinedload
@@ -188,6 +189,8 @@ def list_exceptions(
     exception_type: Optional[str] = Query(None, description="Filter by type: UNMITIGATED_PERFORMANCE, OUTSIDE_INTENDED_PURPOSE, USE_PRIOR_TO_VALIDATION"),
     status_filter: Optional[str] = Query(None, alias="status", description="Filter by status: OPEN, ACKNOWLEDGED, CLOSED"),
     region_id: Optional[int] = Query(None, description="Filter by region ID (models deployed to this region)"),
+    detected_from: Optional[date] = Query(None, description="Filter by detected date (from, inclusive)"),
+    detected_to: Optional[date] = Query(None, description="Filter by detected date (to, inclusive)"),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
@@ -201,6 +204,8 @@ def list_exceptions(
     - exception_type: UNMITIGATED_PERFORMANCE | OUTSIDE_INTENDED_PURPOSE | USE_PRIOR_TO_VALIDATION
     - status: OPEN | ACKNOWLEDGED | CLOSED
     - region_id: Get exceptions for models deployed to a specific region
+    - detected_from: Filter by detected date (from, inclusive)
+    - detected_to: Filter by detected date (to, inclusive)
 
     Access Control:
     - Admin/Validator/Global Approver/Regional Approver: See all exceptions
@@ -219,6 +224,10 @@ def list_exceptions(
         query = query.filter(ModelException.exception_type == exception_type)
     if status_filter:
         query = query.filter(ModelException.status == status_filter)
+    if detected_from:
+        query = query.filter(func.date(ModelException.detected_at) >= detected_from)
+    if detected_to:
+        query = query.filter(func.date(ModelException.detected_at) <= detected_to)
     if region_id:
         # Join through Model -> ModelRegion to filter by region
         # Note: Model join may already exist from RLS, but SQLAlchemy handles duplicates

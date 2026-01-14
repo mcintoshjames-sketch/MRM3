@@ -148,6 +148,8 @@ export const exceptionsApi = {
         exception_type?: string;
         status?: string;
         region_id?: number;
+        detected_from?: string;
+        detected_to?: string;
         skip?: number;
         limit?: number;
     }): Promise<PaginatedExceptionResponse> => {

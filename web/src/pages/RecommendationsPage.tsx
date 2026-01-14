@@ -257,7 +257,7 @@ export default function RecommendationsPage() {
                     monitoring_cycle_id: hasMonitoringCycleIdParam ? monitoringCycleIdParam : undefined
                 }),
                 api.get('/models/'),
-                api.get('/auth/users'),
+                api.get('/auth/users').catch(() => ({ data: [] })),  // Graceful fallback for non-admin users
                 api.get(`/taxonomies/by-names/?${taxonomyQueryString}`),
                 api.get('/recommendations/my-tasks').catch(() => ({ data: { tasks: [] } }))
             ]);

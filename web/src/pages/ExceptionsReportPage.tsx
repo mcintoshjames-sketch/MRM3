@@ -29,6 +29,21 @@ const ExceptionsReportPage: React.FC = () => {
     const [statusFilter, setStatusFilter] = useState<string>('');
     const [typeFilter, setTypeFilter] = useState<string>('');
     const [regionFilter, setRegionFilter] = useState<number | null>(null);
+    const [detectedFrom, setDetectedFrom] = useState<string>('');
+    const [detectedTo, setDetectedTo] = useState<string>('');
+
+    // Check if any filters are active
+    const hasActiveFilters = statusFilter !== '' || typeFilter !== '' || regionFilter !== null || detectedFrom !== '' || detectedTo !== '';
+
+    // Clear all filters
+    const clearFilters = () => {
+        setStatusFilter('');
+        setTypeFilter('');
+        setRegionFilter(null);
+        setDetectedFrom('');
+        setDetectedTo('');
+        setSkip(0);
+    };
 
     // Regions for filter
     const [regions, setRegions] = useState<{ region_id: number; code: string; name: string }[]>([]);
@@ -82,6 +97,8 @@ const ExceptionsReportPage: React.FC = () => {
                 status: statusFilter || undefined,
                 exception_type: typeFilter || undefined,
                 region_id: regionFilter || undefined,
+                detected_from: detectedFrom || undefined,
+                detected_to: detectedTo || undefined,
                 skip,
                 limit,
             });
@@ -92,7 +109,7 @@ const ExceptionsReportPage: React.FC = () => {
         } finally {
             setLoading(false);
         }
-    }, [statusFilter, typeFilter, regionFilter, skip, limit]);
+    }, [statusFilter, typeFilter, regionFilter, detectedFrom, detectedTo, skip, limit]);
 
     // Fetch regions for filter
     const fetchRegions = useCallback(async () => {
@@ -462,10 +479,10 @@ const ExceptionsReportPage: React.FC = () => {
 
                 {/* Filters */}
                 <div className="bg-white p-4 rounded-lg shadow-md">
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
-                                Filter by Status
+                            <label className="block text-xs font-medium text-gray-700 mb-1">
+                                Status
                             </label>
                             <select
                                 value={statusFilter}
@@ -473,7 +490,7 @@ const ExceptionsReportPage: React.FC = () => {
                                     setStatusFilter(e.target.value);
                                     setSkip(0);
                                 }}
-                                className="input-field"
+                                className="w-full input-field text-sm"
                             >
                                 <option value="">All Statuses</option>
                                 <option value="OPEN">Open</option>
@@ -482,8 +499,8 @@ const ExceptionsReportPage: React.FC = () => {
                             </select>
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
-                                Filter by Type
+                            <label className="block text-xs font-medium text-gray-700 mb-1">
+                                Type
                             </label>
                             <select
                                 value={typeFilter}
@@ -491,7 +508,7 @@ const ExceptionsReportPage: React.FC = () => {
                                     setTypeFilter(e.target.value);
                                     setSkip(0);
                                 }}
-                                className="input-field"
+                                className="w-full input-field text-sm"
                             >
                                 <option value="">All Types</option>
                                 <option value="UNMITIGATED_PERFORMANCE">Unmitigated Performance Problem</option>
@@ -500,8 +517,8 @@ const ExceptionsReportPage: React.FC = () => {
                             </select>
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
-                                Filter by Region
+                            <label className="block text-xs font-medium text-gray-700 mb-1">
+                                Region
                             </label>
                             <select
                                 value={regionFilter || ''}
@@ -509,7 +526,7 @@ const ExceptionsReportPage: React.FC = () => {
                                     setRegionFilter(e.target.value ? Number(e.target.value) : null);
                                     setSkip(0);
                                 }}
-                                className="input-field"
+                                className="w-full input-field text-sm"
                             >
                                 <option value="">All Regions</option>
                                 {regions.map((region) => (
@@ -519,11 +536,50 @@ const ExceptionsReportPage: React.FC = () => {
                                 ))}
                             </select>
                         </div>
-                        <div className="flex items-end">
-                            <p className="text-sm text-gray-500">
-                                Showing {exceptions.length} of {total} exceptions
-                            </p>
+                        <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">
+                                Detected From
+                            </label>
+                            <input
+                                type="date"
+                                value={detectedFrom}
+                                onChange={(e) => {
+                                    setDetectedFrom(e.target.value);
+                                    setSkip(0);
+                                }}
+                                className="w-full input-field text-sm"
+                            />
                         </div>
+                        <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">
+                                Detected To
+                            </label>
+                            <input
+                                type="date"
+                                value={detectedTo}
+                                onChange={(e) => {
+                                    setDetectedTo(e.target.value);
+                                    setSkip(0);
+                                }}
+                                className="w-full input-field text-sm"
+                            />
+                        </div>
+                    </div>
+
+                    {/* Filter summary and clear button */}
+                    <div className="flex items-center justify-between mt-4 pt-3 border-t border-gray-200">
+                        <div className="text-sm text-gray-600">
+                            Showing <span className="font-medium">{exceptions.length}</span> of <span className="font-medium">{total}</span> exceptions
+                        </div>
+                        {hasActiveFilters && (
+                            <button
+                                type="button"
+                                onClick={clearFilters}
+                                className="text-sm text-red-600 hover:text-red-800"
+                            >
+                                Clear Filters
+                            </button>
+                        )}
                     </div>
                 </div>
 
@@ -552,15 +608,12 @@ const ExceptionsReportPage: React.FC = () => {
                                             <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                                 Detected
                                             </th>
-                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                                Actions
-                                            </th>
                                         </tr>
                                     </thead>
                                     <tbody className="bg-white divide-y divide-gray-200">
                                         {exceptions.length === 0 ? (
                                             <tr>
-                                                <td colSpan={6} className="px-4 py-2 text-center text-gray-500">
+                                                <td colSpan={5} className="px-4 py-2 text-center text-gray-500">
                                                     No exceptions found.
                                                 </td>
                                             </tr>
@@ -603,14 +656,6 @@ const ExceptionsReportPage: React.FC = () => {
                                                     </td>
                                                     <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
                                                         {exc.detected_at?.split('T')[0] || '-'}
-                                                    </td>
-                                                    <td className="px-4 py-2 whitespace-nowrap">
-                                                        <button
-                                                            onClick={() => handleOpenDetail(exc.exception_id)}
-                                                            className="text-blue-600 hover:text-blue-800 text-sm"
-                                                        >
-                                                            View Details
-                                                        </button>
                                                     </td>
                                                 </tr>
                                             ))

@@ -444,7 +444,7 @@ const MonitoringCSVImport: React.FC<MonitoringCSVImportProps> = ({
                 {/* Footer */}
                 <div className="p-4 border-t bg-gray-50 flex justify-between">
                     <button
-                        onClick={currentStep === 'result' ? onClose : reset}
+                        onClick={onClose}
                         disabled={loading}
                         className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 disabled:opacity-50"
                     >

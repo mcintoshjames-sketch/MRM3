@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import Layout from '../components/Layout';
 import MRSAReviewDashboardWidget from '../components/MRSAReviewDashboardWidget';
@@ -7,6 +7,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { irpApi, IRP, IRPCreate, IRPUpdate } from '../api/irp';
 import api from '../api/client';
 import { canManageIrps } from '../utils/roleUtils';
+import MultiSelectDropdown from '../components/MultiSelectDropdown';
 
 interface User {
     user_id: number;
@@ -34,15 +35,77 @@ export default function IRPsPage() {
     });
 
     // Filter state
-    const [showActiveOnly, setShowActiveOnly] = useState(true);
+    const [filters, setFilters] = useState({
+        contact_user_ids: [] as number[],
+        status: 'active' as 'all' | 'active' | 'inactive',
+        review_date_from: '',
+        review_date_to: '',
+        certification_status: 'all' as 'all' | 'certified' | 'not_certified'
+    });
 
-    // Contact user searchable dropdown state
+    // Contact user searchable dropdown state (for form)
     const [contactUserSearch, setContactUserSearch] = useState('');
     const [showContactUserDropdown, setShowContactUserDropdown] = useState(false);
 
-    // Table sorting
-    const filteredIrps = showActiveOnly ? irps.filter(irp => irp.is_active) : irps;
+    // Apply filters
+    const filteredIrps = useMemo(() => {
+        return irps.filter(irp => {
+            // Contact user filter (multi-select)
+            if (filters.contact_user_ids.length > 0 && !filters.contact_user_ids.includes(irp.contact_user_id)) {
+                return false;
+            }
+
+            // Status filter
+            if (filters.status !== 'all') {
+                const shouldBeActive = filters.status === 'active';
+                if (irp.is_active !== shouldBeActive) return false;
+            }
+
+            // Last review date range filter
+            if (filters.review_date_from && irp.latest_review_date) {
+                if (irp.latest_review_date < filters.review_date_from) return false;
+            }
+            if (filters.review_date_to && irp.latest_review_date) {
+                if (irp.latest_review_date > filters.review_date_to) return false;
+            }
+            // If date filter is set but IRP has no review date, exclude it
+            if ((filters.review_date_from || filters.review_date_to) && !irp.latest_review_date) {
+                return false;
+            }
+
+            // Certification status filter
+            if (filters.certification_status !== 'all') {
+                const hasCertification = irp.latest_certification_date !== null && irp.latest_certification_date !== undefined;
+                const shouldBeCertified = filters.certification_status === 'certified';
+                if (hasCertification !== shouldBeCertified) return false;
+            }
+
+            return true;
+        });
+    }, [irps, filters]);
+
+    // Table sorting (applied to filtered data)
     const { sortedData, requestSort, getSortIcon } = useTableSort<IRP>(filteredIrps, 'process_name');
+
+    // Check if any filters are active (for clear button)
+    const hasActiveFilters = useMemo(() => {
+        return filters.contact_user_ids.length > 0 ||
+            filters.status !== 'active' ||
+            filters.review_date_from !== '' ||
+            filters.review_date_to !== '' ||
+            filters.certification_status !== 'all';
+    }, [filters]);
+
+    // Clear all filters
+    const clearFilters = () => {
+        setFilters({
+            contact_user_ids: [],
+            status: 'active',
+            review_date_from: '',
+            review_date_to: '',
+            certification_status: 'all'
+        });
+    };
 
     useEffect(() => {
         fetchData();
@@ -223,19 +286,93 @@ export default function IRPsPage() {
                     <>
                         {/* Filters */}
                         <div className="bg-white p-4 rounded-lg shadow-md mb-6">
-                            <div className="flex items-center gap-4">
-                                <label className="flex items-center gap-2">
-                                    <input
-                                        type="checkbox"
-                                        checked={showActiveOnly}
-                                        onChange={(e) => setShowActiveOnly(e.target.checked)}
-                                        className="h-4 w-4 text-blue-600 rounded"
-                                    />
-                                    <span className="text-sm font-medium text-gray-700">Show Active Only</span>
-                                </label>
-                                <div className="text-sm text-gray-500">
-                                    Showing {sortedData.length} of {irps.length} IRPs
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+                                {/* Contact User */}
+                                <MultiSelectDropdown
+                                    label="Contact"
+                                    placeholder="All Contacts"
+                                    options={users.map(u => ({
+                                        value: u.user_id,
+                                        label: u.full_name,
+                                        secondaryLabel: u.email
+                                    }))}
+                                    selectedValues={filters.contact_user_ids}
+                                    onChange={(values) => setFilters({ ...filters, contact_user_ids: values as number[] })}
+                                />
+
+                                {/* Status */}
+                                <div>
+                                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                                        Status
+                                    </label>
+                                    <select
+                                        value={filters.status}
+                                        onChange={(e) => setFilters({ ...filters, status: e.target.value as 'all' | 'active' | 'inactive' })}
+                                        className="w-full input-field text-sm"
+                                    >
+                                        <option value="all">All Statuses</option>
+                                        <option value="active">Active</option>
+                                        <option value="inactive">Inactive</option>
+                                    </select>
                                 </div>
+
+                                {/* Last Review Date From */}
+                                <div>
+                                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                                        Review Date From
+                                    </label>
+                                    <input
+                                        type="date"
+                                        value={filters.review_date_from}
+                                        onChange={(e) => setFilters({ ...filters, review_date_from: e.target.value })}
+                                        className="w-full input-field text-sm"
+                                    />
+                                </div>
+
+                                {/* Last Review Date To */}
+                                <div>
+                                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                                        Review Date To
+                                    </label>
+                                    <input
+                                        type="date"
+                                        value={filters.review_date_to}
+                                        onChange={(e) => setFilters({ ...filters, review_date_to: e.target.value })}
+                                        className="w-full input-field text-sm"
+                                    />
+                                </div>
+
+                                {/* Certification Status */}
+                                <div>
+                                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                                        Certification
+                                    </label>
+                                    <select
+                                        value={filters.certification_status}
+                                        onChange={(e) => setFilters({ ...filters, certification_status: e.target.value as 'all' | 'certified' | 'not_certified' })}
+                                        className="w-full input-field text-sm"
+                                    >
+                                        <option value="all">All</option>
+                                        <option value="certified">Certified</option>
+                                        <option value="not_certified">Not Certified</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            {/* Filter summary and clear button */}
+                            <div className="flex items-center justify-between mt-4 pt-3 border-t border-gray-200">
+                                <div className="text-sm text-gray-600">
+                                    Showing <span className="font-medium">{sortedData.length}</span> of <span className="font-medium">{irps.length}</span> IRPs
+                                </div>
+                                {hasActiveFilters && (
+                                    <button
+                                        type="button"
+                                        onClick={clearFilters}
+                                        className="text-sm text-red-600 hover:text-red-800"
+                                    >
+                                        Clear Filters
+                                    </button>
+                                )}
                             </div>
                         </div>
 
