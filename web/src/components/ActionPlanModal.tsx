@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { recommendationsApi, Recommendation, ActionPlanTaskCreate } from '../api/recommendations';
 
 interface User {
@@ -48,6 +48,24 @@ export default function ActionPlanModal({ recommendation, users, onClose, onSucc
 
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+
+    // Update search queries when users load (fixes timing issue where users array is empty on mount)
+    useEffect(() => {
+        if (users.length > 0 && recommendation.assigned_to_id) {
+            const assignedUser = users.find(u => u.user_id === recommendation.assigned_to_id);
+            if (assignedUser) {
+                setOwnerSearchQueries(prev =>
+                    prev.map((query, idx) => {
+                        // Only update if empty and task has the assigned owner
+                        if (!query && tasks[idx]?.owner_id === recommendation.assigned_to_id) {
+                            return assignedUser.full_name;
+                        }
+                        return query;
+                    })
+                );
+            }
+        }
+    }, [users, recommendation.assigned_to_id]);
 
     const addTask = () => {
         setTasks([...tasks, {
@@ -358,7 +376,9 @@ export default function ActionPlanModal({ recommendation, users, onClose, onSucc
                                                         )}
                                                     </div>
                                                     {task.owner_id && (
-                                                        <p className="mt-1 text-xs text-green-600">✓ Owner selected</p>
+                                                        <p className="mt-1 text-xs text-green-600">
+                                                            ✓ Selected: {users.find(u => u.user_id === task.owner_id)?.full_name || 'Loading...'}
+                                                        </p>
                                                     )}
                                                 </div>
 
