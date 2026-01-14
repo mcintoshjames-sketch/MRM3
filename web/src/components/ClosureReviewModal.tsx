@@ -71,23 +71,23 @@ export default function ClosureReviewModal({ recommendation, onClose, onSuccess 
                                 {recommendation.action_plan_tasks.map((task, index) => (
                                     <div key={task.task_id} className="flex items-center gap-2">
                                         <span className={`w-5 h-5 flex items-center justify-center rounded-full text-xs ${
-                                            task.completion_status?.code === 'TASK_COMPLETED'
+                                            task.completion_status?.code === 'COMPLETED'
                                                 ? 'bg-green-100 text-green-700'
                                                 : 'bg-gray-200 text-gray-600'
                                         }`}>
-                                            {task.completion_status?.code === 'TASK_COMPLETED' ? '✓' : index + 1}
+                                            {task.completion_status?.code === 'COMPLETED' ? '✓' : index + 1}
                                         </span>
                                         <span className={`text-sm ${
-                                            task.completion_status?.code === 'TASK_COMPLETED'
+                                            task.completion_status?.code === 'COMPLETED'
                                                 ? 'text-gray-700'
                                                 : 'text-gray-500'
                                         }`}>
                                             {task.description}
                                         </span>
                                         <span className={`text-xs px-2 py-0.5 rounded ${
-                                            task.completion_status?.code === 'TASK_COMPLETED'
+                                            task.completion_status?.code === 'COMPLETED'
                                                 ? 'bg-green-100 text-green-700'
-                                                : task.completion_status?.code === 'TASK_IN_PROGRESS'
+                                                : task.completion_status?.code === 'IN_PROGRESS'
                                                     ? 'bg-blue-100 text-blue-700'
                                                     : 'bg-gray-100 text-gray-600'
                                         }`}>

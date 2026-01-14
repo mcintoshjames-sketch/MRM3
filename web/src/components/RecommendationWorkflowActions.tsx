@@ -1,6 +1,8 @@
+import { StatusHistory } from '../api/recommendations';
 
 interface RecommendationWorkflowActionsProps {
     currentStatus: string;
+    statusHistory?: StatusHistory[];
     canFinalize: boolean;
     canSubmitRebuttal: boolean;
     canSubmitActionPlan: boolean;
@@ -23,6 +25,7 @@ interface RecommendationWorkflowActionsProps {
 
 export default function RecommendationWorkflowActions({
     currentStatus,
+    statusHistory,
     canFinalize,
     canSubmitRebuttal,
     canSubmitActionPlan,
@@ -41,6 +44,26 @@ export default function RecommendationWorkflowActions({
     onShowClosureSubmitModal,
     onShowClosureReviewModal,
 }: RecommendationWorkflowActionsProps) {
+    // Get the rework feedback from the most recent REWORK_REQUIRED status change
+    const getReworkFeedback = (): string | null => {
+        if (!statusHistory || currentStatus !== 'REC_REWORK_REQUIRED') return null;
+
+        // Find the most recent transition to REWORK_REQUIRED
+        const reworkEntry = [...statusHistory]
+            .reverse()
+            .find(h => h.new_status?.code === 'REC_REWORK_REQUIRED' || h.status?.code === 'REC_REWORK_REQUIRED');
+
+        if (reworkEntry?.change_reason) {
+            // Extract the actual feedback from "Closure returned for rework: <feedback>"
+            const match = reworkEntry.change_reason.match(/^Closure returned for rework:\s*(.+)$/);
+            if (match) return match[1];
+            // Also handle "Approval rejected: <feedback>"
+            const approvalMatch = reworkEntry.change_reason.match(/^Approval rejected:\s*(.+)$/);
+            if (approvalMatch) return approvalMatch[1];
+            return reworkEntry.change_reason;
+        }
+        return null;
+    };
     // Helper to get status-specific guidance text
     const getStatusGuidance = () => {
         switch (currentStatus) {
@@ -58,8 +81,13 @@ export default function RecommendationWorkflowActions({
                 return 'Action plan submitted. Waiting for validator review and approval.';
             case 'REC_OPEN':
                 return 'Recommendation is active. Developer is working on remediation.';
-            case 'REC_REWORK_REQUIRED':
+            case 'REC_REWORK_REQUIRED': {
+                const feedback = getReworkFeedback();
+                if (feedback) {
+                    return `Additional work required. Validator feedback: "${feedback}"`;
+                }
                 return 'Additional work required based on validator feedback.';
+            }
             case 'REC_PENDING_CLOSURE_REVIEW':
                 return 'Closure submitted. Waiting for validator review.';
             case 'REC_PENDING_APPROVAL':
@@ -176,7 +204,7 @@ export default function RecommendationWorkflowActions({
                             onClick={onShowClosureSubmitModal}
                             className="px-4 py-2 bg-cyan-600 text-white rounded hover:bg-cyan-700"
                         >
-                            Submit for Closure
+                            {currentStatus === 'REC_REWORK_REQUIRED' ? 'Resubmit for Closure' : 'Submit for Closure'}
                         </button>
                     )}
 

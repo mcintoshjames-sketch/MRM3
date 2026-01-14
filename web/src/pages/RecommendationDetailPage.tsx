@@ -238,7 +238,7 @@ export default function RecommendationDetailPage() {
             await recommendationsApi.updateTask(recommendation.recommendation_id, taskId, {
                 completion_status_id: statusId,
                 completion_notes: notes,
-                completed_date: statusId === taskStatuses.find(s => s.code === 'TASK_COMPLETED')?.value_id
+                completed_date: statusId === taskStatuses.find(s => s.code === 'COMPLETED')?.value_id
                     ? new Date().toISOString().split('T')[0]
                     : undefined
             });
@@ -476,6 +476,7 @@ export default function RecommendationDetailPage() {
             {!isTerminal && (
                 <RecommendationWorkflowActions
                     currentStatus={currentStatus}
+                    statusHistory={recommendation.status_history}
                     canFinalize={canFinalize}
                     canSubmitRebuttal={canSubmitRebuttal}
                     canSubmitActionPlan={canSubmitActionPlan}
@@ -586,9 +587,9 @@ export default function RecommendationDetailPage() {
                                                 <div className="flex items-center gap-2 mb-2">
                                                     <span className="text-sm font-medium text-gray-500">Task {index + 1}</span>
                                                     <span className={`px-2 py-0.5 text-xs rounded ${
-                                                        task.completion_status?.code === 'TASK_COMPLETED'
+                                                        task.completion_status?.code === 'COMPLETED'
                                                             ? 'bg-green-100 text-green-800'
-                                                            : task.completion_status?.code === 'TASK_IN_PROGRESS'
+                                                            : task.completion_status?.code === 'IN_PROGRESS'
                                                                 ? 'bg-blue-100 text-blue-800'
                                                                 : 'bg-gray-100 text-gray-800'
                                                     }`}>

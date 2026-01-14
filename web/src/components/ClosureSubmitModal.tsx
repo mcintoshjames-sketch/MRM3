@@ -12,9 +12,12 @@ export default function ClosureSubmitModal({ recommendation, onClose, onSuccess 
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
+    // Check if this is a resubmission (status is REWORK_REQUIRED)
+    const isResubmission = recommendation.current_status?.code === 'REC_REWORK_REQUIRED';
+
     // Check if all tasks are completed
     const allTasksCompleted = recommendation.action_plan_tasks?.every(
-        task => task.completion_status?.code === 'TASK_COMPLETED'
+        task => task.completion_status?.code === 'COMPLETED'
     ) ?? true;
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -44,7 +47,7 @@ export default function ClosureSubmitModal({ recommendation, onClose, onSuccess 
             <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
                 <div className="p-6">
                     <div className="flex justify-between items-center mb-4">
-                        <h3 className="text-lg font-bold">Submit for Closure</h3>
+                        <h3 className="text-lg font-bold">{isResubmission ? 'Resubmit for Closure' : 'Submit for Closure'}</h3>
                         <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
                             <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -80,7 +83,7 @@ export default function ClosureSubmitModal({ recommendation, onClose, onSuccess 
                                 <h4 className="font-medium mb-2">Action Plan Summary</h4>
                                 <div className="text-sm">
                                     <span className="text-green-600">
-                                        {recommendation.action_plan_tasks.filter(t => t.completion_status?.code === 'TASK_COMPLETED').length}
+                                        {recommendation.action_plan_tasks.filter(t => t.completion_status?.code === 'COMPLETED').length}
                                     </span>
                                     <span className="text-gray-600"> of </span>
                                     <span className="font-medium">{recommendation.action_plan_tasks.length}</span>
@@ -132,7 +135,7 @@ export default function ClosureSubmitModal({ recommendation, onClose, onSuccess 
                                 className="px-4 py-2 bg-cyan-600 text-white rounded hover:bg-cyan-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
                                 disabled={loading || !allTasksCompleted}
                             >
-                                {loading ? 'Submitting...' : 'Submit for Closure Review'}
+                                {loading ? 'Submitting...' : isResubmission ? 'Resubmit for Closure Review' : 'Submit for Closure Review'}
                             </button>
                         </div>
                     </form>
