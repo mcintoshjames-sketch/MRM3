@@ -403,6 +403,7 @@ class RecommendationResponse(BaseModel):
     recommendation_id: int
     recommendation_code: str
     model: ModelSummary
+    model_accessible: bool = True  # Whether current user can access the model details page
     # Source linkage (optional - at least one should be set)
     validation_request_id: Optional[int] = None
     validation_request: Optional[ValidationRequestSummary] = None
@@ -416,6 +417,7 @@ class RecommendationResponse(BaseModel):
     category: Optional[TaxonomyValueResponse] = None
     current_status: TaxonomyValueResponse
     created_by: UserSummary
+    assigned_to_id: int
     assigned_to: UserSummary
     original_target_date: date
     current_target_date: date
@@ -444,6 +446,7 @@ class RecommendationListResponse(BaseModel):
     recommendation_id: int
     recommendation_code: str
     model: ModelSummary
+    model_accessible: bool = True  # Whether current user can access the model details page
     title: str
     # Source linkage info
     validation_request_id: Optional[int] = None
@@ -453,6 +456,7 @@ class RecommendationListResponse(BaseModel):
     priority: TaxonomyValueResponse
     category: Optional[TaxonomyValueResponse] = None
     current_status: TaxonomyValueResponse
+    assigned_to_id: int
     assigned_to: UserSummary
     original_target_date: date
     current_target_date: date

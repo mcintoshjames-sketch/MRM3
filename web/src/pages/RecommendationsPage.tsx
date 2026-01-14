@@ -373,12 +373,16 @@ export default function RecommendationsPage() {
             header: 'Model',
             sortKey: 'model.model_name',
             cell: (rec) => rec.model ? (
-                <Link
-                    to={`/models/${rec.model.model_id}`}
-                    className="text-blue-600 hover:text-blue-800 hover:underline"
-                >
-                    {rec.model.model_name}
-                </Link>
+                rec.model_accessible !== false ? (
+                    <Link
+                        to={`/models/${rec.model.model_id}`}
+                        className="text-blue-600 hover:text-blue-800 hover:underline"
+                    >
+                        {rec.model.model_name}
+                    </Link>
+                ) : (
+                    <span className="text-gray-900">{rec.model.model_name}</span>
+                )
             ) : (
                 <span className="text-gray-400">-</span>
             ),

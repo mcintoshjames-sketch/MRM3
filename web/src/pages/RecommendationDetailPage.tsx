@@ -306,9 +306,13 @@ export default function RecommendationDetailPage() {
                 <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                     <div>
                         <span className="text-gray-500">Model:</span>{' '}
-                        <Link to={`/models/${recommendation.model?.model_id}`} className="text-blue-600 hover:underline">
-                            {recommendation.model?.model_name}
-                        </Link>
+                        {recommendation.model_accessible !== false ? (
+                            <Link to={`/models/${recommendation.model?.model_id}`} className="text-blue-600 hover:underline">
+                                {recommendation.model?.model_name}
+                            </Link>
+                        ) : (
+                            <span className="text-gray-900">{recommendation.model?.model_name}</span>
+                        )}
                     </div>
                     <div>
                         <span className="text-gray-500">Assigned To:</span>{' '}

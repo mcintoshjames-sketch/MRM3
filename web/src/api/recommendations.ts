@@ -38,6 +38,7 @@ export interface Recommendation {
     recommendation_id: number;
     recommendation_code: string;
     model_id: number;
+    model_accessible?: boolean;  // Whether current user can access the model details page
     // Source linkage (optional - at least one should be set)
     validation_request_id: number | null;
     validation_request?: ValidationRequestSummary | null;
@@ -84,6 +85,7 @@ export interface RecommendationListItem {
     recommendation_id: number;
     recommendation_code: string;
     model_id: number;
+    model_accessible?: boolean;  // Whether current user can access the model details page
     // Source linkage info
     validation_request_id: number | null;
     monitoring_cycle_id: number | null;

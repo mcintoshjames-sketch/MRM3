@@ -16,7 +16,7 @@ from app.core.time import utc_now
 from app.core.recommendation_status import TERMINAL_RECOMMENDATION_STATUS_CODES
 from app.core.deps import get_current_user
 from app.core.roles import is_admin, is_validator, is_global_approver, is_regional_approver
-from app.core.rls import can_see_all_data, can_see_recommendation
+from app.core.rls import can_see_all_data, can_see_recommendation, can_access_model
 from app.models import (
     User, Model, TaxonomyValue, Taxonomy, AuditLog, Region, ModelRegion,
     Recommendation, ActionPlanTask, RecommendationRebuttal,
@@ -1176,7 +1176,16 @@ def list_recommendations(
 
     recommendations = query.order_by(
         desc(Recommendation.created_at)).offset(offset).limit(limit).all()
-    return recommendations
+
+    # Add model_accessible flag to each recommendation
+    # This indicates whether the current user can access the model details page
+    result = []
+    for rec in recommendations:
+        rec_dict = RecommendationListResponse.model_validate(rec).model_dump()
+        rec_dict['model_accessible'] = can_access_model(rec.model_id, current_user, db)
+        result.append(rec_dict)
+
+    return result
 
 
 # ==================== DASHBOARD & REPORTS ENDPOINTS ====================
@@ -1629,7 +1638,11 @@ def get_recommendation(
             detail="Recommendation not found"
         )
 
-    return recommendation
+    # Add model_accessible flag to indicate whether user can access the model details page
+    rec_dict = RecommendationResponse.model_validate(recommendation).model_dump()
+    rec_dict['model_accessible'] = can_access_model(recommendation.model_id, current_user, db)
+
+    return rec_dict
 
 
 @router.get("/{recommendation_id}/limitations", response_model=List[LimitationListResponse])
