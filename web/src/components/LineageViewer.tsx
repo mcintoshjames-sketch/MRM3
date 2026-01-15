@@ -33,6 +33,7 @@ export default function LineageViewer({ modelId, modelName }: Props) {
     const [direction, setDirection] = useState<'upstream' | 'downstream' | 'both'>('both');
     const [maxDepth, setMaxDepth] = useState(5);
     const [includeInactive, setIncludeInactive] = useState(false);
+    const [includeHierarchy, setIncludeHierarchy] = useState(true);
 
     useEffect(() => {
         fetchLineage();
@@ -62,7 +63,8 @@ export default function LineageViewer({ modelId, modelName }: Props) {
             const params = new URLSearchParams({
                 direction,
                 max_depth: maxDepth.toString(),
-                include_inactive: includeInactive.toString()
+                include_inactive: includeInactive.toString(),
+                include_hierarchy: includeHierarchy.toString()
             });
 
             const response = await api.get(`/models/${modelId}/dependencies/lineage/pdf?${params.toString()}`, {
@@ -171,7 +173,7 @@ export default function LineageViewer({ modelId, modelName }: Props) {
             <div className="space-y-6">
                 {/* Controls */}
                 <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                         <div>
                             <label htmlFor="direction-select-empty" className="block text-sm font-medium text-gray-700 mb-2">
                                 Direction
@@ -217,6 +219,19 @@ export default function LineageViewer({ modelId, modelName }: Props) {
                             </label>
                         </div>
                         <div className="flex items-end">
+                            <label className="flex items-center space-x-2 mb-2" title="Show parent and sub-model relationships in PDF export">
+                                <input
+                                    type="checkbox"
+                                    checked={includeHierarchy}
+                                    onChange={(e) => setIncludeHierarchy(e.target.checked)}
+                                    className="h-4 w-4 text-cyan-600 focus:ring-cyan-500 border-gray-300 rounded"
+                                />
+                                <span className="text-sm font-medium text-gray-700">
+                                    Include Hierarchy
+                                </span>
+                            </label>
+                        </div>
+                        <div className="flex items-end">
                             <button
                                 onClick={handleExportPDF}
                                 className="w-full inline-flex justify-center items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
@@ -248,7 +263,7 @@ export default function LineageViewer({ modelId, modelName }: Props) {
         <div className="space-y-6">
             {/* Controls */}
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                     <div>
                         <label htmlFor="direction-select" className="block text-sm font-medium text-gray-700 mb-2">
                             Direction
@@ -290,6 +305,19 @@ export default function LineageViewer({ modelId, modelName }: Props) {
                             />
                             <span className="text-sm font-medium text-gray-700">
                                 Include Inactive
+                            </span>
+                        </label>
+                    </div>
+                    <div className="flex items-end">
+                        <label className="flex items-center space-x-2 mb-2" title="Show parent and sub-model relationships in PDF export">
+                            <input
+                                type="checkbox"
+                                checked={includeHierarchy}
+                                onChange={(e) => setIncludeHierarchy(e.target.checked)}
+                                className="h-4 w-4 text-cyan-600 focus:ring-cyan-500 border-gray-300 rounded"
+                            />
+                            <span className="text-sm font-medium text-gray-700">
+                                Include Hierarchy
                             </span>
                         </label>
                     </div>

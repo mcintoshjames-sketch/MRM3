@@ -716,3 +716,207 @@ class TestDeleteDependency:
             }
         )
         assert response.status_code == 201
+
+
+# --- Tests for Lineage with Hierarchy ---
+
+from app.models.model_hierarchy import ModelHierarchy
+
+
+@pytest.fixture
+def hierarchy_taxonomy(db_session):
+    """Create Model Hierarchy Type taxonomy."""
+    taxonomy = Taxonomy(name="Model Hierarchy Type", is_system=True)
+    db_session.add(taxonomy)
+    db_session.flush()
+
+    sub_model = TaxonomyValue(
+        taxonomy_id=taxonomy.taxonomy_id,
+        code="SUB_MODEL",
+        label="Sub-Model",
+        description="Child model that is a sub-component of parent model",
+        sort_order=1
+    )
+    db_session.add(sub_model)
+    db_session.commit()
+    db_session.refresh(sub_model)
+    return sub_model
+
+
+class TestLineageWithHierarchy:
+    """Test lineage endpoint with hierarchy data."""
+
+    def test_lineage_excludes_hierarchy_by_default(self, client, auth_headers, model_a):
+        """Test that hierarchy data is NOT included by default."""
+        response = client.get(
+            f"/models/{model_a.model_id}/dependencies/lineage",
+            headers=auth_headers
+        )
+        assert response.status_code == 200
+        data = response.json()
+
+        # Hierarchy should not be present in center model
+        assert "hierarchy" not in data["model"]
+
+    def test_lineage_includes_hierarchy_when_requested(
+        self, client, auth_headers, model_a, model_b, hierarchy_taxonomy, db_session
+    ):
+        """Test that hierarchy data is included when include_hierarchy=true."""
+        # Create hierarchy: model_a is parent of model_b
+        hierarchy = ModelHierarchy(
+            parent_model_id=model_a.model_id,
+            child_model_id=model_b.model_id,
+            relation_type_id=hierarchy_taxonomy.value_id
+        )
+        db_session.add(hierarchy)
+        db_session.commit()
+
+        # Request lineage for model_a with include_hierarchy
+        response = client.get(
+            f"/models/{model_a.model_id}/dependencies/lineage?include_hierarchy=true",
+            headers=auth_headers
+        )
+        assert response.status_code == 200
+        data = response.json()
+
+        # Check center model has hierarchy
+        assert "hierarchy" in data["model"]
+        assert data["model"]["hierarchy"]["parent"] is None  # model_a has no parent
+        assert len(data["model"]["hierarchy"]["children"]) == 1
+        assert data["model"]["hierarchy"]["children"][0]["model_id"] == model_b.model_id
+        assert data["model"]["hierarchy"]["children"][0]["model_name"] == "Model B"
+
+    def test_lineage_includes_parent_hierarchy(
+        self, client, auth_headers, model_a, model_b, hierarchy_taxonomy, db_session
+    ):
+        """Test that parent hierarchy is included for child model."""
+        # Create hierarchy: model_a is parent of model_b
+        hierarchy = ModelHierarchy(
+            parent_model_id=model_a.model_id,
+            child_model_id=model_b.model_id,
+            relation_type_id=hierarchy_taxonomy.value_id
+        )
+        db_session.add(hierarchy)
+        db_session.commit()
+
+        # Request lineage for model_b (the child) with include_hierarchy
+        response = client.get(
+            f"/models/{model_b.model_id}/dependencies/lineage?include_hierarchy=true",
+            headers=auth_headers
+        )
+        assert response.status_code == 200
+        data = response.json()
+
+        # Check child model has parent hierarchy
+        assert "hierarchy" in data["model"]
+        assert data["model"]["hierarchy"]["parent"] is not None
+        assert data["model"]["hierarchy"]["parent"]["model_id"] == model_a.model_id
+        assert data["model"]["hierarchy"]["parent"]["model_name"] == "Model A"
+        assert len(data["model"]["hierarchy"]["children"]) == 0
+
+    def test_lineage_hierarchy_respects_include_inactive(
+        self, client, auth_headers, model_a, model_b, hierarchy_taxonomy, db_session
+    ):
+        """Test that inactive hierarchy relationships are filtered correctly."""
+        from datetime import date, timedelta
+
+        # Create ended hierarchy relationship
+        hierarchy = ModelHierarchy(
+            parent_model_id=model_a.model_id,
+            child_model_id=model_b.model_id,
+            relation_type_id=hierarchy_taxonomy.value_id,
+            end_date=date.today() - timedelta(days=1)  # Ended yesterday
+        )
+        db_session.add(hierarchy)
+        db_session.commit()
+
+        # Without include_inactive - parent should not appear
+        response = client.get(
+            f"/models/{model_b.model_id}/dependencies/lineage?include_hierarchy=true",
+            headers=auth_headers
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["model"]["hierarchy"]["parent"] is None
+
+        # With include_inactive - parent should appear
+        response = client.get(
+            f"/models/{model_b.model_id}/dependencies/lineage?include_hierarchy=true&include_inactive=true",
+            headers=auth_headers
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["model"]["hierarchy"]["parent"] is not None
+        assert data["model"]["hierarchy"]["parent"]["model_id"] == model_a.model_id
+
+    def test_lineage_pdf_with_hierarchy(
+        self, client, auth_headers, model_a, model_b, hierarchy_taxonomy, db_session
+    ):
+        """Test PDF export includes hierarchy when requested."""
+        # Create hierarchy
+        hierarchy = ModelHierarchy(
+            parent_model_id=model_a.model_id,
+            child_model_id=model_b.model_id,
+            relation_type_id=hierarchy_taxonomy.value_id
+        )
+        db_session.add(hierarchy)
+        db_session.commit()
+
+        response = client.get(
+            f"/models/{model_a.model_id}/dependencies/lineage/pdf?include_hierarchy=true",
+            headers=auth_headers
+        )
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "application/pdf"
+        # PDF binary should be non-empty (at least 1KB)
+        assert len(response.content) > 1000
+
+    def test_lineage_pdf_without_hierarchy_unchanged(
+        self, client, auth_headers, model_a
+    ):
+        """Test that PDF export without hierarchy still works (backward compat)."""
+        response = client.get(
+            f"/models/{model_a.model_id}/dependencies/lineage/pdf",
+            headers=auth_headers
+        )
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "application/pdf"
+        assert len(response.content) > 1000
+
+    def test_lineage_hierarchy_on_dependency_nodes(
+        self, client, auth_headers, model_a, model_b, model_c, dependency_taxonomy, hierarchy_taxonomy, db_session
+    ):
+        """Test that hierarchy data appears on dependency nodes, not just center model."""
+        # Create dependency: model_a -> model_b (model_a feeds model_b)
+        dependency = ModelFeedDependency(
+            feeder_model_id=model_a.model_id,
+            consumer_model_id=model_b.model_id,
+            dependency_type_id=dependency_taxonomy["input_data"].value_id,
+            is_active=True
+        )
+        db_session.add(dependency)
+
+        # Create hierarchy: model_a is parent of model_c
+        hierarchy = ModelHierarchy(
+            parent_model_id=model_a.model_id,
+            child_model_id=model_c.model_id,
+            relation_type_id=hierarchy_taxonomy.value_id
+        )
+        db_session.add(hierarchy)
+        db_session.commit()
+
+        # Request lineage for model_b with hierarchy
+        response = client.get(
+            f"/models/{model_b.model_id}/dependencies/lineage?include_hierarchy=true",
+            headers=auth_headers
+        )
+        assert response.status_code == 200
+        data = response.json()
+
+        # model_a should appear in upstream with hierarchy info
+        assert len(data.get("upstream", [])) == 1
+        upstream_node = data["upstream"][0]
+        assert upstream_node["model_id"] == model_a.model_id
+        assert "hierarchy" in upstream_node
+        assert len(upstream_node["hierarchy"]["children"]) == 1
+        assert upstream_node["hierarchy"]["children"][0]["model_id"] == model_c.model_id

@@ -10,6 +10,7 @@ from app.models.user import User
 from app.models.model import Model
 from app.models.model_feed_dependency import ModelFeedDependency
 from app.models.model_application import ModelApplication
+from app.models.model_hierarchy import ModelHierarchy
 from app.models.taxonomy import TaxonomyValue
 from app.models.audit_log import AuditLog
 from app.schemas.model_relationships import (
@@ -21,6 +22,7 @@ from app.schemas.model_relationships import (
     DependencyTypeInfo,
 )
 import io
+import math
 from fastapi.responses import StreamingResponse
 from fpdf import FPDF
 
@@ -46,6 +48,125 @@ def check_admin(user: User):
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required for dependency management"
         )
+
+
+# --- Hierarchy bulk loading helpers for lineage ---
+
+def _collect_all_model_ids_from_lineage(lineage_data: dict) -> Set[int]:
+    """Recursively collect all model_ids from the lineage tree."""
+    ids: Set[int] = set()
+
+    def collect_from_node(node: dict):
+        if node.get("node_type") == "model" and "model_id" in node:
+            ids.add(node["model_id"])
+        # Recurse into upstream/downstream
+        for upstream in node.get("upstream", []):
+            collect_from_node(upstream)
+        for downstream in node.get("downstream", []):
+            collect_from_node(downstream)
+
+    # Center model
+    if "model" in lineage_data:
+        collect_from_node(lineage_data["model"])
+
+    # Upstream tree
+    for node in lineage_data.get("upstream", []):
+        collect_from_node(node)
+
+    # Downstream tree
+    for node in lineage_data.get("downstream", []):
+        collect_from_node(node)
+
+    return ids
+
+
+def _bulk_load_hierarchy(
+    db: Session,
+    model_ids: Set[int],
+    include_inactive: bool = False
+) -> dict[int, dict]:
+    """
+    Bulk fetch all hierarchy relationships for given model IDs.
+
+    Returns: {model_id: {"parent": {...} or None, "children": [...]}}
+    """
+    if not model_ids:
+        return {}
+
+    # Initialize result with empty hierarchy for all models
+    result: dict[int, dict] = {mid: {"parent": None, "children": []} for mid in model_ids}
+
+    # Build query for all hierarchy relationships involving these models
+    query = db.query(ModelHierarchy).options(
+        joinedload(ModelHierarchy.parent_model),
+        joinedload(ModelHierarchy.child_model),
+        joinedload(ModelHierarchy.relation_type)
+    ).filter(
+        (ModelHierarchy.parent_model_id.in_(model_ids)) |
+        (ModelHierarchy.child_model_id.in_(model_ids))
+    )
+
+    if not include_inactive:
+        query = query.filter(
+            (ModelHierarchy.end_date == None) |
+            (ModelHierarchy.end_date >= func.current_date())
+        )
+
+    # Order by ID for deterministic parent selection in case of legacy data with multiple parents
+    query = query.order_by(ModelHierarchy.id.asc())
+
+    relationships = query.all()
+
+    # Build the hierarchy map
+    for rel in relationships:
+        relation_label = rel.relation_type.label if rel.relation_type else "Sub-Model"
+
+        # If this model is a child, set its parent
+        if rel.child_model_id in model_ids:
+            # Only set parent if not already set (single-parent rule, take first)
+            if result[rel.child_model_id]["parent"] is None:
+                result[rel.child_model_id]["parent"] = {
+                    "model_id": rel.parent_model.model_id,
+                    "model_name": rel.parent_model.model_name,
+                    "relation_type": relation_label
+                }
+
+        # If this model is a parent, add to its children
+        if rel.parent_model_id in model_ids:
+            result[rel.parent_model_id]["children"].append({
+                "model_id": rel.child_model.model_id,
+                "model_name": rel.child_model.model_name,
+                "relation_type": relation_label
+            })
+
+    return result
+
+
+def _attach_hierarchy_to_nodes(lineage_data: dict, hierarchy_map: dict[int, dict]):
+    """Recursively attach hierarchy data to all model nodes in the lineage tree."""
+
+    def attach_to_node(node: dict):
+        if node.get("node_type") == "model" and "model_id" in node:
+            model_id = node["model_id"]
+            if model_id in hierarchy_map:
+                node["hierarchy"] = hierarchy_map[model_id]
+        # Recurse into upstream/downstream
+        for upstream in node.get("upstream", []):
+            attach_to_node(upstream)
+        for downstream in node.get("downstream", []):
+            attach_to_node(downstream)
+
+    # Center model
+    if "model" in lineage_data:
+        attach_to_node(lineage_data["model"])
+
+    # Upstream tree
+    for node in lineage_data.get("upstream", []):
+        attach_to_node(node)
+
+    # Downstream tree
+    for node in lineage_data.get("downstream", []):
+        attach_to_node(node)
 
 
 def detect_cycle(
@@ -511,6 +632,7 @@ def get_dependency_lineage(
     direction: str = "both",  # "upstream", "downstream", or "both"
     max_depth: int = 10,
     include_inactive: bool = False,
+    include_hierarchy: bool = False,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -524,9 +646,10 @@ def get_dependency_lineage(
     - direction: "upstream" (feeders), "downstream" (consumers), or "both"
     - max_depth: Maximum depth to traverse (default 10, prevents infinite loops)
     - include_inactive: Include inactive dependencies
+    - include_hierarchy: Include parent/sub-model hierarchy for each model node
 
     Returns a dictionary with:
-    - model: The center model info
+    - model: The center model info (with optional hierarchy)
     - upstream: List of upstream dependencies (models that feed this model)
     - downstream: List of downstream dependencies (models that consume from this model)
     """
@@ -700,6 +823,12 @@ def get_dependency_lineage(
     if direction in ["downstream", "both"]:
         response["downstream"] = trace_downstream(model_id)
 
+    # Attach hierarchy data if requested (bulk fetch for performance)
+    if include_hierarchy:
+        all_model_ids = _collect_all_model_ids_from_lineage(response)
+        hierarchy_map = _bulk_load_hierarchy(db, all_model_ids, include_inactive)
+        _attach_hierarchy_to_nodes(response, hierarchy_map)
+
     return response
 
 
@@ -715,7 +844,209 @@ class LineagePDF(FPDF):
         self.set_font('helvetica', 'I', 8)
         self.cell(0, 10, f'Page {self.page_no()}/{{nb}}', align='C')
 
-    def draw_path(self, path, path_idx):
+    # Hierarchy constants
+    HIER_BOX_W = 40  # Smaller boxes for hierarchy nodes
+    HIER_BOX_H = 15
+    HIER_GAP = 8     # Gap between main node and hierarchy
+    MAX_VISIBLE_CHILDREN = 3  # Truncate if more
+
+    # Box dimensions (for reference in metrics calculation)
+    BOX_W = 50
+    BOX_H = 25
+    GAP = 10
+
+    # Colors
+    COLORS = {
+        'center': {'fill': (235, 248, 255), 'border': (66, 153, 225)},
+        'upstream': {'fill': (240, 253, 244), 'border': (74, 222, 128)},
+        'downstream': {'fill': (250, 245, 255), 'border': (192, 132, 252)},
+        'application': {'fill': (255, 251, 235), 'border': (245, 158, 11)},
+        'hierarchy': {'fill': (236, 254, 255), 'border': (34, 211, 238)},
+    }
+
+    def _calculate_row_metrics(self, path: list) -> dict:
+        """Calculate consistent row height based on max hierarchy requirements."""
+        extra_top = 0
+        extra_bottom = 0
+
+        for node in path:
+            hier = node.get('hierarchy', {})
+            if hier and hier.get('parent'):
+                extra_top = max(extra_top, self.HIER_BOX_H + self.HIER_GAP)
+            if hier and hier.get('children'):
+                extra_bottom = max(extra_bottom, self.HIER_BOX_H + self.HIER_GAP)
+
+        return {
+            "extra_top": extra_top,
+            "extra_bottom": extra_bottom,
+            "row_height": extra_top + self.BOX_H + extra_bottom + self.GAP + 10
+        }
+
+    def _draw_dashed_line(self, x1: float, y1: float, x2: float, y2: float, dash_len: float = 2, gap_len: float = 1):
+        """Draw a dashed line between two points."""
+        length = math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+        if length == 0:
+            return
+
+        # Unit direction vector
+        ux = (x2 - x1) / length
+        uy = (y2 - y1) / length
+
+        cx, cy = x1, y1
+        drawing = True
+        traveled = 0
+
+        while traveled < length:
+            if drawing:
+                step = min(dash_len, length - traveled)
+                ex = cx + ux * step
+                ey = cy + uy * step
+                self.line(cx, cy, ex, ey)
+                cx, cy = ex, ey
+                traveled += step
+            else:
+                step = min(gap_len, length - traveled)
+                cx += ux * step
+                cy += uy * step
+                traveled += step
+            drawing = not drawing
+
+    def _draw_hierarchy_node(self, x: float, y: float, node_info: dict, is_parent: bool = True):
+        """Draw a smaller hierarchy node (parent or child)."""
+        colors = self.COLORS['hierarchy']
+        self.set_fill_color(*colors['fill'])
+        self.set_draw_color(*colors['border'])
+        self.set_line_width(0.3)
+
+        self.rect(x, y, self.HIER_BOX_W, self.HIER_BOX_H, style='FD')
+
+        # Model name (truncated)
+        self.set_xy(x + 1, y + 2)
+        self.set_font("helvetica", 'B', 7)
+        self.set_text_color(0, 0, 0)
+        name = node_info.get('model_name', 'Unknown')
+        if len(name) > 18:
+            name = name[:15] + '...'
+        self.cell(self.HIER_BOX_W - 2, 4, name, align='C')
+
+        # Relation type
+        self.set_xy(x + 1, y + 7)
+        self.set_font("helvetica", '', 6)
+        self.set_text_color(80, 80, 80)
+        rel_type = node_info.get('relation_type', 'Sub-Model')
+        prefix = "Parent" if is_parent else "Child"
+        self.cell(self.HIER_BOX_W - 2, 3, f"[{prefix}: {rel_type}]", align='C')
+
+        # Model ID
+        self.set_xy(x + 1, y + 11)
+        self.set_font("helvetica", '', 5)
+        model_id = node_info.get('model_id', '?')
+        self.cell(self.HIER_BOX_W - 2, 3, f"ID: {model_id}", align='C')
+
+    def _draw_hierarchy_for_node(self, node_x: float, node_y: float, box_w: float, box_h: float, hierarchy_info: dict):
+        """Draw parent above and children below a main node."""
+        node_center_x = node_x + box_w / 2
+
+        # Draw parent above
+        parent = hierarchy_info.get('parent')
+        if parent:
+            parent_x = node_center_x - self.HIER_BOX_W / 2
+            parent_y = node_y - self.HIER_GAP - self.HIER_BOX_H
+
+            self._draw_hierarchy_node(parent_x, parent_y, parent, is_parent=True)
+
+            # Draw dashed line from parent bottom to node top
+            self.set_draw_color(*self.COLORS['hierarchy']['border'])
+            self.set_line_width(0.2)
+            self._draw_dashed_line(
+                node_center_x, parent_y + self.HIER_BOX_H,
+                node_center_x, node_y
+            )
+
+        # Draw children below (max 3 visible)
+        children = hierarchy_info.get('children', [])[:self.MAX_VISIBLE_CHILDREN]
+        if children:
+            total_width = len(children) * self.HIER_BOX_W + (len(children) - 1) * 5
+            start_x = node_center_x - total_width / 2
+            child_y = node_y + box_h + self.HIER_GAP
+
+            for i, child in enumerate(children):
+                child_x = start_x + i * (self.HIER_BOX_W + 5)
+                self._draw_hierarchy_node(child_x, child_y, child, is_parent=False)
+
+                # Draw dashed line from node bottom to child top
+                child_center_x = child_x + self.HIER_BOX_W / 2
+                self.set_draw_color(*self.COLORS['hierarchy']['border'])
+                self.set_line_width(0.2)
+                self._draw_dashed_line(
+                    node_center_x, node_y + box_h,
+                    child_center_x, child_y
+                )
+
+            # Indicate more children if truncated
+            all_children = hierarchy_info.get('children', [])
+            if len(all_children) > self.MAX_VISIBLE_CHILDREN:
+                more_count = len(all_children) - self.MAX_VISIBLE_CHILDREN
+                self.set_xy(start_x + total_width + 3, child_y + self.HIER_BOX_H / 2 - 2)
+                self.set_font("helvetica", 'I', 6)
+                self.set_text_color(100, 100, 100)
+                self.cell(20, 4, f"+{more_count} more")
+
+    def draw_legend(self):
+        """Draw legend explaining visual elements."""
+        legend_x = self.w - 75  # Right side of page
+        legend_y = 20  # Below header
+
+        # Background box for legend
+        self.set_fill_color(250, 250, 250)
+        self.set_draw_color(200, 200, 200)
+        self.rect(legend_x - 2, legend_y - 2, 72, 58, 'FD')
+
+        self.set_font("helvetica", 'B', 9)
+        self.set_text_color(0, 0, 0)
+        self.set_xy(legend_x, legend_y)
+        self.cell(68, 5, "Legend", align='L')
+
+        y = legend_y + 7
+        items = [
+            ("Center Model", self.COLORS['center']),
+            ("Upstream (Feeder)", self.COLORS['upstream']),
+            ("Downstream (Consumer)", self.COLORS['downstream']),
+            ("Application", self.COLORS['application']),
+            ("Parent/Sub-Model", self.COLORS['hierarchy']),
+        ]
+
+        for label, colors in items:
+            self.set_fill_color(*colors['fill'])
+            self.set_draw_color(*colors['border'])
+            self.rect(legend_x, y, 8, 4, 'FD')
+            self.set_xy(legend_x + 10, y)
+            self.set_font("helvetica", '', 7)
+            self.set_text_color(0, 0, 0)
+            self.cell(55, 4, label)
+            y += 6
+
+        # Line styles section
+        y += 2
+        self.set_font("helvetica", '', 7)
+        self.set_text_color(0, 0, 0)
+
+        # Solid line (data flow)
+        self.set_draw_color(100, 100, 100)
+        self.set_line_width(0.3)
+        self.line(legend_x, y + 2, legend_x + 15, y + 2)
+        self.set_xy(legend_x + 17, y)
+        self.cell(50, 4, "Data Flow (solid)")
+
+        y += 6
+        # Dashed line (hierarchy)
+        self.set_draw_color(*self.COLORS['hierarchy']['border'])
+        self.set_line_width(0.2)
+        self._draw_dashed_line(legend_x, y + 2, legend_x + 15, y + 2)
+        self.set_xy(legend_x + 17, y)
+        self.cell(50, 4, "Hierarchy (dashed)")
+
+    def draw_path(self, path, path_idx, include_hierarchy: bool = False):
         self.set_font("helvetica", 'B', 12)
         self.set_text_color(0, 0, 0)
         self.cell(0, 10, f"Path #{path_idx}", new_x="LMARGIN", new_y="NEXT")
@@ -728,8 +1059,19 @@ class LineagePDF(FPDF):
         margin = self.l_margin
         page_w = self.w - 2 * margin
 
+        # Pre-calculate layout metrics for consistent row heights when hierarchy is included
+        if include_hierarchy:
+            metrics = self._calculate_row_metrics(path)
+            extra_top = metrics["extra_top"]
+            extra_bottom = metrics["extra_bottom"]
+            row_height = metrics["row_height"]
+        else:
+            extra_top = 0
+            extra_bottom = 0
+            row_height = box_h + gap + 10
+
         x = margin
-        y = self.get_y()
+        y = self.get_y() + extra_top  # Leave space for parent boxes at top
 
         max_x = margin + page_w - box_w
 
@@ -737,35 +1079,36 @@ class LineagePDF(FPDF):
             # Check if we need to wrap to next line
             if x > max_x:
                 x = margin
-                y += box_h + gap + 10  # Extra space for row gap
+                y += row_height  # Use consistent row height
 
-                # Check page break
-                if y + box_h > self.h - 20:
-                    self.add_page()
-                    y = self.get_y()
+            # Check page break - account for hierarchy space
+            needed_height = box_h + extra_bottom
+            if y + needed_height > self.h - 20:
+                self.add_page()
+                y = self.get_y() + extra_top  # Leave room for parent boxes
 
             node_type = node.get("node_type", "model")
             is_application = node_type == "application"
             is_center = node.get('is_center', False)
 
+            # Determine node color from COLORS constant for consistency
             if is_center:
-                self.set_fill_color(235, 248, 255)  # Blue-50
-                self.set_draw_color(66, 153, 225)   # Blue-500
+                colors = self.COLORS['center']
                 self.set_line_width(0.5)
             elif is_application:
-                self.set_fill_color(255, 251, 235)  # Amber-50
-                self.set_draw_color(245, 158, 11)   # Amber-500
+                colors = self.COLORS['application']
                 self.set_line_width(0.3)
             elif i < len(path) and not node.get('is_center') and any(n.get('is_center') for n in path[i+1:]):
                 # Upstream (before center)
-                self.set_fill_color(240, 253, 244)  # Green-50
-                self.set_draw_color(74, 222, 128)   # Green-400
+                colors = self.COLORS['upstream']
                 self.set_line_width(0.3)
             else:
                 # Downstream (after center)
-                self.set_fill_color(250, 245, 255)  # Purple-50
-                self.set_draw_color(192, 132, 252)  # Purple-400
+                colors = self.COLORS['downstream']
                 self.set_line_width(0.3)
+
+            self.set_fill_color(*colors['fill'])
+            self.set_draw_color(*colors['border'])
 
             # Draw Box
             self.rect(x, y, box_w, box_h, style='FD')
@@ -803,9 +1146,12 @@ class LineagePDF(FPDF):
                 owner = owner[:22] + "..."
             self.cell(box_w - 2, 3, f"Owner: {owner}", align='C')
 
+            # Draw hierarchy immediately after drawing main node (while we have coordinates)
+            if include_hierarchy and node.get('hierarchy'):
+                self._draw_hierarchy_for_node(x, y, box_w, box_h, node['hierarchy'])
+
             # Draw Arrow to next node
             if i < len(path) - 1:
-                next_x = x + box_w + gap
                 # If next node wraps, don't draw right arrow
                 if x + box_w + gap <= max_x:
                     mid_y = y + box_h / 2
@@ -813,25 +1159,28 @@ class LineagePDF(FPDF):
                     self.set_line_width(0.3)  # Standardize arrow thickness
                     self.line(x + box_w, mid_y, x + box_w + gap, mid_y)
                     # Arrow head
-                    self.line(x + box_w + gap - 2, mid_y -
-                              2, x + box_w + gap, mid_y)
-                    self.line(x + box_w + gap - 2, mid_y +
-                              2, x + box_w + gap, mid_y)
+                    self.line(x + box_w + gap - 2, mid_y - 2, x + box_w + gap, mid_y)
+                    self.line(x + box_w + gap - 2, mid_y + 2, x + box_w + gap, mid_y)
 
             x += box_w + gap
 
-        self.set_y(y + box_h + 15)
+        self.set_y(y + box_h + extra_bottom + 15)
         if self.get_y() > self.h - 30:
             self.add_page()
 
 
 def _collect_upstream_paths_for_node(node: dict) -> list[list[dict]]:
+    """Collect all upstream paths ending at this node.
+
+    Returns paths where each path ends with `node`.
+    """
     paths: list[list[dict]] = []
     upstream_nodes = node.get("upstream", [])
 
     for upstream in upstream_nodes:
         for path in _collect_upstream_paths_for_node(upstream):
-            paths.append(path + [upstream])
+            # path already ends with 'upstream', so append current 'node' to continue the chain
+            paths.append(path + [node])
 
     for app in node.get("upstream_applications", []):
         paths.append([app, node])
@@ -854,12 +1203,17 @@ def _collect_upstream_paths(nodes: list[dict]) -> list[list[dict]]:
 
 
 def _collect_downstream_paths_for_node(node: dict) -> list[list[dict]]:
+    """Collect all downstream paths starting at this node.
+
+    Returns paths where each path starts with `node`.
+    """
     paths: list[list[dict]] = []
     downstream_nodes = node.get("downstream", [])
 
     for downstream in downstream_nodes:
         for path in _collect_downstream_paths_for_node(downstream):
-            paths.append([downstream] + path)
+            # path already starts with 'downstream', so prepend current 'node' to continue the chain
+            paths.append([node] + path)
 
     for app in node.get("downstream_applications", []):
         paths.append([node, app])
@@ -905,11 +1259,15 @@ def export_lineage_pdf(
     direction: str = "both",
     max_depth: int = 10,
     include_inactive: bool = False,
+    include_hierarchy: bool = False,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
     Generate a PDF report of the dependency lineage as end-to-end paths.
+
+    Parameters:
+    - include_hierarchy: Include parent/sub-model hierarchy in the diagram (default False)
     """
     # Fetch lineage data
     lineage_data = get_dependency_lineage(
@@ -917,6 +1275,7 @@ def export_lineage_pdf(
         direction=direction,
         max_depth=max_depth,
         include_inactive=include_inactive,
+        include_hierarchy=include_hierarchy,
         db=db,
         current_user=current_user
     )
@@ -927,9 +1286,13 @@ def export_lineage_pdf(
     pdf = LineagePDF(orientation='L', unit='mm', format='A4')
     pdf.add_page()
 
+    # Draw legend if hierarchy is included
+    if include_hierarchy:
+        pdf.draw_legend()
+
     # Draw paths
     for idx, path in enumerate(full_paths, 1):
-        pdf.draw_path(path, idx)
+        pdf.draw_path(path, idx, include_hierarchy=include_hierarchy)
 
     # Output
     pdf_bytes = pdf.output()
