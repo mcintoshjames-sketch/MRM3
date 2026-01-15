@@ -631,3 +631,34 @@ class BulkApprovalStatusResponse(BaseModel):
     total_requested: int
     total_found: int
     results: List[BulkApprovalStatusItem]
+
+
+# Disabled Users Report Schemas
+class AffectedUser(BaseModel):
+    """A user in a disabled state who is assigned to a model role."""
+    role: str  # "Owner", "Developer", "Shared Owner", etc.
+    user_id: int
+    full_name: str
+    email: str
+    azure_state: Optional[str] = None  # EXISTS, SOFT_DELETED, NOT_FOUND
+    local_status: str  # ENABLED, DISABLED
+
+    model_config = ConfigDict(protected_namespaces=())
+
+
+class DisabledUserModelResponse(BaseModel):
+    """A model that has one or more disabled users in key roles."""
+    model_id: int
+    model_name: str
+    external_model_id: Optional[str] = None
+    affected_users: List[AffectedUser]
+
+    model_config = ConfigDict(protected_namespaces=())
+
+
+class DisabledUsersReportResponse(BaseModel):
+    """Response for the disabled users governance report."""
+    total_affected_models: int
+    models: List[DisabledUserModelResponse]
+
+    model_config = ConfigDict(protected_namespaces=())

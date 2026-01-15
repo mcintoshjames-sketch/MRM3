@@ -1,5 +1,7 @@
 """User model."""
-from sqlalchemy import String, Integer, Table, Column, ForeignKey, Boolean, select
+from datetime import datetime
+from enum import Enum
+from sqlalchemy import String, Integer, Table, Column, ForeignKey, Boolean, DateTime, select
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.ext.hybrid import hybrid_property
 from typing import List, Optional, TYPE_CHECKING
@@ -10,6 +12,19 @@ if TYPE_CHECKING:
     from app.models.lob import LOBUnit
     from app.models.region import Region
     from app.models.role import Role
+
+
+class AzureState(str, Enum):
+    """Azure AD user state based on directory lookup."""
+    EXISTS = "EXISTS"           # User found in primary directory
+    SOFT_DELETED = "SOFT_DELETED"  # User in recycle bin
+    NOT_FOUND = "NOT_FOUND"     # User hard-deleted from Entra
+
+
+class LocalStatus(str, Enum):
+    """Local application user status."""
+    ENABLED = "ENABLED"
+    DISABLED = "DISABLED"
 
 
 # Association table for user-region many-to-many relationship
@@ -33,12 +48,16 @@ class User(Base):
     role_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("roles.role_id", ondelete="RESTRICT"), nullable=False, index=True
     )
-    entra_id: Mapped[Optional[str]] = mapped_column(
+    # NO FK - plain string to preserve ID after hard delete (tombstone pattern)
+    azure_object_id: Mapped[Optional[str]] = mapped_column(
         String(36),
-        ForeignKey("entra_users.entra_id", ondelete="SET NULL"),
         nullable=True,
         index=True
     )
+    # Azure sync state fields
+    azure_state: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    local_status: Mapped[str] = mapped_column(String(20), default=LocalStatus.ENABLED.value, nullable=False)
+    azure_deleted_on: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     # Attestation: high fluctuation flag for quarterly attestation requirement
     high_fluctuation_flag: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False,
@@ -74,7 +93,8 @@ class User(Base):
     )
     entra_user: Mapped[Optional["EntraUser"]] = relationship(
         "EntraUser",
-        foreign_keys=[entra_id]
+        primaryjoin="User.azure_object_id == foreign(EntraUser.object_id)",
+        viewonly=True
     )
 
     @hybrid_property

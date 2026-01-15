@@ -2261,9 +2261,9 @@ class TestManualApprovals:
         assert data["pending_approvals"][0]["approval_id"] is not None
 
     def test_pending_additional_approvals_marks_inactive_users(self, client, db_session, admin_headers, second_user, test_user, taxonomy_values):
-        entra_id = "00000000-0000-0000-0000-000000000001"
+        object_id = "00000000-0000-0000-0000-000000000001"
         entra_user = EntraUser(
-            entra_id=entra_id,
+            object_id=object_id,
             user_principal_name="disabled@example.com",
             display_name="Disabled User",
             mail="disabled@example.com",
@@ -2272,7 +2272,8 @@ class TestManualApprovals:
         db_session.add(entra_user)
         db_session.flush()
 
-        second_user.entra_id = entra_id
+        second_user.azure_object_id = object_id
+        second_user.local_status = "DISABLED"  # Simulates sync from disabled Entra account
         db_session.add(second_user)
         db_session.commit()
 

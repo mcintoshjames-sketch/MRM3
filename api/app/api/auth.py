@@ -10,7 +10,7 @@ from sqlalchemy import or_
 from app.core.database import get_db
 from app.core.security import verify_password, create_access_token, get_password_hash
 from app.core.deps import get_current_user
-from app.models.user import User
+from app.models.user import User, LocalStatus, AzureState
 from app.models.role import Role
 from app.models.model import Model
 from app.models.entra_user import EntraUser
@@ -35,7 +35,12 @@ from app.schemas.user import (
     UserLookupResponse,
     LOBUnitBrief,
 )
-from app.schemas.entra_user import EntraUserResponse, EntraUserProvisionRequest
+from app.schemas.entra_user import (
+    EntraUserResponse,
+    EntraUserProvisionRequest,
+    EntraUserCreate,
+    EntraUserUpdate,
+)
 from app.schemas.model import ModelDetailResponse
 
 router = APIRouter()
@@ -84,7 +89,9 @@ def get_user_with_lob(db: Session, user: User) -> dict:
         "role_code": role_code,
         "capabilities": build_capabilities(role_code),
         "high_fluctuation_flag": user.high_fluctuation_flag,
-        "entra_id": user.entra_id,
+        "azure_object_id": user.azure_object_id,
+        "azure_state": user.azure_state,
+        "local_status": user.local_status,
         "regions": user.regions,
         "lob_id": user.lob_id,
         "lob": None
@@ -131,6 +138,13 @@ def login(login_data: LoginRequest, db: Session = Depends(get_db)):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password"
+        )
+
+    # Check if user account is disabled before issuing token
+    if user.local_status == LocalStatus.DISABLED.value:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is disabled. Contact your administrator."
         )
 
     access_token = create_access_token(data={"sub": user.email})
@@ -368,11 +382,12 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
     ).first()
     if not entra_user:
         entra_user = EntraUser(
-            entra_id=str(uuid.uuid4()),
+            object_id=str(uuid.uuid4()),
             user_principal_name=user_data.email,
             display_name=user_data.full_name,
             mail=user_data.email,
-            account_enabled=True
+            account_enabled=True,
+            in_recycle_bin=False
         )
         db.add(entra_user)
         db.flush()
@@ -383,7 +398,9 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
         full_name=user_data.full_name,
         password_hash=get_password_hash(user_data.password),
         role_id=role.role_id,
-        entra_id=entra_user.entra_id,
+        azure_object_id=entra_user.object_id,
+        azure_state=AzureState.EXISTS.value,
+        local_status=LocalStatus.ENABLED.value,
         lob_id=user_data.lob_id
     )
 
@@ -587,7 +604,7 @@ def search_entra_directory(
     This simulates querying Microsoft Graph API. In production, this would
     call the actual Microsoft Graph endpoint.
     """
-    query = db.query(EntraUser).filter(EntraUser.account_enabled == True)
+    query = db.query(EntraUser)
 
     if search:
         search_term = f"%{search}%"
@@ -622,15 +639,16 @@ def provision_entra_user(
             detail="Only administrators can provision users from directory"
         )
 
-    # Find the Entra user
+    # Find the Entra user (must be in active directory, not recycle bin)
     entra_user = db.query(EntraUser).filter(
-        EntraUser.entra_id == provision_data.entra_id
+        EntraUser.object_id == provision_data.entra_id,
+        EntraUser.in_recycle_bin == False
     ).first()
 
     if not entra_user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Entra user not found in directory"
+            detail="Entra user not found in directory (or is in recycle bin)"
         )
 
     if not entra_user.account_enabled:
@@ -676,7 +694,9 @@ def provision_entra_user(
         full_name=entra_user.display_name,
         password_hash=get_password_hash("entra_sso_placeholder"),  # Placeholder for SSO
         role_id=role.role_id,
-        entra_id=entra_user.entra_id,
+        azure_object_id=entra_user.object_id,
+        azure_state=AzureState.EXISTS.value,
+        local_status=LocalStatus.ENABLED.value,
         lob_id=provision_data.lob_id
     )
     db.add(user)
@@ -704,7 +724,7 @@ def provision_entra_user(
             "email": entra_user.mail,
             "full_name": entra_user.display_name,
             "role": role.display_name,
-            "entra_id": provision_data.entra_id,
+            "azure_object_id": entra_user.object_id,
             "provisioned_from": "Microsoft Entra ID",
             "region_ids": provision_data.region_ids or []
         }
@@ -714,6 +734,178 @@ def provision_entra_user(
     db.refresh(user)
 
     return get_user_with_lob(db, user)
+
+
+@router.get("/entra/users/{object_id}", response_model=EntraUserResponse)
+def get_entra_user(
+    object_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get a specific Entra directory user by ID."""
+    entra_user = db.query(EntraUser).filter(EntraUser.object_id == object_id).first()
+    if not entra_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Entra user not found"
+        )
+    return entra_user
+
+
+@router.post("/entra/users", response_model=EntraUserResponse, status_code=status.HTTP_201_CREATED)
+def create_entra_user(
+    entra_data: EntraUserCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Create a new mock Entra directory user.
+
+    Admin only. This is for testing/demo purposes to populate the mock directory.
+    """
+    if get_user_role_code(current_user) != RoleCode.ADMIN.value:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only administrators can manage the Entra directory"
+        )
+
+    # Check for duplicate email or UPN
+    existing = db.query(EntraUser).filter(
+        (EntraUser.mail == entra_data.mail) |
+        (EntraUser.user_principal_name == entra_data.user_principal_name)
+    ).first()
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User with this email or UPN already exists in directory"
+        )
+
+    # Generate a new UUID for the object_id
+    new_object_id = str(uuid.uuid4())
+
+    entra_user = EntraUser(
+        object_id=new_object_id,
+        user_principal_name=entra_data.user_principal_name,
+        display_name=entra_data.display_name,
+        given_name=entra_data.given_name,
+        surname=entra_data.surname,
+        mail=entra_data.mail,
+        job_title=entra_data.job_title,
+        department=entra_data.department,
+        office_location=entra_data.office_location,
+        mobile_phone=entra_data.mobile_phone,
+        account_enabled=entra_data.account_enabled,
+        in_recycle_bin=False
+    )
+    db.add(entra_user)
+    db.commit()
+    db.refresh(entra_user)
+
+    return entra_user
+
+
+@router.patch("/entra/users/{object_id}", response_model=EntraUserResponse)
+def update_entra_user(
+    object_id: str,
+    entra_data: EntraUserUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Update a mock Entra directory user.
+
+    Admin only. This is for testing/demo purposes.
+    """
+    if get_user_role_code(current_user) != RoleCode.ADMIN.value:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only administrators can manage the Entra directory"
+        )
+
+    entra_user = db.query(EntraUser).filter(EntraUser.object_id == object_id).first()
+    if not entra_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Entra user not found"
+        )
+
+    # Check for duplicate email or UPN if being changed
+    update_data = entra_data.model_dump(exclude_unset=True)
+    if 'mail' in update_data or 'user_principal_name' in update_data:
+        check_mail = update_data.get('mail', entra_user.mail)
+        check_upn = update_data.get('user_principal_name', entra_user.user_principal_name)
+        existing = db.query(EntraUser).filter(
+            EntraUser.object_id != object_id,
+            ((EntraUser.mail == check_mail) | (EntraUser.user_principal_name == check_upn))
+        ).first()
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Another user with this email or UPN already exists"
+            )
+
+    for field, value in update_data.items():
+        setattr(entra_user, field, value)
+
+    db.commit()
+    db.refresh(entra_user)
+
+    return entra_user
+
+
+@router.delete("/entra/users/{object_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_entra_user(
+    object_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Hard delete a mock Entra directory user.
+
+    Admin only. If provisioned, marks app user as NOT_FOUND/DISABLED (does NOT delete User).
+    This simulates the Azure AD hard-delete flow where the user is permanently removed.
+    """
+    if get_user_role_code(current_user) != RoleCode.ADMIN.value:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only administrators can manage the Entra directory"
+        )
+
+    entra_user = db.query(EntraUser).filter(EntraUser.object_id == object_id).first()
+    if not entra_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Entra user not found"
+        )
+
+    # Check if provisioned as app user - mark as NOT_FOUND instead of blocking
+    app_user = db.query(User).filter(User.azure_object_id == object_id).first()
+    if app_user:
+        from app.core.time import utc_now
+        app_user.azure_state = AzureState.NOT_FOUND.value
+        app_user.local_status = LocalStatus.DISABLED.value
+        app_user.azure_deleted_on = utc_now()
+
+        # Audit log
+        create_audit_log(
+            db=db,
+            entity_type="User",
+            entity_id=app_user.user_id,
+            action="AZURE_HARD_DELETE",
+            user_id=current_user.user_id,
+            changes={
+                "azure_object_id": object_id,
+                "azure_state": "NOT_FOUND",
+                "local_status": "DISABLED",
+                "reason": "Entra directory user hard-deleted"
+            }
+        )
+
+    # Delete the Entra record
+    db.delete(entra_user)
+    db.commit()
+
+    return None
 
 
 @router.get("/users/export/csv")
@@ -766,3 +958,55 @@ def export_users_csv(
             "Content-Disposition": "attachment; filename=users_export.csv"
         }
     )
+
+
+@router.post("/users/{user_id}/sync-azure", response_model=UserResponse)
+def sync_user_azure_state(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Sync a single user's Azure state from Entra directory.
+
+    Admin only. Updates the user's azure_state and local_status based on
+    their current state in the mock Entra directory.
+    """
+    require_admin_user(current_user)
+
+    from app.services.entra_sync import synchronize_user
+
+    try:
+        user = synchronize_user(db, user_id)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+
+    # Reload with relationships for response
+    user = db.query(User).options(
+        joinedload(User.regions),
+        joinedload(User.lob),
+        joinedload(User.role_ref)
+    ).filter(User.user_id == user_id).first()
+
+    return get_user_with_lob(db, user)
+
+
+@router.post("/users/sync-azure-all")
+def sync_all_users_azure_state(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Sync all Entra-linked users' Azure state.
+
+    Admin only. Returns a summary of sync results.
+    """
+    require_admin_user(current_user)
+
+    from app.services.entra_sync import synchronize_all_users
+
+    results = synchronize_all_users(db)
+    return results

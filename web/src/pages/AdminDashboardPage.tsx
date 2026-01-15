@@ -208,6 +208,22 @@ interface MRSAReviewPastDue {
     exception_due_date: string | null;
 }
 
+interface AffectedUser {
+    role: string;
+    user_id: number;
+    full_name: string;
+    email: string;
+    azure_state: string | null;
+    local_status: string;
+}
+
+interface DisabledUserModel {
+    model_id: number;
+    model_name: string;
+    external_model_id: string | null;
+    affected_users: AffectedUser[];
+}
+
 export default function AdminDashboardPage() {
     const { user } = useAuth();
     const navigate = useNavigate();
@@ -227,6 +243,7 @@ export default function AdminDashboardPage() {
     const [cycleReminder, setCycleReminder] = useState<CycleReminder | null>(null);
     const [attestationReviewCount, setAttestationReviewCount] = useState<number>(0);
     const [mrsaPastDue, setMrsaPastDue] = useState<MRSAReviewPastDue[]>([]);
+    const [disabledUserModels, setDisabledUserModels] = useState<DisabledUserModel[]>([]);
     const [loading, setLoading] = useState(true);
 
     // Commentary modal state
@@ -257,7 +274,8 @@ export default function AdminDashboardPage() {
                 recommendationsOverdueRes,
                 mrsaReviewsOverdueRes,
                 cycleReminderRes,
-                attestationStatsRes
+                attestationStatsRes,
+                disabledUsersRes
             ] = await Promise.all([
                 api.get('/validation-workflow/dashboard/sla-violations'),
                 api.get('/validation-workflow/dashboard/out-of-order'),
@@ -274,7 +292,8 @@ export default function AdminDashboardPage() {
                 api.get('/recommendations/dashboard/overdue'),
                 api.get('/dashboard/mrsa-reviews/overdue'),
                 api.get('/attestations/cycles/reminder').catch(() => ({ data: { should_show_reminder: false } })),
-                api.get('/attestations/dashboard/stats').catch(() => ({ data: { submitted_count: 0 } }))
+                api.get('/attestations/dashboard/stats').catch(() => ({ data: { submitted_count: 0 } })),
+                api.get('/models/disabled-users').catch(() => ({ data: { models: [] } }))
             ]);
             setSlaViolations(violationsRes.data);
             const normalizedOutOfOrder = (outOfOrderRes.data || []).map((item: OutOfOrderValidation) => ({
@@ -304,6 +323,8 @@ export default function AdminDashboardPage() {
             setRecommendationsSummary(recommendationsOpenRes.data);
             setOverdueRecommendations(recommendationsOverdueRes.data.recommendations || []);
             setMrsaPastDue(mrsaReviewsOverdueRes.data);
+            // Set disabled users models
+            setDisabledUserModels(disabledUsersRes.data.models || []);
             // Set cycle reminder
             setCycleReminder(cycleReminderRes.data);
             setAttestationReviewCount(attestationStatsRes.data.submitted_count || 0);
@@ -587,6 +608,81 @@ export default function AdminDashboardPage() {
                                 className="text-xs text-blue-600 hover:text-blue-800"
                             >
                                 View all {mrsaPastDue.length} past-due MRSA reviews &rarr;
+                            </Link>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Models with Disabled Users Alert */}
+            {disabledUserModels.length > 0 && (
+                <div className="bg-white p-4 rounded-lg shadow mb-6 border-l-4 border-amber-500">
+                    <div className="flex items-center gap-2 mb-3 pb-2 border-b">
+                        <svg className="w-4 h-4 text-amber-500" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                        </svg>
+                        <h3 className="text-sm font-semibold text-gray-700">Models with Disabled Users</h3>
+                        <span className="text-xs text-gray-500 ml-auto">{disabledUserModels.length} affected</span>
+                        <Link
+                            to="/reports/disabled-users"
+                            className="text-xs text-blue-600 hover:text-blue-800"
+                        >
+                            View Report
+                        </Link>
+                    </div>
+                    <p className="text-xs text-gray-600 mb-3">
+                        These models have owners, developers, or other key roles assigned to disabled user accounts.
+                        Review and reassign roles to ensure proper governance.
+                    </p>
+                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                        {disabledUserModels.slice(0, 5).map((model) => (
+                            <div
+                                key={model.model_id}
+                                className="border-l-3 pl-3 py-2 hover:bg-gray-50 rounded-r"
+                                style={{
+                                    borderLeftWidth: '3px',
+                                    borderLeftColor: '#f59e0b'
+                                }}
+                            >
+                                <div className="flex items-start justify-between gap-2">
+                                    <div className="flex-1 min-w-0">
+                                        <Link
+                                            to={`/models/${model.model_id}`}
+                                            className="text-sm font-medium text-gray-800 hover:text-blue-600 truncate block"
+                                        >
+                                            {model.model_name}
+                                        </Link>
+                                        <p className="text-xs text-gray-600 mt-0.5">
+                                            {model.affected_users.map(u => `${u.role}: ${u.full_name}`).join(' • ')}
+                                        </p>
+                                        <div className="flex flex-wrap gap-1 mt-1">
+                                            {model.affected_users.map((u) => (
+                                                <span
+                                                    key={`${model.model_id}-${u.user_id}-${u.role}`}
+                                                    className={`px-1.5 py-0.5 text-xs font-medium rounded ${
+                                                        u.azure_state === 'NOT_FOUND'
+                                                            ? 'bg-red-100 text-red-700'
+                                                            : u.azure_state === 'SOFT_DELETED'
+                                                            ? 'bg-orange-100 text-orange-700'
+                                                            : 'bg-yellow-100 text-yellow-700'
+                                                    }`}
+                                                >
+                                                    {u.azure_state || 'DISABLED'}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                    {disabledUserModels.length > 5 && (
+                        <div className="mt-3 pt-2 border-t text-center">
+                            <Link
+                                to="/reports/disabled-users"
+                                className="text-xs text-blue-600 hover:text-blue-800"
+                            >
+                                View all {disabledUserModels.length} affected models &rarr;
                             </Link>
                         </div>
                     )}

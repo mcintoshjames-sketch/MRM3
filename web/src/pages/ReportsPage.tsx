@@ -95,6 +95,14 @@ const adminReports: Report[] = [
         icon: '🏷️',
         category: 'Operations'
     },
+    {
+        id: 'disabled-users',
+        name: 'Models with Disabled Users',
+        description: 'Governance report showing models with disabled users in key roles (owner, developer, etc.). Identifies models needing role reassignment due to user departures or account disabling.',
+        path: '/reports/disabled-users',
+        icon: '👤',
+        category: 'Governance'
+    },
 ];
 
 // User reports - personal portfolio view

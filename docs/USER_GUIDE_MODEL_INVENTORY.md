@@ -15,36 +15,40 @@ This guide explains how to work with the Model Inventory in the Quantitative Met
    - [Editable (Mutable) Fields](#editable-mutable-fields)
    - [Calculated (Read-Only) Fields](#calculated-read-only-fields)
    - [How Calculations Work](#how-calculations-work)
-5. [Model Tags](#model-tags)
+5. [Organizational Grouping](#organizational-grouping)
+   - [Lines of Business (LOB)](#lines-of-business-lob)
+   - [Teams](#teams)
+   - [How Models Are Grouped](#how-models-are-grouped)
+6. [Model Tags](#model-tags)
    - [Understanding Tags](#understanding-tags)
    - [Adding Tags to a Model](#adding-tags-to-a-model)
    - [Bulk Tagging](#bulk-tagging)
    - [Tag Reports](#tag-reports)
-6. [Risk Assessment](#risk-assessment)
+7. [Risk Assessment](#risk-assessment)
    - [Qualitative Assessment](#qualitative-assessment)
    - [Quantitative Assessment](#quantitative-assessment)
    - [Inherent Risk Matrix](#inherent-risk-matrix)
    - [Final Risk Tier](#final-risk-tier)
-7. [Model Versions (Changes)](#model-versions-changes)
+8. [Model Versions (Changes)](#model-versions-changes)
    - [Quick Overview](#quick-overview)
    - [Deployment Process](#deployment-process)
    - [Comprehensive Documentation](#comprehensive-documentation)
-8. [Model Relationships](#model-relationships)
+9. [Model Relationships](#model-relationships)
    - [Model Hierarchy (Parent-Child)](#model-hierarchy-parent-child)
    - [Data Dependencies](#data-dependencies)
    - [End-to-End Model Lineage](#end-to-end-model-lineage)
-9. [Model Limitations](#model-limitations)
-   - [Recording a Limitation](#recording-a-limitation)
-   - [Significance Levels](#significance-levels)
-   - [Managing User Awareness](#managing-user-awareness)
-10. [Model Overlays & Judgements](#model-overlays--judgements)
+10. [Model Limitations](#model-limitations)
+    - [Recording a Limitation](#recording-a-limitation)
+    - [Significance Levels](#significance-levels)
+    - [Managing User Awareness](#managing-user-awareness)
+11. [Model Overlays & Judgements](#model-overlays--judgements)
     - [Recording an Overlay or Judgement](#recording-an-overlay-or-judgement)
     - [Effectiveness and Retirement](#effectiveness-and-retirement)
-11. [Model Decommissioning](#model-decommissioning)
+12. [Model Decommissioning](#model-decommissioning)
     - [Initiating Decommissioning](#initiating-decommissioning)
     - [Approval Workflow](#approval-workflow)
     - [Decommissioning Reasons](#decommissioning-reasons)
-12. [Exporting Data](#exporting-data)
+13. [Exporting Data](#exporting-data)
 
 ---
 
@@ -255,6 +259,86 @@ This date reflects when the model was last changed in production. The system loo
 #### Is AI/ML Classification
 
 Models are automatically classified as AI/ML based on their selected methodology. When a methodology tagged as AI/ML-related is assigned to the model, this flag is set to "Yes" automatically.
+
+---
+
+## Organizational Grouping
+
+Models are organized within the enterprise's organizational hierarchy through Lines of Business (LOBs) and Teams. This structure enables reporting, filtering, and governance at various organizational levels.
+
+### Lines of Business (LOB)
+
+LOB units represent the organizational hierarchy of the enterprise. The structure supports multiple levels:
+
+| Level | Name | Description |
+|-------|------|-------------|
+| 1 | SBU (Strategic Business Unit) | Top-level organizational division |
+| 2 | LOB1 | First-level business line |
+| 3 | LOB2 | Second-level business line |
+| ... | LOB*n* | Additional levels as needed |
+
+**Key Characteristics:**
+- Each LOB unit has a unique **Org Unit** identifier (5 characters)
+- LOB units form a tree structure with parent-child relationships
+- Users are assigned to LOB units, which determines their organizational affiliation
+- The **Business Line** field on a model is derived automatically from the model owner's LOB assignment
+
+**Example Hierarchy:**
+```
+Corporate Banking (SBU)
+├── Commercial Lending (LOB1)
+│   ├── Real Estate Finance (LOB2)
+│   └── Asset-Based Lending (LOB2)
+└── Treasury Services (LOB1)
+    ├── Cash Management (LOB2)
+    └── Trade Finance (LOB2)
+```
+
+### Teams
+
+Teams provide an additional grouping layer that spans across the LOB hierarchy. While LOB units represent the formal organizational structure, Teams allow flexible grouping for reporting and collaboration purposes.
+
+**Purpose:**
+- Group related LOB units that work together on similar risk domains
+- Enable cross-organizational reporting and dashboards
+- Provide workload distribution views for validation planning
+
+**Pre-configured Teams:**
+| Team | Description |
+|------|-------------|
+| Credit Risk Team | Groups LOB units focused on credit risk modeling |
+| Market Risk Team | Groups LOB units focused on market risk modeling |
+| Operations Team | Groups LOB units focused on operational processes |
+
+**How Teams Work:**
+- Each LOB unit can be assigned to one Team
+- All users within that LOB unit inherit the Team assignment
+- Models inherit the Team through their owner's LOB → Team relationship
+- Team assignment is optional; LOB units can exist without a Team
+
+### How Models Are Grouped
+
+Models are grouped through a chain of relationships:
+
+```
+Model → Owner (User) → LOB Unit → Team
+```
+
+**Automatic Derivation:**
+1. When a model is assigned an **Owner**, the system reads the owner's **LOB Unit**
+2. The model's **Business Line** field displays the owner's LOB path (e.g., "Corporate Banking > Commercial Lending")
+3. If the owner's LOB Unit belongs to a **Team**, the model is included in that Team's reports
+
+**Changing Organizational Grouping:**
+- To change a model's Business Line, change the model's **Owner** to a user in the desired LOB
+- To change a model's Team assignment, the administrator must reassign the owner's LOB Unit to a different Team
+
+**Filtering and Reporting:**
+- Use the **Business Line** filter on the Models list to view models by LOB
+- Use Team-based reports to see models grouped across related LOB units
+- Export data includes the full LOB path for organizational analysis
+
+> **Note**: LOB hierarchy and Team management are administrator functions. See the [Administration Guide](USER_GUIDE_ADMINISTRATION.md) for details on configuring organizational structure.
 
 ---
 

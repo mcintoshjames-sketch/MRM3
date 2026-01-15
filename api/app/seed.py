@@ -1463,7 +1463,7 @@ def seed_database():
         # Create mock Microsoft Entra directory users
         entra_users = [
             {
-                "entra_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                "object_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
                 "user_principal_name": "john.smith@contoso.com",
                 "display_name": "John Smith",
                 "given_name": "John",
@@ -1474,10 +1474,11 @@ def seed_database():
                 "office_location": "New York",
                 "mobile_phone": "+1-212-555-0101",
                 "account_enabled": True,
+                "in_recycle_bin": False,
                 "created_at": utc_now()
             },
             {
-                "entra_id": "b2c3d4e5-f6a7-8901-bcde-f23456789012",
+                "object_id": "b2c3d4e5-f6a7-8901-bcde-f23456789012",
                 "user_principal_name": "sarah.johnson@contoso.com",
                 "display_name": "Sarah Johnson",
                 "given_name": "Sarah",
@@ -1488,10 +1489,11 @@ def seed_database():
                 "office_location": "Chicago",
                 "mobile_phone": "+1-312-555-0202",
                 "account_enabled": True,
+                "in_recycle_bin": False,
                 "created_at": utc_now()
             },
             {
-                "entra_id": "c3d4e5f6-a7b8-9012-cdef-345678901234",
+                "object_id": "c3d4e5f6-a7b8-9012-cdef-345678901234",
                 "user_principal_name": "michael.chen@contoso.com",
                 "display_name": "Michael Chen",
                 "given_name": "Michael",
@@ -1502,10 +1504,11 @@ def seed_database():
                 "office_location": "San Francisco",
                 "mobile_phone": "+1-415-555-0303",
                 "account_enabled": True,
+                "in_recycle_bin": False,
                 "created_at": utc_now()
             },
             {
-                "entra_id": "d4e5f6a7-b8c9-0123-defa-456789012345",
+                "object_id": "d4e5f6a7-b8c9-0123-defa-456789012345",
                 "user_principal_name": "emily.davis@contoso.com",
                 "display_name": "Emily Davis",
                 "given_name": "Emily",
@@ -1516,10 +1519,11 @@ def seed_database():
                 "office_location": "Boston",
                 "mobile_phone": "+1-617-555-0404",
                 "account_enabled": True,
+                "in_recycle_bin": False,
                 "created_at": utc_now()
             },
             {
-                "entra_id": "e5f6a7b8-c9d0-1234-efab-567890123456",
+                "object_id": "e5f6a7b8-c9d0-1234-efab-567890123456",
                 "user_principal_name": "robert.wilson@contoso.com",
                 "display_name": "Robert Wilson",
                 "given_name": "Robert",
@@ -1530,10 +1534,11 @@ def seed_database():
                 "office_location": "New York",
                 "mobile_phone": "+1-212-555-0505",
                 "account_enabled": True,
+                "in_recycle_bin": False,
                 "created_at": utc_now()
             },
             {
-                "entra_id": "f6a7b8c9-d0e1-2345-fabc-678901234567",
+                "object_id": "f6a7b8c9-d0e1-2345-fabc-678901234567",
                 "user_principal_name": "jennifer.martinez@contoso.com",
                 "display_name": "Jennifer Martinez",
                 "given_name": "Jennifer",
@@ -1544,10 +1549,11 @@ def seed_database():
                 "office_location": "New York",
                 "mobile_phone": "+1-212-555-0606",
                 "account_enabled": True,
+                "in_recycle_bin": False,
                 "created_at": utc_now()
             },
             {
-                "entra_id": "a7b8c9d0-e1f2-3456-abcd-789012345678",
+                "object_id": "a7b8c9d0-e1f2-3456-abcd-789012345678",
                 "user_principal_name": "david.brown@contoso.com",
                 "display_name": "David Brown",
                 "given_name": "David",
@@ -1558,10 +1564,11 @@ def seed_database():
                 "office_location": "Chicago",
                 "mobile_phone": "+1-312-555-0707",
                 "account_enabled": True,
+                "in_recycle_bin": False,
                 "created_at": utc_now()
             },
             {
-                "entra_id": "b8c9d0e1-f2a3-4567-bcde-890123456789",
+                "object_id": "b8c9d0e1-f2a3-4567-bcde-890123456789",
                 "user_principal_name": "lisa.anderson@contoso.com",
                 "display_name": "Lisa Anderson",
                 "given_name": "Lisa",
@@ -1572,13 +1579,14 @@ def seed_database():
                 "office_location": "Austin",
                 "mobile_phone": "+1-512-555-0808",
                 "account_enabled": False,  # Disabled account
+                "in_recycle_bin": False,
                 "created_at": utc_now()
             },
         ]
 
         for entra_data in entra_users:
             existing = db.query(EntraUser).filter(
-                (EntraUser.entra_id == entra_data["entra_id"])
+                (EntraUser.object_id == entra_data["entra_id"])
                 | (EntraUser.user_principal_name == entra_data["user_principal_name"])
                 | (EntraUser.mail == entra_data["mail"])
             ).first()
@@ -1593,7 +1601,7 @@ def seed_database():
         db.commit()
 
         # Ensure all application users link to an Entra record
-        users_missing_entra = db.query(User).filter(User.entra_id.is_(None)).all()
+        users_missing_entra = db.query(User).filter(User.azure_object_id.is_(None)).all()
         for user in users_missing_entra:
             entra_user = db.query(EntraUser).filter(
                 (EntraUser.mail == user.email)
@@ -1601,16 +1609,19 @@ def seed_database():
             ).first()
             if not entra_user:
                 entra_user = EntraUser(
-                    entra_id=str(uuid.uuid4()),
+                    object_id=str(uuid.uuid4()),
                     user_principal_name=user.email,
                     display_name=user.full_name,
                     mail=user.email,
                     account_enabled=True,
+                    in_recycle_bin=False,
                     created_at=utc_now()
                 )
                 db.add(entra_user)
                 db.flush()
-            user.entra_id = entra_user.entra_id
+            user.azure_object_id = entra_user.object_id
+            user.azure_state = "EXISTS"
+            user.local_status = "ENABLED"
             db.add(user)
 
         if users_missing_entra:

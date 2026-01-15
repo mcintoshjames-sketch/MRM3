@@ -498,16 +498,6 @@ export default function Layout({ children }: LayoutProps) {
                                             <NavItem to="/teams">Teams</NavItem>
                                         )}
                                         <NavItem to="/batch-delegates">Batch Delegates</NavItem>
-
-                                        {/* Components subsection */}
-                                        <SubsectionLabel label="Validation Components" />
-                                        <NavItem
-                                            to="/taxonomy?tab=component-definitions"
-                                            isActiveOverride={location.pathname === '/taxonomy'
-                                                && new URLSearchParams(location.search).get('tab') === 'component-definitions'}
-                                        >
-                                            Component Definitions
-                                        </NavItem>
                                     </>
                                 )}
                             </>

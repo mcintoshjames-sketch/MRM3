@@ -52,7 +52,9 @@ class UserResponse(UserBase):
     capabilities: dict | None = None
     regions: List[Region] = []  # Authorized regions for Regional Approvers
     high_fluctuation_flag: bool = False  # For quarterly attestation triggering
-    entra_id: str | None = None
+    azure_object_id: str | None = None  # Azure AD Object ID (tombstone pattern)
+    azure_state: str | None = None  # EXISTS, SOFT_DELETED, NOT_FOUND
+    local_status: str = "ENABLED"  # ENABLED, DISABLED
     lob_id: int  # User's LOB assignment (required)
     lob: Optional[LOBUnitBrief] = None  # Nested LOB info with full path
 

@@ -57,6 +57,7 @@ import MyPortfolioReportPage from './pages/MyPortfolioReportPage';
 import ExceptionsReportPage from './pages/ExceptionsReportPage';
 import ReadyToDeployPage from './pages/ReadyToDeployPage';
 import ModelTagsReportPage from './pages/ModelTagsReportPage';
+import DisabledUsersReportPage from './pages/DisabledUsersReportPage';
 import PublicLandingPage from './pages/PublicLandingPage';
 import PublicOverviewPage from './pages/PublicOverviewPage';
 import PublicGuidesIndexPage from './pages/PublicGuidesIndexPage';
@@ -175,6 +176,7 @@ function App() {
             <Route path="/reports/exceptions" element={user ? <ExceptionsReportPage /> : <Navigate to="/login" />} />
             <Route path="/reports/ready-to-deploy" element={user ? <ReadyToDeployPage /> : <Navigate to="/login" />} />
             <Route path="/reports/model-tags" element={user ? <ModelTagsReportPage /> : <Navigate to="/login" />} />
+            <Route path="/reports/disabled-users" element={user ? <DisabledUsersReportPage /> : <Navigate to="/login" />} />
             <Route path="/analytics" element={user ? <AnalyticsPage /> : <Navigate to="/login" />} />
             <Route path="/attestations" element={canManageAttestations(user) ? <AttestationCyclesPage /> : <Navigate to="/models" />} />
             <Route path="/my-attestations" element={user ? <MyAttestationsPage /> : <Navigate to="/login" />} />

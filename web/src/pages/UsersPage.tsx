@@ -26,10 +26,13 @@ interface User {
     regions: Region[];
     lob_id: number | null;
     lob: LOBBrief | null;
+    azure_object_id?: string | null;
+    azure_state?: string | null;
+    local_status: string;
 }
 
 interface EntraUser {
-    entra_id: string;
+    object_id: string;
     user_principal_name: string;
     display_name: string;
     given_name: string | null;
@@ -40,6 +43,7 @@ interface EntraUser {
     office_location: string | null;
     mobile_phone: string | null;
     account_enabled: boolean;
+    in_recycle_bin: boolean;
 }
 
 interface RoleOption {
@@ -179,6 +183,29 @@ export function UsersContent() {
         }
     };
 
+    const handleSyncUser = async (userId: number) => {
+        try {
+            await api.post(`/auth/users/${userId}/sync-azure`);
+            fetchUsers();
+        } catch (error: any) {
+            console.error('Failed to sync user:', error);
+            alert(error.response?.data?.detail || 'Failed to sync user');
+        }
+    };
+
+    const handleSyncAllUsers = async () => {
+        if (!confirm('Sync all users with Azure? This may take a moment.')) return;
+
+        try {
+            const response = await api.post('/auth/users/sync-azure-all');
+            alert(`Sync complete: ${response.data.exists} active, ${response.data.soft_deleted} soft-deleted, ${response.data.not_found} not found, ${response.data.errors} errors`);
+            fetchUsers();
+        } catch (error: any) {
+            console.error('Failed to sync all users:', error);
+            alert(error.response?.data?.detail || 'Failed to sync users');
+        }
+    };
+
     const provisionEntraUser = async () => {
         if (!selectedEntraUser) return;
 
@@ -190,7 +217,7 @@ export function UsersContent() {
 
         try {
             const payload: any = {
-                entra_id: selectedEntraUser.entra_id,
+                entra_id: selectedEntraUser.object_id,  // API expects entra_id but we send object_id
                 role_code: provisionRoleCode,
                 lob_id: provisionLobId
             };
@@ -239,12 +266,20 @@ export function UsersContent() {
                 <h3 className="text-lg font-semibold">Users</h3>
                 <div className="flex gap-2">
                     {canManageUsersFlag && (
-                        <button
-                            onClick={() => setShowEntraModal(true)}
-                            className="btn-primary bg-blue-700 hover:bg-blue-800"
-                        >
-                            Import from Entra
-                        </button>
+                        <>
+                            <button
+                                onClick={handleSyncAllUsers}
+                                className="btn-secondary"
+                            >
+                                Sync All from Azure
+                            </button>
+                            <button
+                                onClick={() => setShowEntraModal(true)}
+                                className="btn-primary bg-blue-700 hover:bg-blue-800"
+                            >
+                                Import from Entra
+                            </button>
+                        </>
                     )}
                     <button
                         onClick={() => {
@@ -324,6 +359,15 @@ export function UsersContent() {
                             <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                 Regions
                             </th>
+                            <th
+                                className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                onClick={() => requestSort('local_status')}
+                            >
+                                <div className="flex items-center gap-2">
+                                    Status
+                                    {getSortIcon('local_status')}
+                                </div>
+                            </th>
                             <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
                                 Actions
                             </th>
@@ -332,7 +376,7 @@ export function UsersContent() {
                     <tbody className="bg-white divide-y divide-gray-200">
                         {sortedData.length === 0 ? (
                             <tr>
-                                <td colSpan={7} className="px-4 py-2 text-center text-gray-500">
+                                <td colSpan={8} className="px-4 py-2 text-center text-gray-500">
                                     No users yet. Click "Add User" to create one.
                                 </td>
                             </tr>
@@ -384,6 +428,28 @@ export function UsersContent() {
                                         )}
                                     </td>
                                     <td className="px-4 py-2 whitespace-nowrap">
+                                        <div className="flex flex-col gap-1">
+                                            <span className={`px-2 py-0.5 text-xs rounded-full inline-block w-fit ${
+                                                user.local_status === 'ENABLED'
+                                                    ? 'bg-green-100 text-green-800'
+                                                    : 'bg-red-100 text-red-800'
+                                            }`}>
+                                                {user.local_status}
+                                            </span>
+                                            {user.azure_object_id && user.azure_state && (
+                                                <span className={`px-2 py-0.5 text-xs rounded inline-block w-fit ${
+                                                    user.azure_state === 'EXISTS'
+                                                        ? 'bg-blue-100 text-blue-800'
+                                                        : user.azure_state === 'SOFT_DELETED'
+                                                        ? 'bg-orange-100 text-orange-800'
+                                                        : 'bg-gray-100 text-gray-800'
+                                                }`}>
+                                                    Azure: {user.azure_state}
+                                                </span>
+                                            )}
+                                        </div>
+                                    </td>
+                                    <td className="px-4 py-2 whitespace-nowrap">
                                         <Link
                                             to={`/users/${user.user_id}`}
                                             className="text-blue-600 hover:text-blue-800 text-sm mr-3"
@@ -396,6 +462,14 @@ export function UsersContent() {
                                         >
                                             Edit
                                         </button>
+                                        {canManageUsersFlag && user.azure_object_id && (
+                                            <button
+                                                onClick={() => handleSyncUser(user.user_id)}
+                                                className="text-green-600 hover:text-green-800 text-sm mr-3"
+                                            >
+                                                Sync
+                                            </button>
+                                        )}
                                         <button
                                             onClick={() => handleDelete(user.user_id)}
                                             className={`text-sm ${
@@ -486,10 +560,10 @@ export function UsersContent() {
                                         <tbody className="bg-white divide-y divide-gray-200">
                                             {entraUsers.map((entraUser) => (
                                                 <tr
-                                                    key={entraUser.entra_id}
+                                                    key={entraUser.object_id}
                                                     onClick={() => setSelectedEntraUser(entraUser)}
                                                     className={`cursor-pointer hover:bg-blue-50 ${
-                                                        selectedEntraUser?.entra_id === entraUser.entra_id
+                                                        selectedEntraUser?.object_id === entraUser.object_id
                                                             ? 'bg-blue-100'
                                                             : ''
                                                     }`}

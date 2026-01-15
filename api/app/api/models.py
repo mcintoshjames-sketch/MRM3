@@ -17,7 +17,7 @@ from app.core.validation_conflicts import (
     find_active_validation_conflicts,
     build_validation_conflict_message
 )
-from app.models.user import User
+from app.models.user import User, LocalStatus
 from app.models.model import Model
 from app.models.vendor import Vendor
 from app.models.region import Region
@@ -50,7 +50,8 @@ from app.schemas.model import (
     ModelApprovalStatusResponse, ModelApprovalStatusHistoryItem, ModelApprovalStatusHistoryResponse,
     BulkApprovalStatusRequest, BulkApprovalStatusItem, BulkApprovalStatusResponse,
     ModelListResponse, UserListItem, VendorListItem, TaxonomyListItem, MethodologyListItem,
-    ModelTypeListItem, ModelRegionListItem, TagListItem
+    ModelTypeListItem, ModelRegionListItem, TagListItem,
+    AffectedUser, DisabledUserModelResponse, DisabledUsersReportResponse
 )
 from app.schemas.user_lookup import ModelAssigneeResponse
 from app.core.lob_utils import get_user_lob_rollup_name
@@ -1490,6 +1491,87 @@ def backfill_approval_status(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Backfill failed: {str(e)}"
         )
+
+
+@router.get("/disabled-users", response_model=DisabledUsersReportResponse)
+def get_models_with_disabled_users(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get all models that have disabled users in key roles.
+
+    Admin only. Returns models where owner, developer, shared owner,
+    shared developer, or monitoring manager has local_status=DISABLED.
+
+    This report supports governance workflows to identify models that
+    need reassignment due to user departures or account disabling.
+    """
+    if not is_admin(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
+
+    # Find all disabled users
+    disabled_user_ids = db.query(User.user_id).filter(
+        User.local_status == LocalStatus.DISABLED.value
+    ).subquery()
+
+    # Find models where any key role is a disabled user
+    models = db.query(Model).options(
+        joinedload(Model.owner),
+        joinedload(Model.developer),
+        joinedload(Model.shared_owner),
+        joinedload(Model.shared_developer),
+        joinedload(Model.monitoring_manager),
+    ).filter(
+        or_(
+            Model.owner_id.in_(disabled_user_ids),
+            Model.developer_id.in_(disabled_user_ids),
+            Model.shared_owner_id.in_(disabled_user_ids),
+            Model.shared_developer_id.in_(disabled_user_ids),
+            Model.monitoring_manager_id.in_(disabled_user_ids),
+        )
+    ).all()
+
+    # Build response with affected users for each model
+    result_models = []
+    for model in models:
+        affected_users = []
+
+        # Check each role
+        role_checks = [
+            ("Owner", model.owner),
+            ("Developer", model.developer),
+            ("Shared Owner", model.shared_owner),
+            ("Shared Developer", model.shared_developer),
+            ("Monitoring Manager", model.monitoring_manager),
+        ]
+
+        for role_name, user in role_checks:
+            if user and user.local_status == LocalStatus.DISABLED.value:
+                affected_users.append(AffectedUser(
+                    role=role_name,
+                    user_id=user.user_id,
+                    full_name=user.full_name,
+                    email=user.email,
+                    azure_state=user.azure_state,
+                    local_status=user.local_status,
+                ))
+
+        if affected_users:
+            result_models.append(DisabledUserModelResponse(
+                model_id=model.model_id,
+                model_name=model.model_name,
+                external_model_id=model.external_model_id,
+                affected_users=affected_users,
+            ))
+
+    return DisabledUsersReportResponse(
+        total_affected_models=len(result_models),
+        models=result_models,
+    )
 
 
 @router.get("/{model_id}", response_model=ModelDetailResponse)

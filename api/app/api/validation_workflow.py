@@ -23,6 +23,7 @@ from app.core.validation_conflicts import (
     find_active_validation_conflicts,
     build_validation_conflict_message
 )
+from app.models.user import LocalStatus
 from app.models import (
     User, Model, ModelVersion, TaxonomyValue, Taxonomy, AuditLog, Region, EntraUser, ApproverRole,
     ValidationRequest, ValidationRequestModelVersion, ValidationStatusHistory, ValidationAssignment,
@@ -121,16 +122,11 @@ def create_audit_log(
 
 
 def _is_user_active(db: Session, user: Optional[User]) -> bool:
-    """Check if user is active (has active Entra account or is local-only)."""
+    """Check if user is active based on local_status (synced from Entra)."""
     if not user:
         return False
-    if user.entra_id:
-        entra_user = db.query(EntraUser).filter(
-            EntraUser.entra_id == user.entra_id
-        ).first()
-        if entra_user and not entra_user.account_enabled:
-            return False
-    return True
+    # Use local_status which is synced from Entra via the sync service
+    return user.local_status == LocalStatus.ENABLED.value
 
 
 # Staleness threshold for overdue comments (matches overdue_commentary.py)

@@ -2,8 +2,9 @@ import { useState } from 'react';
 import Layout from '../components/Layout';
 import { VendorsContent } from './VendorsPage';
 import { UsersContent } from './UsersPage';
+import { EntraDirectoryContent } from './EntraDirectoryPage';
 
-type TabType = 'vendors' | 'users';
+type TabType = 'vendors' | 'users' | 'entra';
 
 export default function ReferenceDataPage() {
     const [activeTab, setActiveTab] = useState<TabType>('vendors');
@@ -14,7 +15,7 @@ export default function ReferenceDataPage() {
                 <div>
                     <h2 className="text-2xl font-bold">Reference Data</h2>
                     <p className="text-gray-600 text-sm mt-1">
-                        Manage vendors and users for the model inventory
+                        Manage vendors, users, and directory data for the model inventory
                     </p>
                 </div>
             </div>
@@ -42,12 +43,23 @@ export default function ReferenceDataPage() {
                     >
                         Users
                     </button>
+                    <button
+                        onClick={() => setActiveTab('entra')}
+                        className={`pb-3 px-1 border-b-2 font-medium text-sm ${
+                            activeTab === 'entra'
+                                ? 'border-blue-500 text-blue-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                        }`}
+                    >
+                        Entra Directory
+                    </button>
                 </nav>
             </div>
 
             {/* Tab Content */}
             {activeTab === 'vendors' && <VendorsContent />}
             {activeTab === 'users' && <UsersContent />}
+            {activeTab === 'entra' && <EntraDirectoryContent />}
         </Layout>
     );
 }
