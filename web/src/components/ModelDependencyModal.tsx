@@ -83,8 +83,8 @@ export default function ModelDependencyModal({
     const fetchData = async (currentEditData?: DependencyRelation) => {
         try {
             const [modelsRes, taxonomiesRes] = await Promise.all([
-                api.get('/models', { params: { is_mrsa: false } }),
-                api.get('/taxonomies')
+                api.get('/models/', { params: { is_mrsa: false } }),
+                api.get('/taxonomies/')
             ]);
 
             // Filter out current model from selection

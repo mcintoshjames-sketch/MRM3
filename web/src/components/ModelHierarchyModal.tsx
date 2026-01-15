@@ -79,8 +79,8 @@ export default function ModelHierarchyModal({
     const fetchData = async (currentEditData?: HierarchyRelation) => {
         try {
             const [modelsRes, taxonomiesRes] = await Promise.all([
-                api.get('/models'),
-                api.get('/taxonomies')
+                api.get('/models/'),
+                api.get('/taxonomies/')
             ]);
 
             // Filter out current model from selection
