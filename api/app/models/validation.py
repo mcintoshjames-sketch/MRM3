@@ -352,18 +352,52 @@ class ValidationRequest(Base):
 
     def get_submission_due_date(self) -> Optional[date]:
         """
-        Get submission due date.
+        Get submission due date with override enforcement.
+
         Uses stored value if available, otherwise calculates it.
+        Then applies any active due date override using min() to enforce
+        the "earlier only" rule (overrides can only accelerate, not delay).
+
         This method should be used when you need the value and want to ensure it's calculated.
         """
-        # Return stored value if it exists (note: this is now a column, not a property)
+        # Get the base calculated/stored date
         # The column is accessed via self.__dict__ to avoid infinite recursion
         stored_value = self.__dict__.get('submission_due_date')
-        if stored_value is not None:
-            return stored_value
+        calculated_date = stored_value if stored_value is not None else self._calculate_submission_due_date()
 
-        # Otherwise calculate it
-        return self._calculate_submission_due_date()
+        if not calculated_date:
+            return None
+
+        # Check for active override on the model
+        override_date = self._get_active_override_date()
+
+        if override_date:
+            # CRITICAL: Always use the earlier date to enforce acceleration-only
+            return min(calculated_date, override_date)
+
+        return calculated_date
+
+    def _get_active_override_date(self) -> Optional[date]:
+        """Get the override date if an active override exists for this model."""
+        if not self.model_versions_assoc or len(self.model_versions_assoc) == 0:
+            return None
+
+        model_id = self.model_versions_assoc[0].model_id
+
+        from sqlalchemy.orm import Session
+        session = Session.object_session(self)
+        if not session:
+            return None
+
+        from app.models.due_date_override import ModelDueDateOverride
+        override = session.query(ModelDueDateOverride).filter(
+            ModelDueDateOverride.model_id == model_id,
+            ModelDueDateOverride.is_active == True
+        ).first()
+
+        if override:
+            return override.override_date
+        return None
 
     def _get_policy_for_request(self) -> Optional["ValidationPolicy"]:
         """Get the validation policy based on the model's risk tier."""

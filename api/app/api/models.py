@@ -3174,6 +3174,45 @@ def get_model_activity_timeline(
                 title = f"Tag removed: {tag_removed}"
             else:
                 title = "Tag removed"
+        # Due date override actions
+        elif audit.action == "due_date_override_created":
+            icon = "📅"
+            override_date = audit.changes.get("override_date", "") if audit.changes else ""
+            override_type = audit.changes.get("override_type", "") if audit.changes else ""
+            type_label = "one-time" if override_type == "ONE_TIME" else "permanent"
+            title = f"Due date override created ({type_label})"
+            if override_date:
+                description = f"New due date: {override_date}"
+        elif audit.action == "due_date_override_cleared":
+            icon = "🗑️"
+            title = "Due date override cleared (manual)"
+            clear_reason = audit.changes.get("clear_reason", "") if audit.changes else ""
+            if clear_reason:
+                description = f"Reason: {clear_reason}"
+        elif audit.action == "due_date_override_auto_cleared":
+            icon = "✅"
+            title = "Due date override auto-cleared (validation approved)"
+            clear_reason = audit.changes.get("clear_reason", "") if audit.changes else ""
+            if clear_reason:
+                description = clear_reason
+        elif audit.action == "due_date_override_rolled_forward":
+            icon = "🔄"
+            new_date = audit.changes.get("new_override_date", "") if audit.changes else ""
+            title = "Due date override rolled forward"
+            if new_date:
+                description = f"New override date: {new_date}"
+        elif audit.action == "due_date_override_promoted":
+            icon = "⬆️"
+            title = "Due date override promoted to current request"
+            request_id = audit.changes.get("validation_request_id", "") if audit.changes else ""
+            if request_id:
+                description = f"Linked to validation request #{request_id}"
+        elif audit.action == "due_date_override_voided":
+            icon = "⚠️"
+            title = "Due date override voided (request cancelled)"
+            clear_reason = audit.changes.get("clear_reason", "") if audit.changes else ""
+            if clear_reason:
+                description = clear_reason
 
         activities.append(ActivityTimelineItem(
             timestamp=audit.timestamp,

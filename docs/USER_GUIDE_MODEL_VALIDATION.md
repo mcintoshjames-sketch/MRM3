@@ -14,6 +14,7 @@
 10. [Model Version Integration](#10-model-version-integration)
 11. [Dashboards & Monitoring](#11-dashboards--monitoring)
 12. [Key Dates & SLA Tracking](#12-key-dates--sla-tracking)
+    - [Due Date Overrides (Admin)](#due-date-overrides-admin)
 13. [Frequently Asked Questions](#13-frequently-asked-questions)
 
 ---
@@ -1085,6 +1086,107 @@ The adjusted due date appears in:
 - Team workload reports
 
 **Note:** While Team SLA is adjusted, the regulatory compliance deadline for the model (based on prior validation expiration) is **not** adjusted. This reflects the business reality that regulatory deadlines cannot be extended by internal workflow pauses.
+
+### Due Date Overrides (Admin)
+
+Administrators can override a model's validation submission due date to an **earlier** date. This feature is used when business circumstances require accelerated validation—for example, when a model shows concerning performance trends and the head of MRM decides to expedite the revalidation schedule.
+
+> **Important:** Due date overrides can only **pull dates forward** (accelerate), never push them back. This ensures overrides don't inadvertently extend compliance deadlines.
+
+#### Accessing Due Date Override
+
+1. Navigate to the **Model Details** page
+2. Scroll to the **Due Date Override** section (visible after the revalidation status cards)
+3. Only users with **Admin** role will see the override controls
+
+#### Override Types
+
+| Type | Behavior | Use When |
+|------|----------|----------|
+| **One-Time** | Automatically clears after the targeted validation is approved | Accelerating a single validation cycle due to temporary circumstances |
+| **Permanent** | Automatically rolls forward to subsequent validation cycles | Establishing an ongoing accelerated schedule for the model |
+
+#### Target Scope
+
+| Scope | Applies To | Requirements |
+|-------|------------|--------------|
+| **Current Request** | The active validation request | An open validation request must exist |
+| **Next Cycle** | The next validation request when created | Can be set even without an active validation |
+
+**NEXT_CYCLE Promotion:** When a NEXT_CYCLE override exists and a new validation request is created, the system automatically promotes the override to CURRENT_REQUEST and links it to the new validation.
+
+#### Creating an Override
+
+1. Click **"Override Due Date"** in the Due Date Override section
+2. Select **Override Type** (One-Time or Permanent)
+3. Select **Target Scope** (Current Request or Next Cycle)
+4. Choose the **New Due Date**:
+   - Must be earlier than the policy-calculated date
+   - Must be in the future
+5. Provide a **Reason** (minimum 10 characters)
+6. Click **Create Override**
+
+#### How Overrides Interact with Policy Dates
+
+The system uses **min(policy_date, override_date)** to determine the effective due date:
+
+```
+Effective Due Date = min(Policy-Calculated Date, Override Date)
+```
+
+This means:
+- If a model's risk tier changes and the policy now calculates an earlier date than the override, the **policy date** takes precedence
+- Overrides never extend deadlines beyond what policy would calculate
+- The effective date is always the earlier of the two
+
+**Example:**
+```
+Policy-calculated date:  June 30, 2026
+Override date:           May 15, 2026
+─────────────────────────────────────
+Effective due date:      May 15, 2026 (override applies)
+
+Later, risk tier changes to High risk (more frequent validation):
+Policy-calculated date:  April 30, 2026 (now earlier)
+Override date:           May 15, 2026
+─────────────────────────────────────
+Effective due date:      April 30, 2026 (policy takes precedence)
+```
+
+#### Override Lifecycle
+
+The system automatically manages override lifecycle based on validation events:
+
+| Event | One-Time Override | Permanent Override |
+|-------|-------------------|-------------------|
+| **Validation Approved** | Cleared (AUTO_VALIDATION_COMPLETE) | Rolled forward to next cycle |
+| **Validation Cancelled** | Voided (AUTO_REQUEST_CANCELLED) | Voided (AUTO_REQUEST_CANCELLED) |
+| **New Override Created** | Superseded by new override | Superseded by new override |
+| **Admin Clears Override** | Cleared (MANUAL) | Cleared (MANUAL) |
+
+**Permanent Override Roll-Forward:**
+When a validation is approved with a PERMANENT override:
+1. The current override is marked as AUTO_ROLL_FORWARD
+2. A new override record is created for the next cycle
+3. The new override date = previous override date + frequency months
+4. Full audit trail is preserved (the new override references the old one)
+
+#### Viewing Override History
+
+Click **"Show Override History"** in the override modal to see all past overrides for the model, including:
+- Override dates and types
+- Who created each override and when
+- How each override was cleared (manual, auto-cleared, rolled forward, etc.)
+- Roll-forward chain for permanent overrides
+
+#### Clearing an Override
+
+To remove an active override:
+1. Click **"Clear"** on the active override card
+2. Provide a **Reason** for clearing (minimum 10 characters)
+3. Confirm the action
+
+The due date will revert to the policy-calculated date.
 
 ---
 

@@ -177,6 +177,9 @@ export const canProxyApprove = (user?: UserLike | null): boolean =>
 export const canVoidApprovals = (user?: UserLike | null): boolean =>
     hasCapability(user, 'can_void_approvals', () => isAdmin(user));
 
+export const canManageDueDateOverrides = (user?: UserLike | null): boolean =>
+    hasCapability(user, 'can_manage_due_date_overrides', () => isAdmin(user));
+
 export const getRoleDisplay = (user?: UserLike | null): string => {
     const roleCode = getUserRoleCode(user);
     if (roleCode && ROLE_CODE_TO_DISPLAY[roleCode]) {

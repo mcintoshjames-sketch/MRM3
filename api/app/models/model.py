@@ -32,6 +32,7 @@ if TYPE_CHECKING:
     from app.models.taxonomy import TaxonomyValue
     from app.models.user import User
     from app.models.vendor import Vendor
+    from app.models.due_date_override import ModelDueDateOverride
 
 
 class ModelStatus(str, enum.Enum):
@@ -312,6 +313,12 @@ class Model(Base):
     # Model tags for categorization
     model_tags: Mapped[List["ModelTag"]] = relationship(
         "ModelTag", back_populates="model", cascade="all, delete-orphan"
+    )
+
+    # Due date overrides for validation scheduling
+    due_date_overrides: Mapped[List["ModelDueDateOverride"]] = relationship(
+        "ModelDueDateOverride", back_populates="model", cascade="all, delete-orphan",
+        order_by="desc(ModelDueDateOverride.created_at)"
     )
 
     @property

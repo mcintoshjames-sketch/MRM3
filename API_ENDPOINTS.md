@@ -309,6 +309,12 @@
 - GET /models/{model_id}/submission-thread
 - GET /models/{model_id}/validation-suggestions
 
+### due_date_override (prefixes: /models)
+- GET /models/{model_id}/due-date-override
+- POST /models/{model_id}/due-date-override
+- DELETE /models/{model_id}/due-date-override
+- GET /models/{model_id}/due-date-override/history
+
 ### monitoring (prefixes: (none))
 - GET /models/{model_id}/monitoring-plans
 - GET /monitoring/admin-overview

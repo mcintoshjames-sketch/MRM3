@@ -36,6 +36,11 @@ from app.models import (
 from app.models.recommendation import Recommendation
 from app.models.attestation import AttestationRecord
 from app.models.model_delegate import ModelDelegate
+from app.api.due_date_override import (
+    handle_override_on_approval,
+    promote_next_cycle_override,
+    void_override_on_cancellation
+)
 from app.schemas.validation import (
     ValidationRequestCreate, ValidationRequestUpdate, ValidationRequestStatusUpdate,
     ValidationRequestHold, ValidationRequestCancel, ValidationRequestResume,
@@ -2274,6 +2279,14 @@ def create_validation_request(
     if calculated_due_date:
         validation_request.submission_due_date = calculated_due_date
 
+    # ===== DUE DATE OVERRIDE: PROMOTE NEXT_CYCLE TO CURRENT_REQUEST =====
+    # If there's an active NEXT_CYCLE override for any of these models,
+    # promote it to CURRENT_REQUEST and link it to this new validation
+    for model in models:
+        promote_next_cycle_override(
+            db, model.model_id, validation_request.request_id, current_user.user_id
+        )
+
     # Create initial status history entry
     create_status_history_entry(
         db, validation_request.request_id, None, intake_status.value_id, current_user.user_id
@@ -3538,6 +3551,11 @@ def update_validation_request_status(
                 )
                 db.add(tier_snapshot_audit)
 
+        # ===== DUE DATE OVERRIDE HANDLING ON APPROVAL =====
+        # Handle override lifecycle: clear ONE_TIME or roll-forward PERMANENT
+        # Must run BEFORE any new validation request is created
+        handle_override_on_approval(db, validation_request, current_user.user_id)
+
     # ===== VALIDATION PLAN LOCKING/UNLOCKING LOGIC =====
     # Lock plan when moving to Review or Pending Approval
     # Unlock plan when sending back from locked status to editable status
@@ -4131,6 +4149,10 @@ def cancel_validation_request(
     update_version_statuses_for_validation(
         db, validation_request, "CANCELLED", current_user
     )
+
+    # ===== DUE DATE OVERRIDE: VOID ON CANCELLATION =====
+    # If there's an active override linked to this cancelled request, void it
+    void_override_on_cancellation(db, validation_request, current_user.user_id)
 
     db.commit()
     db.refresh(validation_request)

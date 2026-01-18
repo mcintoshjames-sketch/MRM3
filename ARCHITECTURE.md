@@ -78,6 +78,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - Model relationships: `model_hierarchy.py` (parent-child links with effective/end dates), `model_feed_dependency.py` (feeder-consumer data flows with active status tracking), `model_dependency_metadata.py` (extended metadata for dependencies, not yet exposed in UI).
   - Validation workflow: `validation.py` (ValidationRequest, ValidationStatusHistory, ValidationAssignment, ValidationOutcome, ValidationApproval, ValidationReviewOutcome, ValidationPlan, ValidationPlanComponent, ValidationComponentDefinition, ComponentDefinitionConfiguration/ConfigItem, ValidationPolicy, ValidationWorkflowSLA).
 - Overdue commentary: `overdue_comment.py` (OverdueRevalidationComment - tracks explanations for overdue submissions/validations with supersession chain).
+- Due date overrides: `due_date_override.py` (ModelDueDateOverride - allows admins to accelerate validation due dates with full audit trail).
   - Decommissioning: `decommissioning.py` (DecommissioningRequest, DecommissioningStatusHistory, DecommissioningApproval - model retirement workflow with replacement tracking and gap analysis).
 - Additional approvals: `conditional_approval.py` (ApproverRole, ConditionalApprovalRule, RuleRequiredApprover).
   - MAP Applications: `map_application.py` (mock application inventory), `model_application.py` (model-application links with relationship types).
@@ -323,6 +324,42 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
     - "Add Commentary" buttons for items needing updates
     - Commentary modal integration for quick updates without leaving dashboard
   - **Testing**: See `api/tests/test_overdue_commentary.py` and `api/tests/test_dashboard_commentary.py` for coverage of core commentary logic and dashboard integration.
+
+## Due Date Overrides
+- **Purpose**: Allow administrators to accelerate a model's validation submission due date to an earlier date. Used when business circumstances require expedited validation (e.g., model showing poor performance trends).
+- **Key Constraint**: Overrides can only **pull dates forward** (earlier), never push them back. This ensures compliance deadlines are never inadvertently extended.
+- **Data Model**:
+  - **ModelDueDateOverride**: Tracks override history with full audit trail. Fields: override_id, model_id, validation_request_id (optional), override_type (ONE_TIME/PERMANENT), target_scope (CURRENT_REQUEST/NEXT_CYCLE), override_date, original_calculated_date, reason, created_by_user_id, created_at, is_active, cleared_at, cleared_by_user_id, cleared_reason, cleared_type (MANUAL/AUTO_VALIDATION_COMPLETE/AUTO_ROLL_FORWARD/AUTO_REQUEST_CANCELLED/SUPERSEDED), superseded_by_override_id, rolled_from_override_id.
+  - Database constraint: `override_date < original_calculated_date` (enforces earlier-only at creation).
+  - Only one active override per model at a time.
+- **Override Types**:
+  - **ONE_TIME**: Auto-clears after targeted validation is approved.
+  - **PERMANENT**: Auto-rolls forward to subsequent cycles when validation is approved (creates new override record).
+- **Target Scope**:
+  - **CURRENT_REQUEST**: Applies to an active validation request.
+  - **NEXT_CYCLE**: Applies when next validation request is created (promoted to CURRENT_REQUEST).
+- **Dynamic Earlier-Only Enforcement**:
+  - `get_submission_due_date()` uses `min(policy_date, override_date)` to always return the earlier date.
+  - If policy calculates an earlier date due to risk tier changes, the policy date takes precedence.
+- **Lifecycle Automation**:
+  - **Approval hooks**: `handle_override_on_approval()` clears ONE_TIME or rolls forward PERMANENT.
+  - **Creation hooks**: `promote_next_cycle_override()` promotes NEXT_CYCLE to CURRENT_REQUEST when new request created.
+  - **Cancellation hooks**: `void_override_on_cancellation()` voids linked overrides when request is cancelled.
+- **API Endpoints** (prefix: `/models`):
+  - `GET /{model_id}/due-date-override` - Get current override status with policy dates
+  - `POST /{model_id}/due-date-override` - Create override (Admin only)
+  - `DELETE /{model_id}/due-date-override` - Clear override with reason (Admin only)
+  - `GET /{model_id}/due-date-override/history` - Get full override history
+- **Authorization**: Admin-only access for create/clear operations. All users can view override status.
+- **Frontend Components**:
+  - `DueDateOverrideModal.tsx`: Create/replace override with type selection, date picker, reason input, and history view.
+  - `DueDateOverrideSection.tsx`: Display override status on ModelDetailsPage with admin controls.
+  - Integrated on ModelDetailsPage after revalidation status cards.
+- **Key Files**:
+  - Backend: `api/app/models/due_date_override.py`, `api/app/schemas/due_date_override.py`, `api/app/api/due_date_override.py`
+  - Migration: `api/alembic/versions/f608fb026dd8_add_model_due_date_overrides_table.py`
+  - Integration: `api/app/models/validation.py` (get_submission_due_date), `api/app/api/validation_workflow.py` (lifecycle hooks)
+  - Frontend: `web/src/api/dueDateOverride.ts`, `web/src/components/DueDateOverrideModal.tsx`, `web/src/components/DueDateOverrideSection.tsx`
 
 ## KPM Library (Key Performance Metrics)
 - **Purpose**: Standardized library of metrics for ongoing model performance monitoring, used in monitoring plans.

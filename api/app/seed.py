@@ -1586,7 +1586,7 @@ def seed_database():
 
         for entra_data in entra_users:
             existing = db.query(EntraUser).filter(
-                (EntraUser.object_id == entra_data["entra_id"])
+                (EntraUser.object_id == entra_data["object_id"])
                 | (EntraUser.user_principal_name == entra_data["user_principal_name"])
                 | (EntraUser.mail == entra_data["mail"])
             ).first()

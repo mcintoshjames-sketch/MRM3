@@ -20,12 +20,14 @@ import ModelLimitationsTab from '../components/ModelLimitationsTab';
 import ModelExceptionsTab from '../components/ModelExceptionsTab';
 import ModelOverlaysTab from '../components/ModelOverlaysTab';
 import OverdueCommentaryModal, { OverdueType } from '../components/OverdueCommentaryModal';
+import DueDateOverrideSection from '../components/DueDateOverrideSection';
 import { useAuth } from '../contexts/AuthContext';
 import {
     canApproveModel,
     canManageIrps,
     canManageModels,
-    canManageRecommendations
+    canManageRecommendations,
+    canManageDueDateOverrides
 } from '../utils/roleUtils';
 import { ModelVersion } from '../api/versions';
 import { overdueCommentaryApi, CurrentOverdueCommentaryResponse } from '../api/overdueCommentary';
@@ -475,6 +477,7 @@ export default function ModelDetailsPage() {
     const canManageIrpsFlag = canManageIrps(user);
     const canManageModelsFlag = canManageModels(user);
     const canManageRecommendationsFlag = canManageRecommendations(user);
+    const canManageDueDateOverridesFlag = canManageDueDateOverrides(user);
     const [model, setModel] = useState<Model | null>(null);
     const [users, setUsers] = useState<User[]>([]);
     const [vendors, setVendors] = useState<Vendor[]>([]);
@@ -4122,6 +4125,15 @@ export default function ModelDetailsPage() {
                             </div>
                         </div>
                     </div>
+
+                    {/* Due Date Override Section - Admin only */}
+                    {(canManageDueDateOverridesFlag || model.row_approval_status === 'Approved') && (
+                        <DueDateOverrideSection
+                            modelId={model.model_id}
+                            modelName={model.model_name}
+                            user={user}
+                        />
+                    )}
 
                     {/* Active Validation Projects */}
                     <div className="bg-white rounded-lg shadow-md overflow-hidden">
