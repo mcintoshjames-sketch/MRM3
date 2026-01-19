@@ -437,6 +437,65 @@ Once models are selected, a toolbar appears with the following options:
 - Bulk operations are only available to administrators
 - All bulk tag changes are recorded in each model's audit history
 
+### Bulk Update Other Fields
+
+In addition to bulk tagging, administrators can update multiple model fields at once across selected models using the **Update Other Fields** action.
+
+**Accessing Bulk Field Updates:**
+1. Navigate to **Models** in the side navigation
+2. Click the **Bulk Edit** button to enter bulk edit mode
+3. Select the models you want to update using the checkboxes
+4. Click **Update Other Fields** in the bulk actions toolbar
+
+**Two-Step Process:**
+
+**Step 1 - Select Fields:**
+A modal appears showing available fields organized by type:
+- **People Fields**: Owner, Developer, Shared Owner, Shared Developer, Monitoring Manager
+- **Text Fields**: Products Covered
+- **Multi-Select Fields**: Model Users, Regulatory Categories
+
+Check the fields you want to update. At least one field must be selected to proceed.
+
+**Step 2 - Enter Values:**
+The modal shows input controls only for your selected fields:
+- **People Pickers**: Searchable dropdown to select a user (or clear to remove the assignment)
+- **Products Covered**: Text area for entering/replacing the products covered value
+- **Model Users**: Multi-user picker with Add/Replace mode toggle
+- **Regulatory Categories**: Checkbox list with Add/Replace mode toggle
+
+**Multi-Select Modes:**
+For Model Users and Regulatory Categories, you can choose how the update is applied:
+
+| Mode | Behavior |
+|------|----------|
+| **Add to existing** | Adds the selected values to each model's existing assignments (preserves current values) |
+| **Replace existing** | Removes all existing assignments and replaces with the selected values |
+
+**Validation Rules:**
+The system validates each model individually against its current state:
+- Owner cannot be the same as the model's shared owner (and vice versa)
+- Developer cannot be the same as the model's shared developer (and vice versa)
+- Owner cannot be cleared (required field)
+- Developer cannot be cleared if already set (business rule)
+- All referenced user IDs must exist in the system
+
+**Partial Success Handling:**
+Because validation is per-model, some models may succeed while others fail. The success message shows a breakdown:
+- "Updated 8 models successfully"
+- "Updated 5 models successfully. 3 failed."
+
+If any models fail, details are shown in an expandable section with the specific error for each model.
+
+**Example Use Cases:**
+- Reassigning ownership of multiple models to a new team lead
+- Adding a new regulatory category to all models in a specific business line
+- Updating the monitoring manager across a portfolio of related models
+
+**Notes:**
+- Bulk field updates are only available to administrators
+- Each model update creates an individual audit log entry for traceability
+
 ### Tag Reports
 
 The **Model Tags Report** provides analytics on tag usage across the inventory:

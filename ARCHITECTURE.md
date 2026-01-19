@@ -21,7 +21,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
 - Routing modules (`app/api/`):
   - `auth.py`: login, user CRUD, mock Microsoft Entra directory search/provisioning, self-service update (`PATCH /auth/users/me`) for safe fields.
   - `users.py`: scoped user lookup (`GET /users/search`) for email-based search without full directory access.
-  - `models.py`: model CRUD, regulatory metadata, cross-references to vendors/owners/developers, regulatory categories; model-scoped assignee lookup; RLS helpers in `app/core/rls.py`.
+  - `models.py`: model CRUD, regulatory metadata, cross-references to vendors/owners/developers, regulatory categories; model-scoped assignee lookup; bulk field updates (owner, developer, shared roles, products covered, users, regulatory categories); RLS helpers in `app/core/rls.py`.
   - `model_versions.py`, `model_change_taxonomy.py`: versioning, change type taxonomy, change history.
   - `model_regions.py`, `regions.py`: normalized regions and model-region assignments.
   - `model_delegates.py`: delegate assignments for models.
@@ -1070,6 +1070,37 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - **ModelsPage**: Tags column in table, tag filter dropdown
   - **ModelDetailsPage**: Tags section with inline edit capability
 - **Testing**: Tests in `api/tests/test_tags.py` cover category/tag CRUD, model tag operations, bulk operations, history tracking, authorization, and cascade delete rules.
+
+## Model Bulk Field Updates
+- **Purpose**: Admin-only bulk update of model fields (people assignments, regulatory metadata) across multiple models with per-model validation and individual audit logging.
+- **API Endpoint**:
+  - `POST /models/bulk-update-fields` (Admin only) - Bulk update fields on multiple models
+- **Supported Fields**:
+  - **People Pickers** (single-select): owner_id, developer_id, shared_owner_id, shared_developer_id, monitoring_manager_id
+  - **Text Field**: products_covered
+  - **Multi-Select with Mode**: user_ids (add/replace), regulatory_category_ids (add/replace)
+- **Request Schema** (`app/schemas/model_bulk.py`):
+  - `model_ids`: Required list of model IDs to update
+  - Each field is optional; only provided fields are updated
+  - Multi-select fields support `_mode` suffix for add/replace behavior
+- **Validation Rules** (per-model against DB state):
+  - Owner cannot equal model's shared_owner (and vice versa)
+  - Developer cannot equal model's shared_developer (and vice versa)
+  - Owner cannot be cleared (required field)
+  - Developer cannot be cleared if already set
+  - All referenced user/category IDs must exist
+  - If both owner and shared_owner provided in same request: they must differ
+- **Processing Model**:
+  - Best-effort processing (not atomic) - each model processed individually
+  - Partial success: some models may succeed while others fail validation
+  - Response includes per-model results with success/error details
+  - Individual AuditLog entry created per modified model (action: BULK_UPDATE)
+- **Frontend Components**:
+  - **BulkUpdateFieldsModal**: Two-step modal (field selection → value entry) with searchable user pickers, add/replace mode toggles for multi-select fields
+  - **BulkActionsToolbar**: "Update Other Fields" button alongside tag operations
+  - **ModelsPage**: Integration with modal state and success callback
+- **Frontend API** (`web/src/api/modelBulk.ts`): `bulkUpdateFields()` function
+- **Testing**: Tests in `api/tests/test_models_bulk_update.py` cover access control, validation edge cases, people fields, multi-select modes, text fields, audit logging, and multiple field updates.
 
 ## My Portfolio Report
 - **Purpose**: Consolidated dashboard for model owners showing all their responsibilities and action items across the system.

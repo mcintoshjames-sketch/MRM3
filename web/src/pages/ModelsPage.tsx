@@ -16,6 +16,7 @@ import TagBadge from '../components/TagBadge';
 import { TagListItem, TagWithCategory, listTags } from '../api/tags';
 import BulkActionsToolbar from '../components/BulkActionsToolbar';
 import BulkTagModal from '../components/BulkTagModal';
+import BulkUpdateFieldsModal from '../components/BulkUpdateFieldsModal';
 
 interface User {
     user_id: number;
@@ -223,6 +224,7 @@ export default function ModelsPage() {
     const [selectedModelIds, setSelectedModelIds] = useState<Set<number>>(new Set());
     const [showBulkTagModal, setShowBulkTagModal] = useState(false);
     const [bulkTagMode, setBulkTagMode] = useState<'assign' | 'remove'>('assign');
+    const [showBulkUpdateFieldsModal, setShowBulkUpdateFieldsModal] = useState(false);
     const [bulkSuccessMessage, setBulkSuccessMessage] = useState<string | null>(null);
 
     // KPI drill-down filter state
@@ -1009,6 +1011,18 @@ export default function ModelsPage() {
     const handleBulkRemoveTag = () => {
         setBulkTagMode('remove');
         setShowBulkTagModal(true);
+    };
+
+    const handleBulkUpdateFields = () => {
+        setShowBulkUpdateFieldsModal(true);
+    };
+
+    const handleBulkUpdateFieldsSuccess = (message: string) => {
+        setBulkSuccessMessage(message);
+        // Refresh the models list to show updated data
+        fetchData(kpiDrillDownActive ? kpiDrillDownIds : null);
+        // Auto-clear success message after 5 seconds
+        setTimeout(() => setBulkSuccessMessage(null), 5000);
     };
 
     const handleBulkExportSelected = () => {
@@ -3862,6 +3876,7 @@ export default function ModelsPage() {
                         totalOnPage={paginatedModels.length}
                         onAssignTag={handleBulkAssignTag}
                         onRemoveTag={handleBulkRemoveTag}
+                        onUpdateFields={handleBulkUpdateFields}
                         onExportSelected={handleBulkExportSelected}
                         onDeselectAll={deselectAll}
                     />
@@ -4024,6 +4039,14 @@ export default function ModelsPage() {
                     selectedModelIds={Array.from(selectedModelIds)}
                     onClose={() => setShowBulkTagModal(false)}
                     onSuccess={handleBulkTagSuccess}
+                />
+
+                {/* Bulk Update Fields Modal */}
+                <BulkUpdateFieldsModal
+                    isOpen={showBulkUpdateFieldsModal}
+                    selectedModelIds={Array.from(selectedModelIds)}
+                    onClose={() => setShowBulkUpdateFieldsModal(false)}
+                    onSuccess={handleBulkUpdateFieldsSuccess}
                 />
             </div>
         </Layout>

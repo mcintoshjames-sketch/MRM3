@@ -53,6 +53,11 @@ from app.schemas.model import (
     ModelTypeListItem, ModelRegionListItem, TagListItem,
     AffectedUser, DisabledUserModelResponse, DisabledUsersReportResponse
 )
+from app.schemas.model_bulk import (
+    BulkUpdateFieldsRequest,
+    BulkUpdateFieldsResponse,
+    BulkUpdateResultItem,
+)
 from app.schemas.user_lookup import ModelAssigneeResponse
 from app.core.lob_utils import get_user_lob_rollup_name
 from app.core.team_utils import build_lob_team_map
@@ -4619,3 +4624,307 @@ def get_model_approval_status_history(
         total_count=total_count,
         history=history_items,
     )
+
+
+# ============================================================================
+# BULK UPDATE FIELDS
+# ============================================================================
+
+
+def _require_admin(user: User, action: str = "perform this action"):
+    """Require admin role for the operation."""
+    if not is_admin(user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Admin access required to {action}"
+        )
+
+
+@router.post("/bulk-update-fields", response_model=BulkUpdateFieldsResponse)
+def bulk_update_fields(
+    payload: BulkUpdateFieldsRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Bulk update fields on multiple models (Admin only).
+
+    This endpoint processes each model individually (best-effort), allowing partial success.
+    For each model, it validates constraints against the model's current DB state before applying updates.
+
+    Supported fields:
+    - People pickers: owner_id, developer_id, shared_owner_id, shared_developer_id, monitoring_manager_id
+    - Text: products_covered
+    - Multi-select with mode: user_ids (model users), regulatory_category_ids
+
+    For multi-select fields:
+    - mode="add": Adds new values to existing (set union, no duplicates)
+    - mode="replace": Replaces all existing values
+
+    To distinguish "don't change" vs "set to null":
+    - Field not in request body: Don't change
+    - Field in request body with value: Set to that value
+    - Field in request body as null: Clear the field (where allowed)
+    """
+    _require_admin(current_user, "bulk update model fields")
+
+    # Get fields that were explicitly provided (not just default None)
+    payload_dict = payload.model_dump(exclude_unset=True)
+
+    # Must have at least one field to update besides model_ids and mode fields
+    update_fields = {
+        k for k in payload_dict.keys()
+        if k not in {'model_ids', 'user_ids_mode', 'regulatory_category_ids_mode'}
+    }
+    if not update_fields:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No fields to update provided"
+        )
+
+    # Verify all models exist
+    models = db.query(Model).options(
+        selectinload(Model.users),
+        selectinload(Model.regulatory_categories),
+    ).filter(Model.model_id.in_(payload.model_ids)).all()
+
+    found_model_ids = {m.model_id for m in models}
+    missing_model_ids = set(payload.model_ids) - found_model_ids
+    if missing_model_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Models not found: {sorted(missing_model_ids)}"
+        )
+
+    # Pre-validate all referenced user IDs exist (batch lookup)
+    user_ids_to_check = set()
+    user_fields = ['owner_id', 'developer_id', 'shared_owner_id', 'shared_developer_id', 'monitoring_manager_id']
+    for field in user_fields:
+        if field in payload_dict and payload_dict[field] is not None:
+            user_ids_to_check.add(payload_dict[field])
+
+    if 'user_ids' in payload_dict and payload_dict['user_ids']:
+        user_ids_to_check.update(payload_dict['user_ids'])
+
+    if user_ids_to_check:
+        found_users = db.query(User.user_id).filter(User.user_id.in_(user_ids_to_check)).all()
+        found_user_ids = {u[0] for u in found_users}
+        missing_user_ids = user_ids_to_check - found_user_ids
+        if missing_user_ids:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Users not found: {sorted(missing_user_ids)}"
+            )
+
+    # Pre-validate all referenced taxonomy value IDs exist
+    if 'regulatory_category_ids' in payload_dict and payload_dict['regulatory_category_ids']:
+        found_taxonomies = db.query(TaxonomyValue.value_id).filter(
+            TaxonomyValue.value_id.in_(payload_dict['regulatory_category_ids']),
+            TaxonomyValue.is_active == True
+        ).all()
+        found_taxonomy_ids = {t[0] for t in found_taxonomies}
+        missing_taxonomy_ids = set(payload_dict['regulatory_category_ids']) - found_taxonomy_ids
+        if missing_taxonomy_ids:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Regulatory categories not found or inactive: {sorted(missing_taxonomy_ids)}"
+            )
+
+    # Check for self-reference conflicts if both owner and shared_owner provided
+    if 'owner_id' in payload_dict and 'shared_owner_id' in payload_dict:
+        new_owner = payload_dict['owner_id']
+        new_shared_owner = payload_dict['shared_owner_id']
+        if new_owner is not None and new_shared_owner is not None and new_owner == new_shared_owner:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Owner and shared owner cannot be the same user"
+            )
+
+    # Check for self-reference conflicts if both developer and shared_developer provided
+    if 'developer_id' in payload_dict and 'shared_developer_id' in payload_dict:
+        new_developer = payload_dict['developer_id']
+        new_shared_developer = payload_dict['shared_developer_id']
+        if new_developer is not None and new_shared_developer is not None and new_developer == new_shared_developer:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Developer and shared developer cannot be the same user"
+            )
+
+    # Process each model individually
+    results: list[BulkUpdateResultItem] = []
+    modified_count = 0
+    skipped_count = 0
+    failed_count = 0
+
+    for model in models:
+        try:
+            error = _validate_and_apply_bulk_update(
+                db, model, payload_dict, current_user
+            )
+            if error:
+                results.append(BulkUpdateResultItem(
+                    model_id=model.model_id,
+                    model_name=model.model_name,
+                    success=False,
+                    error=error
+                ))
+                failed_count += 1
+            else:
+                results.append(BulkUpdateResultItem(
+                    model_id=model.model_id,
+                    model_name=model.model_name,
+                    success=True,
+                    error=None
+                ))
+                modified_count += 1
+        except Exception as e:
+            results.append(BulkUpdateResultItem(
+                model_id=model.model_id,
+                model_name=model.model_name,
+                success=False,
+                error=str(e)
+            ))
+            failed_count += 1
+
+    # Commit all changes
+    db.commit()
+
+    return BulkUpdateFieldsResponse(
+        total_requested=len(payload.model_ids),
+        total_modified=modified_count,
+        total_skipped=skipped_count,
+        total_failed=failed_count,
+        results=results
+    )
+
+
+def _validate_and_apply_bulk_update(
+    db: Session,
+    model: Model,
+    payload_dict: dict,
+    current_user: User
+) -> Optional[str]:
+    """
+    Validate and apply bulk update to a single model.
+
+    Returns an error message if validation fails, None if successful.
+    """
+    changes_applied: dict = {}
+
+    # --- Owner validation ---
+    if 'owner_id' in payload_dict:
+        new_owner_id = payload_dict['owner_id']
+        if new_owner_id is None:
+            return "Owner is a required field and cannot be cleared"
+
+        # Check against existing shared_owner
+        if model.shared_owner_id and new_owner_id == model.shared_owner_id:
+            return f"New owner (ID {new_owner_id}) conflicts with existing shared owner"
+
+        if new_owner_id != model.owner_id:
+            changes_applied['owner_id'] = {'old': model.owner_id, 'new': new_owner_id}
+            model.owner_id = new_owner_id
+
+    # --- Developer validation ---
+    if 'developer_id' in payload_dict:
+        new_developer_id = payload_dict['developer_id']
+        # Cannot clear developer once set
+        if new_developer_id is None and model.developer_id is not None:
+            return "Developer cannot be cleared once set"
+
+        if new_developer_id is not None:
+            # Check against existing shared_developer
+            if model.shared_developer_id and new_developer_id == model.shared_developer_id:
+                return f"New developer (ID {new_developer_id}) conflicts with existing shared developer"
+
+        if new_developer_id != model.developer_id:
+            changes_applied['developer_id'] = {'old': model.developer_id, 'new': new_developer_id}
+            model.developer_id = new_developer_id
+
+    # --- Shared owner validation ---
+    if 'shared_owner_id' in payload_dict:
+        new_shared_owner_id = payload_dict['shared_owner_id']
+        if new_shared_owner_id is not None:
+            # Get effective owner_id (may have been updated above)
+            effective_owner_id = model.owner_id
+            if new_shared_owner_id == effective_owner_id:
+                return f"Shared owner (ID {new_shared_owner_id}) cannot be the same as owner"
+
+        if new_shared_owner_id != model.shared_owner_id:
+            changes_applied['shared_owner_id'] = {'old': model.shared_owner_id, 'new': new_shared_owner_id}
+            model.shared_owner_id = new_shared_owner_id
+
+    # --- Shared developer validation ---
+    if 'shared_developer_id' in payload_dict:
+        new_shared_developer_id = payload_dict['shared_developer_id']
+        if new_shared_developer_id is not None:
+            # Get effective developer_id (may have been updated above)
+            effective_developer_id = model.developer_id
+            if effective_developer_id and new_shared_developer_id == effective_developer_id:
+                return f"Shared developer (ID {new_shared_developer_id}) cannot be the same as developer"
+
+        if new_shared_developer_id != model.shared_developer_id:
+            changes_applied['shared_developer_id'] = {'old': model.shared_developer_id, 'new': new_shared_developer_id}
+            model.shared_developer_id = new_shared_developer_id
+
+    # --- Monitoring manager (no special validation) ---
+    if 'monitoring_manager_id' in payload_dict:
+        new_monitoring_manager_id = payload_dict['monitoring_manager_id']
+        if new_monitoring_manager_id != model.monitoring_manager_id:
+            changes_applied['monitoring_manager_id'] = {'old': model.monitoring_manager_id, 'new': new_monitoring_manager_id}
+            model.monitoring_manager_id = new_monitoring_manager_id
+
+    # --- Products covered (text field, replace mode) ---
+    if 'products_covered' in payload_dict:
+        new_products_covered = payload_dict['products_covered']
+        if new_products_covered != model.products_covered:
+            changes_applied['products_covered'] = {'old': model.products_covered, 'new': new_products_covered}
+            model.products_covered = new_products_covered
+
+    # --- User IDs (model users, multi-select with mode) ---
+    if 'user_ids' in payload_dict:
+        new_user_ids = payload_dict['user_ids'] or []
+        mode = payload_dict.get('user_ids_mode', 'add')
+        old_user_ids = [u.user_id for u in model.users]
+
+        if mode == 'add':
+            # Set union to prevent duplicates
+            final_user_ids = list(set(old_user_ids) | set(new_user_ids))
+        else:  # replace
+            final_user_ids = new_user_ids
+
+        if sorted(final_user_ids) != sorted(old_user_ids):
+            users = db.query(User).filter(User.user_id.in_(final_user_ids)).all()
+            model.users = users
+            changes_applied['user_ids'] = {'old': sorted(old_user_ids), 'new': sorted(final_user_ids)}
+
+    # --- Regulatory category IDs (multi-select with mode) ---
+    if 'regulatory_category_ids' in payload_dict:
+        new_category_ids = payload_dict['regulatory_category_ids'] or []
+        mode = payload_dict.get('regulatory_category_ids_mode', 'add')
+        old_category_ids = [c.value_id for c in model.regulatory_categories]
+
+        if mode == 'add':
+            # Set union to prevent duplicates
+            final_category_ids = list(set(old_category_ids) | set(new_category_ids))
+        else:  # replace
+            final_category_ids = new_category_ids
+
+        if sorted(final_category_ids) != sorted(old_category_ids):
+            categories = db.query(TaxonomyValue).filter(TaxonomyValue.value_id.in_(final_category_ids)).all()
+            model.regulatory_categories = categories
+            changes_applied['regulatory_category_ids'] = {'old': sorted(old_category_ids), 'new': sorted(final_category_ids)}
+
+    # Create audit log entry if any changes were made
+    if changes_applied:
+        model.updated_at = utc_now()
+        create_audit_log(
+            db=db,
+            entity_type="Model",
+            entity_id=model.model_id,
+            action="BULK_UPDATE",
+            user_id=current_user.user_id,
+            changes=changes_applied
+        )
+
+    return None  # Success
