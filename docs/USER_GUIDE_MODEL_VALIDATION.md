@@ -1188,6 +1188,21 @@ To remove an active override:
 
 The due date will revert to the policy-calculated date.
 
+#### Activity Timeline
+
+All override actions are recorded in the model's **Activity Timeline** (found on the Activity tab of the Model Details page). This provides a complete audit trail of due date changes.
+
+| Icon | Activity | Meaning |
+|------|----------|---------|
+| 📅 | **Due date override created** | An admin created a new override. Shows whether it's one-time or permanent, and the new due date. |
+| 🗑️ | **Due date override cleared (manual)** | An admin manually removed an active override. Shows the reason provided. |
+| ✅ | **Due date override auto-cleared** | A one-time override was automatically cleared when its linked validation was approved. |
+| 🔄 | **Due date override rolled forward** | A permanent override was automatically rolled to the next validation cycle. Shows the new override date (previous date + frequency months). |
+| ⬆️ | **Due date override promoted** | A NEXT_CYCLE override was promoted to CURRENT_REQUEST when a new validation request was created. Shows the linked request ID. |
+| ⚠️ | **Due date override voided** | An override was voided because its linked validation request was cancelled. |
+
+**Tip:** The Activity Timeline shows who performed each action and when, making it easy to trace the full history of due date changes for audit purposes.
+
 ---
 
 ## 13. Frequently Asked Questions

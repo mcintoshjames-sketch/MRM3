@@ -394,31 +394,6 @@ export default function AdminDashboardPage() {
         return value.split('T')[0];
     };
 
-    const getMrsaPastDueSummary = (item: MRSAReviewPastDue) => {
-        if (item.status === 'NO_IRP') {
-            return 'No IRP coverage';
-        }
-        if (item.status === 'NEVER_REVIEWED') {
-            return 'No reviews recorded';
-        }
-        if (item.days_until_due === null || item.days_until_due >= 0) {
-            return 'Past due';
-        }
-        return `${Math.abs(item.days_until_due)}d overdue`;
-    };
-
-    const getMrsaPastDueBorderColor = (status: MRSAReviewStatusCode) => {
-        switch (status) {
-            case 'NO_IRP':
-            case 'OVERDUE':
-                return '#dc2626';
-            case 'NEVER_REVIEWED':
-                return '#ea580c';
-            default:
-                return '#dc2626';
-        }
-    };
-
     // Generic CSV export helper
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const exportToCSV = (data: any[], filename: string, columns: { key: string; label: string }[]) => {
@@ -532,85 +507,6 @@ export default function AdminDashboardPage() {
                             </div>
                         </div>
                     </div>
-                </div>
-            )}
-
-            {mrsaPastDue.length > 0 && (
-                <div className="bg-white p-4 rounded-lg shadow mb-6">
-                    <div className="flex items-center gap-2 mb-3 pb-2 border-b">
-                        <svg className="w-4 h-4 text-red-500" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                        </svg>
-                        <h3 className="text-sm font-semibold text-gray-700">Past-Due MRSA Reviews</h3>
-                        <span className="text-xs text-gray-500 ml-auto">{mrsaPastDue.length} active</span>
-                        <button
-                            onClick={() => exportToCSV(mrsaPastDue, 'mrsa_review_past_due', [
-                                { key: 'mrsa_id', label: 'MRSA ID' },
-                                { key: 'mrsa_name', label: 'MRSA Name' },
-                                { key: 'risk_level', label: 'Risk Level' },
-                                { key: 'status', label: 'Status' },
-                                { key: 'last_review_date', label: 'Last Review' },
-                                { key: 'next_due_date', label: 'Next Due' },
-                                { key: 'days_until_due', label: 'Days Until Due' },
-                                { key: 'owner.full_name', label: 'Owner' },
-                            ])}
-                            className="text-xs text-gray-500 hover:text-gray-700"
-                            title="Export to CSV"
-                        >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                            </svg>
-                        </button>
-                    </div>
-                    <div className="space-y-2 max-h-[min(20rem,50vh)] overflow-y-auto">
-                        {mrsaPastDue.slice(0, 5).map((item) => (
-                            <div
-                                key={item.mrsa_id}
-                                className="border-l-3 pl-3 py-2 hover:bg-gray-50 rounded-r"
-                                style={{
-                                    borderLeftWidth: '3px',
-                                    borderLeftColor: getMrsaPastDueBorderColor(item.status)
-                                }}
-                            >
-                                <div className="flex items-start justify-between gap-2">
-                                    <div className="flex-1 min-w-0">
-                                        <div className="flex items-center gap-2 mb-1">
-                                            <MRSAReviewStatusBadge status={item.status} />
-                                            <span className="text-xs text-gray-400">{getMrsaPastDueSummary(item)}</span>
-                                        </div>
-                                        <Link
-                                            to={`/models/${item.mrsa_id}`}
-                                            className="text-sm font-medium text-gray-800 hover:text-blue-600 truncate block"
-                                        >
-                                            {item.mrsa_name}
-                                        </Link>
-                                        <p className="text-xs text-gray-600 mt-0.5">
-                                            {item.risk_level ? `${item.risk_level} risk` : 'Risk level not set'}
-                                            {item.owner ? ` • Owner: ${item.owner.full_name}` : ' • Owner unassigned'}
-                                        </p>
-                                        <p className="text-xs text-gray-500 mt-0.5">
-                                            Last review: {formatDate(item.last_review_date)} • Next due: {formatDate(item.next_due_date)}
-                                        </p>
-                                        {item.has_exception && item.exception_due_date && (
-                                            <p className="text-xs text-purple-600 mt-0.5">
-                                                Exception: {formatDate(item.exception_due_date)}
-                                            </p>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                    {mrsaPastDue.length > 5 && (
-                        <div className="mt-3 pt-2 border-t text-center">
-                            <Link
-                                to="/irps"
-                                className="text-xs text-blue-600 hover:text-blue-800"
-                            >
-                                View all {mrsaPastDue.length} past-due MRSA reviews &rarr;
-                            </Link>
-                        </div>
-                    )}
                 </div>
             )}
 
@@ -1905,6 +1801,92 @@ export default function AdminDashboardPage() {
                                                     </button>
                                                 )}
                                             </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+
+                {/* Past-Due MRSA Reviews */}
+                {mrsaPastDue.length > 0 && (
+                    <div className="bg-white rounded-lg shadow-md overflow-hidden">
+                        <div className="p-4 border-b bg-red-50">
+                            <div className="flex items-center">
+                                <svg className="h-5 w-5 text-red-600 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                </svg>
+                                <h3 className="text-lg font-bold text-red-900">
+                                    Past-Due MRSA Reviews ({mrsaPastDue.length})
+                                </h3>
+                                <button
+                                    onClick={() => exportToCSV(mrsaPastDue, 'mrsa_review_past_due', [
+                                        { key: 'mrsa_id', label: 'MRSA ID' },
+                                        { key: 'mrsa_name', label: 'MRSA Name' },
+                                        { key: 'risk_level', label: 'Risk Level' },
+                                        { key: 'status', label: 'Status' },
+                                        { key: 'last_review_date', label: 'Last Review' },
+                                        { key: 'next_due_date', label: 'Next Due' },
+                                        { key: 'days_until_due', label: 'Days Until Due' },
+                                        { key: 'owner.full_name', label: 'Owner' },
+                                    ])}
+                                    className="ml-auto text-red-600 hover:text-red-800"
+                                    title="Export to CSV"
+                                >
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    </svg>
+                                </button>
+                            </div>
+                            <p className="text-sm text-red-700 ml-7">MRSAs requiring independent review that are past due</p>
+                        </div>
+                        <table className="min-w-full divide-y divide-gray-200">
+                            <thead className="bg-gray-50">
+                                <tr>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">MRSA</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Owner</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Last Review</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Next Due</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                                {mrsaPastDue.map((item) => (
+                                    <tr key={item.mrsa_id} className="hover:bg-red-50">
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                            <Link
+                                                to={`/models/${item.mrsa_id}`}
+                                                className="text-blue-600 hover:text-blue-800 font-medium"
+                                            >
+                                                {item.mrsa_name}
+                                            </Link>
+                                        </td>
+                                        <td className="px-4 py-3 whitespace-nowrap text-sm">
+                                            {item.owner?.full_name || <span className="text-gray-400">Unassigned</span>}
+                                        </td>
+                                        <td className="px-4 py-3 whitespace-nowrap text-sm">
+                                            {formatDate(item.last_review_date)}
+                                        </td>
+                                        <td className="px-4 py-3 whitespace-nowrap text-sm">
+                                            {formatDate(item.next_due_date)}
+                                        </td>
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                            <MRSAReviewStatusBadge status={item.status} />
+                                            {item.days_until_due !== null && item.days_until_due < 0 && (
+                                                <span className="ml-2 px-2 py-1 text-xs font-semibold rounded bg-red-100 text-red-800">
+                                                    {Math.abs(item.days_until_due)} days overdue
+                                                </span>
+                                            )}
+                                        </td>
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                            <Link
+                                                to={`/models/${item.mrsa_id}`}
+                                                className="text-blue-600 hover:text-blue-800 text-sm"
+                                            >
+                                                View
+                                            </Link>
                                         </td>
                                     </tr>
                                 ))}
