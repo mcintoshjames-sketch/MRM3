@@ -22,6 +22,10 @@ from app.models.model_pending_edit import ModelPendingEdit  # For pending edit w
 from app.models.lob import LOBUnit
 
 
+# Include KPI test fixtures
+pytest_plugins = ["tests.conftest_kpi"]
+
+
 def _build_sqlite_url(base_dir: Path, worker_id: str) -> tuple[str, Path]:
     db_dir = base_dir / f"sqlite_{worker_id}"
     db_dir.mkdir(parents=True, exist_ok=True)

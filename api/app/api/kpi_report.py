@@ -216,6 +216,28 @@ METRIC_DEFINITIONS = {
         "type": "ratio",
         "is_kri": True,
     },
+    # Data Quality Metrics (Phase 4 Category A Enhancements)
+    "4.2a": {
+        "name": "Models Missing Risk Tier",
+        "definition": "Data quality indicator: count of active models without risk tier assignment. High counts may indicate data quality issues that mask risk aggregation accuracy.",
+        "calculation": "Count of models with risk_tier_id = NULL",
+        "category": "Data Quality",
+        "type": "count",
+    },
+    "4.10a": {
+        "name": "% Models with Timely Monitoring",
+        "definition": "Model-level monitoring compliance: percentage of monitored models where ALL monitoring submissions were on-time. Complements cycle-level metric 4.10.",
+        "calculation": "(# models with all submissions on-time) / (# models with monitoring plans) × 100%",
+        "category": "Monitoring",
+        "type": "ratio",
+    },
+    "4.19a": {
+        "name": "Recommendations Without Target Date",
+        "definition": "Data quality indicator: count of open recommendations without a target date. These recommendations cannot be measured for timeliness and may indicate process gaps.",
+        "calculation": "Count of open recommendations with current_target_date = NULL",
+        "category": "Recommendations",
+        "type": "count",
+    },
 }
 
 
@@ -291,6 +313,21 @@ def _compute_metric_4_2(db: Session, active_models: List[Model]) -> KPIMetric:
     ]
 
     return _create_metric("4.2", breakdown_value=breakdown)
+
+
+def _compute_metric_4_2a(db: Session, active_models: List[Model]) -> KPIMetric:
+    """4.2a - Models Missing Risk Tier (Data Quality Indicator)
+
+    Purpose: Surface data quality issues that would otherwise be hidden
+    in the "Unassigned" category of Metric 4.2. High counts may indicate
+    gaps in model onboarding or data migration processes.
+
+    Returns count of models with NULL risk_tier_id, with drill-down IDs.
+    """
+    missing_tier_models = [m for m in active_models if m.risk_tier_id is None]
+    missing_tier_ids = [m.model_id for m in missing_tier_models]
+
+    return _create_metric("4.2a", count_value=len(missing_tier_models))
 
 
 def _compute_metric_4_3(db: Session, active_models: List[Model]) -> KPIMetric:
@@ -789,6 +826,84 @@ def _compute_monitoring_metrics(
     }
 
 
+def _compute_metric_4_10a(db: Session, active_models: List[Model]) -> KPIMetric:
+    """4.10a - % Models with Timely Monitoring (Model-Level Compliance)
+
+    Purpose: Model-level view of monitoring compliance (complements cycle-level 4.10).
+    A model passes only if ALL its monitoring submissions in the reporting period
+    were on-time. This prevents models with many cycles from having outsized
+    influence compared to models with fewer cycles.
+
+    Uses bulk query to avoid N+1 performance issue - fetches all monitoring cycles
+    in a single query, then groups by model.
+    """
+    from collections import defaultdict
+    from app.models.monitoring import MonitoringPlanMembership
+
+    if not active_models:
+        return _create_metric("4.10a", ratio_value=KPIDecomposition(
+            numerator=0,
+            denominator=0,
+            percentage=0.0,
+            numerator_label="with all submissions on-time",
+            denominator_label="models with monitoring plans",
+            numerator_model_ids=None
+        ))
+
+    model_ids = [m.model_id for m in active_models]
+
+    # BULK QUERY: Fetch all monitoring cycles for all models in ONE query
+    # Join through MonitoringPlanMembership to get model_id -> cycle relationship
+    cycles_query = (
+        db.query(
+            MonitoringPlanMembership.model_id,
+            MonitoringCycle.submission_due_date,
+            MonitoringCycle.submitted_at
+        )
+        .join(MonitoringCycle, MonitoringCycle.plan_id == MonitoringPlanMembership.plan_id)
+        .filter(MonitoringPlanMembership.model_id.in_(model_ids))
+        .filter(MonitoringPlanMembership.effective_to.is_(None))  # Only active memberships
+        .filter(MonitoringCycle.status == "APPROVED")  # Only consider approved cycles
+        .all()
+    )
+
+    # Group cycles by model_id
+    cycles_by_model: Dict[int, List[Dict[str, Any]]] = defaultdict(list)
+    for model_id, due_date, submitted_at in cycles_query:
+        cycles_by_model[model_id].append({
+            'due_date': due_date,
+            'submitted_at': submitted_at
+        })
+
+    # Evaluate each model
+    models_with_monitoring: List[int] = []
+    models_with_all_timely: List[int] = []
+
+    for model_id, cycles in cycles_by_model.items():
+        if not cycles:
+            continue
+
+        models_with_monitoring.append(model_id)
+
+        # Check if ALL cycles are on-time
+        # On-time means: submitted_at exists AND due_date exists AND submitted_at.date() <= due_date
+        all_timely = all(
+            c['submitted_at'] and c['due_date'] and c['submitted_at'].date() <= c['due_date']
+            for c in cycles
+        )
+        if all_timely:
+            models_with_all_timely.append(model_id)
+
+    return _create_metric("4.10a", ratio_value=KPIDecomposition(
+        numerator=len(models_with_all_timely),
+        denominator=len(models_with_monitoring),
+        percentage=_safe_percentage(len(models_with_all_timely), len(models_with_monitoring)),
+        numerator_label="with all submissions on-time",
+        denominator_label="models with monitoring plans",
+        numerator_model_ids=models_with_all_timely if models_with_all_timely else None
+    ))
+
+
 def _compute_metric_4_14(db: Session, active_models: List[Model]) -> KPIMetric:
     """4.14 - % of Models with Critical Limitations"""
     total = len(active_models)
@@ -815,7 +930,13 @@ def _compute_recommendation_metrics(
     db: Session,
     active_models: List[Model]
 ) -> Dict[str, Any]:
-    """Compute recommendation-related metrics (4.18, 4.19, 4.20, 4.21)."""
+    """Compute recommendation-related metrics (4.18, 4.19, 4.20, 4.21).
+
+    Metric 4.19 Business Rules:
+    - Recommendations with NULL current_target_date are NOT counted as past due
+    - Rationale: Target date may be intentionally unset for long-term/strategic items
+    - Use Metric 4.19a to monitor recommendations without target dates
+    """
     total_models = len(active_models)
     model_ids = [m.model_id for m in active_models]
     today = date.today()
@@ -886,8 +1007,41 @@ def _compute_recommendation_metrics(
     }
 
 
+def _compute_metric_4_19a(db: Session, active_models: List[Model]) -> KPIMetric:
+    """4.19a - Recommendations Without Target Date (Data Quality Indicator)
+
+    Purpose: Track recommendations that cannot be measured for timeliness.
+    High counts may indicate process gaps in recommendation management.
+
+    Performs its own dedicated query since _compute_recommendation_metrics
+    only does COUNT() and doesn't fetch recommendation objects.
+    """
+    if not active_models:
+        return _create_metric("4.19a", count_value=0)
+
+    model_ids = [m.model_id for m in active_models]
+
+    # Query: Count open recommendations with NULL target_date
+    no_target_count = (
+        db.query(func.count(Recommendation.recommendation_id))
+        .filter(Recommendation.model_id.in_(model_ids))
+        .filter(Recommendation.closed_at.is_(None))  # Open only
+        .filter(Recommendation.current_target_date.is_(None))  # Missing target
+        .scalar()
+    ) or 0
+
+    return _create_metric("4.19a", count_value=no_target_count)
+
+
 def _compute_metric_4_22(db: Session, active_models: List[Model]) -> KPIMetric:
-    """4.22 - % of Required Attestations Received On Time"""
+    """4.22 - % of Required Attestations Received On Time
+
+    Design Decision:
+    - Only the MOST RECENT closed attestation cycle is used
+    - Rationale: KPI report shows point-in-time compliance, not historical trends
+    - For historical analysis, use the Attestation Report with cycle_id filter
+    - Future enhancement: Add 4.22_trend endpoint for multi-cycle comparison
+    """
     # Get the most recently closed attestation cycle
     latest_closed_cycle = db.query(AttestationCycle).filter(
         AttestationCycle.status == "CLOSED"
@@ -1127,6 +1281,7 @@ def get_kpi_report(
     # Model Inventory metrics
     metrics.append(_compute_metric_4_1(db, active_models))
     metrics.append(_compute_metric_4_2(db, active_models))
+    metrics.append(_compute_metric_4_2a(db, active_models))  # Data quality: models missing risk tier
     metrics.append(_compute_metric_4_3(db, active_models))
     metrics.append(_compute_metric_4_29(active_models, lob_team_map, team_name_map))
     metrics.append(_compute_metric_4_4(db, active_models))
@@ -1148,6 +1303,7 @@ def get_kpi_report(
         monitoring_metrics["4.11"],
         monitoring_metrics["4.12"],
     ])
+    metrics.append(_compute_metric_4_10a(db, active_models))  # Model-level monitoring compliance
 
     # Model Risk metric (4.14)
     metrics.append(_compute_metric_4_14(db, active_models))
@@ -1160,6 +1316,7 @@ def get_kpi_report(
         rec_metrics["4.20"],
         rec_metrics["4.21"],
     ])
+    metrics.append(_compute_metric_4_19a(db, active_models))  # Data quality: recs without target date
 
     # Governance metric (4.22)
     metrics.append(_compute_metric_4_22(db, active_models))

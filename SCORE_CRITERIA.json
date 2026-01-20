@@ -19,7 +19,7 @@
             "section": "1",
             "name": "Model Development Documentation",
             "description_prompt": "Please provide a high-level description on the model developer's documentation/submission",
-            "comments_prompt": "Please provide your comment on their documentation/submission if any.",
+            "comments_prompt": "Please provide your rationale on their documentation/submission if any.",
             "include_in_summary": true,
             "allow_zero": true,
             "weight": 1
@@ -29,7 +29,7 @@
             "section": "1",
             "name": "Model Development Data",
             "description_prompt": "Please provide a high-level description of the potential model risk arising from modeling data.",
-            "comments_prompt": "Please provide your comment to support the assessment. If not applicable, provide the rationale.",
+            "comments_prompt": "Please provide your rationale to support the assessment. If not applicable, provide the rationale.",
             "include_in_summary": true,
             "allow_zero": true,
             "weight": 1
@@ -39,7 +39,7 @@
             "section": "1",
             "name": "Model Methodology, Assumptions and Simplifications",
             "description_prompt": "Please provide a high-level description of the model methodology, assumptions and simplifications submitted by the developer.",
-            "comments_prompt": "Please provide your comment to support the assessment. If not applicable, provide the rationale.",
+            "comments_prompt": "Please provide your rationale to support the assessment. If not applicable, provide the rationale.",
             "include_in_summary": true,
             "allow_zero": true,
             "weight": 1
@@ -49,7 +49,7 @@
             "section": "1",
             "name": "Model Inputs and Model Outputs",
             "description_prompt": "Please provide a high-level description on the model inputs and model outputs required by the model",
-            "comments_prompt": "Please provide your comment to support the assessment. If not applicable, provide the rationale.",
+            "comments_prompt": "Please provide your rationale to support the assessment. If not applicable, provide the rationale.",
             "include_in_summary": true,
             "allow_zero": true,
             "weight": 1

@@ -306,6 +306,7 @@ def _format_audit_changes(changes: dict, db: Session) -> Optional[str]:
         "owner_id": "Owner",
         "developer_id": "Developer",
         "shared_owner_id": "Shared Owner",
+        "shared_developer_id": "Shared Developer",
         "monitoring_manager_id": "Monitoring Manager",
         "risk_tier_id": "Risk Tier",
         "vendor_id": "Vendor",
@@ -318,7 +319,7 @@ def _format_audit_changes(changes: dict, db: Session) -> Optional[str]:
     }
 
     # Fields that need ID resolution
-    user_fields = {"owner_id", "developer_id", "shared_owner_id", "monitoring_manager_id"}
+    user_fields = {"owner_id", "developer_id", "shared_owner_id", "shared_developer_id", "monitoring_manager_id"}
 
     # Collect all IDs that need resolution
     user_ids_to_resolve = set()
@@ -3218,6 +3219,28 @@ def get_model_activity_timeline(
             clear_reason = audit.changes.get("clear_reason", "") if audit.changes else ""
             if clear_reason:
                 description = clear_reason
+        elif audit.action == "BULK_UPDATE":
+            icon = "📋"
+            # Count the fields that were changed
+            field_count = len(audit.changes) if audit.changes else 0
+            if field_count == 1:
+                # Single field - show which field
+                field_key = list(audit.changes.keys())[0]
+                field_name = {
+                    "owner_id": "Owner",
+                    "developer_id": "Developer",
+                    "shared_owner_id": "Shared Owner",
+                    "shared_developer_id": "Shared Developer",
+                    "monitoring_manager_id": "Monitoring Manager",
+                    "products_covered": "Products Covered",
+                    "user_ids": "Model Users",
+                    "regulatory_category_ids": "Regulatory Categories",
+                }.get(field_key, field_key)
+                title = f"Bulk update: {field_name} changed"
+            else:
+                title = f"Bulk update: {field_count} fields changed"
+            # Use existing formatter for detailed description
+            description = _format_audit_changes(audit.changes, db)
 
         activities.append(ActivityTimelineItem(
             timestamp=audit.timestamp,

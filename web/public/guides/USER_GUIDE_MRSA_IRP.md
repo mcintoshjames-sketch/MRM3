@@ -45,9 +45,9 @@ MRSAs can propagate model risk downstream. If a model produces inaccurate output
 
 | Role | Primary Activities |
 |------|-------------------|
-| **Administrator** | Full IRP management: create, edit, delete IRPs; configure MRSA review policies; issue certifications; link MRSAs to IRPs |
-| **Validator** | View MRSAs and review status, participate in validation activities |
-| **Model Owner** | Register MRSAs, assign risk classifications, monitor MRSA review status and IRP coverage |
+| **Administrator** | Full IRP management: create, edit, delete IRPs; configure MRSA review policies; manage review exceptions; issue certifications; link MRSAs to IRPs |
+| **Validator** | View MRSAs and review status via My MRSA Reviews; view IRP details for accessible MRSAs (read-only); cannot access IRP list page or add reviews/certifications |
+| **Model Owner** | Register MRSAs, assign risk classifications, monitor MRSA review status via My MRSA Reviews, view IRP coverage |
 
 ---
 
@@ -191,11 +191,33 @@ The IRP list displays:
 | MRSAs | Number of covered MRSAs |
 | Latest Review | Most recent review date and outcome |
 | Latest Certification | Most recent certification date |
+| Actions | Edit and Delete buttons (Admin only) |
 
 **Filtering Options**:
-- Toggle **Active Only** to hide inactive IRPs
+- Filter by **Contact** (multi-select)
+- Filter by **Status**: All, Active, or Inactive
+- Filter by **Review Date** range
+- Filter by **Certification Status**: All, Certified, or Not Certified
 
 **Export**: Click **Export CSV** to download the IRP list.
+
+### Non-Admin IRP Access
+
+While the IRP list page (`/irps`) is restricted to Administrators, non-admin users can access IRP detail pages under certain conditions:
+
+**Who can view IRP details:**
+- Any user who has access to at least one MRSA covered by that IRP
+- Access is determined by MRSA ownership, developer assignment, or delegate roles
+
+**What non-admins see on IRP detail pages:**
+- IRP overview information (name, description, contact, status)
+- **Covered MRSAs** tab shows only MRSAs the user has access to (not all MRSAs)
+- **Reviews** and **Certifications** tabs are read-only
+- No edit or delete capabilities
+
+**Navigation behavior:**
+- When non-admins click "Back" from an IRP detail page, they return to **My MRSA Reviews** (not the IRP list)
+- Links to IRP details appear in the My MRSA Reviews widget and on MRSA detail pages
 
 ### MRSA Review Status Widget
 
@@ -286,10 +308,28 @@ High-risk MRSAs are tracked against configurable review policies. Review status 
 
 ### Where to Monitor Review Status
 
-- **IRP Management**: MRSA Review Status widget with filters and CSV export
+- **IRP Management**: MRSA Review Status widget with filters and CSV export (Admin only)
+- **My MRSA Reviews**: Dedicated page for non-admin users to track their MRSAs (see below)
 - **Models List**: MRSA Review Status, MRSA Last Review, and MRSA Next Due columns with status filters
 - **Admin Dashboard**: Past-Due MRSA Reviews feed highlighting overdue, no-IRP, and never-reviewed items
-- **Model Owner Dashboard**: "My MRSA Reviews" summary for owned applications
+
+### My MRSA Reviews Page
+
+*Available to all non-admin users (Model Owners, Validators, Users)*
+
+The **My MRSA Reviews** page (`/my-mrsa-reviews`) provides a personalized view of MRSA review status for MRSAs the user owns, develops, or supports as a delegate.
+
+**Accessing My MRSA Reviews:**
+1. Navigate to **My MRSA Reviews** in the sidebar (visible to non-admin users)
+2. View the MRSA Review Status widget filtered to your MRSAs
+
+**Features:**
+- Summary counts for Current, Upcoming, and Overdue items
+- Quick filters for items needing attention (Overdue, No IRP, Never Reviewed)
+- CSV export of your MRSA review status
+- Direct links to MRSA detail pages
+
+**Note:** From the My MRSA Reviews page, users can click through to IRP detail pages for any IRP covering their MRSAs (see [Non-Admin IRP Access](#non-admin-irp-access) below)
 
 ### Configuring MRSA Review Policies (Admin)
 
@@ -298,6 +338,39 @@ High-risk MRSAs are tracked against configurable review policies. Review status 
 3. Click **Edit** to update frequency, initial review window, warning days, or active status.
 4. Use **Create MRSA Review Policy** to add a policy for new risk levels.
 5. Click **Save** to apply changes (status calculations update immediately).
+
+### Managing Review Due Date Exceptions (Admin)
+
+Administrators can create exceptions to override the calculated review due date for specific MRSAs. This is useful for temporary deferrals or special circumstances.
+
+**Creating an Exception:**
+
+*Requires Administrator role*
+
+1. Navigate to the exception management interface
+2. Select the MRSA requiring an exception
+3. Provide the following:
+   - **Override Due Date**: The new due date for the review
+   - **Reason**: Justification for the exception (required)
+4. Click **Create Exception**
+
+**Exception Behavior:**
+- When an exception is active, the UI displays an "Exception" date beneath the standard due date
+- The exception due date takes precedence over the calculated due date for status determination
+- Exceptions are tracked with the approving administrator and timestamp
+
+**Revoking an Exception:**
+1. Locate the active exception for the MRSA
+2. Update the exception to set **is_active** to false
+3. The MRSA reverts to its calculated due date
+
+**API Endpoints for Exception Management:**
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/mrsa-review-exceptions/` | GET | List all exceptions |
+| `/mrsa-review-exceptions/{mrsa_id}` | GET | Get exception for specific MRSA |
+| `/mrsa-review-exceptions/` | POST | Create exception (Admin only) |
+| `/mrsa-review-exceptions/{id}` | PATCH | Update or revoke exception |
 
 ---
 
@@ -466,8 +539,9 @@ To remove coverage:
 │     └─► Document risk rationale                         │
 │                                                         │
 │  3. Participate in Governance                           │
-│     └─► Track MRSA review status on dashboards          │
+│     └─► Track MRSA review status via My MRSA Reviews    │
 │     └─► View IRP coverage status on MRSA detail page    │
+│     └─► Access IRP details for covered MRSAs            │
 │     └─► Support IRP reviews when requested              │
 │     └─► Address findings from IRP assessments           │
 │                                                         │
@@ -557,6 +631,15 @@ A: Navigate to the MRSA detail page and use the "+ Link to IRP" button in the IR
 
 *Additional risk levels can be configured by Administrators via the Taxonomy page.*
 
+**Technical Note: `requires_irp` Flag**
+
+The "Requires IRP" column is controlled by the `requires_irp` field on each taxonomy value. This boolean flag determines whether MRSAs with that risk level require IRP coverage:
+
+- When `requires_irp = true`: The system expects IRP coverage for MRSAs with this risk level. MRSAs without coverage will show "No IRP" status.
+- When `requires_irp = false`: IRP coverage is optional. These MRSAs will show "No Requirement" status if no review policy is active.
+
+Administrators can configure custom risk levels and set this flag via the Taxonomy management page. The flag is evaluated when calculating MRSA review status and coverage compliance.
+
 ### B. IRP Review Outcome Taxonomy
 
 | Code | Label | Indicator Color |
@@ -578,30 +661,38 @@ A: Navigate to the MRSA detail page and use the "+ Link to IRP" button in the IR
 
 ### D. Navigation Reference
 
-| Page | Path | Description |
-|------|------|-------------|
-| Models (MRSAs) | /models | MRSA list with filters |
-| IRPs | /irps | IRP management list |
-| IRP Detail | /irps/:id | Individual IRP with tabs |
-| Taxonomy | /taxonomy | Configure risk levels and outcomes |
-| MRSA Review Policies | /mrsa-review-policies | Configure MRSA review frequencies and warnings |
+| Page | Path | Access | Description |
+|------|------|--------|-------------|
+| Models (MRSAs) | /models | All users | MRSA list with filters |
+| My MRSA Reviews | /my-mrsa-reviews | Non-admin users | Personal MRSA review tracking |
+| IRPs | /irps | Admin only | IRP management list |
+| IRP Detail | /irps/:id | Conditional* | Individual IRP with tabs |
+| Taxonomy | /taxonomy | Admin only | Configure risk levels and outcomes |
+| MRSA Review Policies | /mrsa-review-policies | Admin only | Configure MRSA review frequencies and warnings |
+
+*Non-admins can access IRP detail pages if they have access to at least one MRSA covered by the IRP.
 
 ### E. Permission Matrix
 
 | Action | Admin | Validator | User |
 |--------|-------|-----------|------|
-| Access IRP pages | Yes | No | No |
+| Access IRP list page (/irps) | Yes | No | No |
+| View IRP detail page* | Yes | Yes* | Yes* |
 | Create IRP | Yes | No | No |
 | Edit IRP | Yes | No | No |
 | Delete IRP | Yes | No | No |
 | Add Review | Yes | No | No |
 | Add Certification | Yes | No | No |
 | Manage MRSA Review Policies | Yes | No | No |
+| Manage Review Exceptions | Yes | No | No |
+| Access My MRSA Reviews page | No | Yes | Yes |
 | View MRSAs | Yes | Yes | Yes |
 | Create MRSA | Yes | Yes | Yes |
 | Edit MRSA | Yes | Yes | Owned only |
 | Link MRSA to IRP | Yes | No | No |
 
+*Non-admins can view IRP detail pages only if they have access to at least one MRSA covered by that IRP. The Covered MRSAs tab is filtered to show only accessible MRSAs.
+
 ---
 
-*Last Updated: 2025-12-24*
+*Last Updated: 2026-01-19*

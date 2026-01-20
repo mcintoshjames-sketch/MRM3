@@ -1287,9 +1287,9 @@ class ValidationScorecardPDF(FPDF):
         self.ln(3)
 
         # Column widths (total = 190mm)
-        # Criteria, Rating, Description, Comments
+        # Criteria, Rating, Description, Rationale
         col_widths = [60, 18, 56, 56]
-        headers = ['Criteria', 'Rating', 'Description', 'Comments']
+        headers = ['Criteria', 'Rating', 'Description', 'Rationale']
 
         # Table header
         self.set_fill_color(*HEADER_BG)
@@ -1330,7 +1330,7 @@ class ValidationScorecardPDF(FPDF):
             summary = section_summaries.get(section_code, {})
             section_name = section_data.get('name', section_code)
             section_description = section_data.get('description') or ''
-            section_rating = summary.get('rating', 'N/A')
+            section_rating = summary.get('rating') or 'N/A'
 
             # Section header row
             self.set_fill_color(*SECTION_BG)
