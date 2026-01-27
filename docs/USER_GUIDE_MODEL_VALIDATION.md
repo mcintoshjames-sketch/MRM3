@@ -568,7 +568,7 @@ If your organization uses the **Scorecard** feature, the validation detail page 
 - Green / Green‑ / Yellow+ / Yellow / Yellow‑ / Red (numeric 6–1)
 - N/A (0) for not applicable criteria
 
-> **Configurable**: Scorecard sections, criteria, weights, and prompts are admin‑managed. The Scorecard tab always reflects the current configuration in your environment.
+> **Configurable**: Scorecard sections, criteria, weights, and prompts are admin‑managed. New scorecards use the current configuration; existing scorecards preserve their historical configuration to ensure audit integrity.
 
 ### Findings & Recommendations
 

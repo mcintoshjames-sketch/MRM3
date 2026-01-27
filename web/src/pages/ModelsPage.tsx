@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
-import { canManageModels, canManageUsers } from '../utils/roleUtils';
+import { canManageModels, canManageUsers, canManageValidations } from '../utils/roleUtils';
 import Layout from '../components/Layout';
 import { useTableSort } from '../hooks/useTableSort';
 import MultiSelectDropdown from '../components/MultiSelectDropdown';
@@ -209,6 +209,7 @@ export default function ModelsPage() {
     const { user } = useAuth();
     const canManageModelsFlag = canManageModels(user);
     const canManageUsersFlag = canManageUsers(user);
+    const canManageValidationsFlag = canManageValidations(user);
     const [models, setModels] = useState<Model[]>([]);
     const [users, setUsers] = useState<User[]>([]);
     const [vendors, setVendors] = useState<Vendor[]>([]);
@@ -3159,7 +3160,8 @@ export default function ModelsPage() {
                                 </div>
                             )}
 
-                            {/* Auto-create Validation Project Section */}
+                            {/* Auto-create Validation Project Section - Only visible to Admins and Validators */}
+                            {canManageValidationsFlag && (
                             <div className="mb-4 border-t pt-4">
                                 <div className="mb-4">
                                     <label className="flex items-center gap-2">
@@ -3260,6 +3262,7 @@ export default function ModelsPage() {
                                     </div>
                                 )}
                             </div>
+                            )}
 
                             <div className="flex gap-2">
                                 <button type="submit" className="btn-primary">Create</button>

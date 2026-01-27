@@ -5877,13 +5877,13 @@ export default function TaxonomyPage() {
                                                                 {section.criteria?.length || 0} criteria
                                                             </p>
                                                         </div>
-                                                        <div className="flex gap-1">
+                                                        <div className="flex gap-2 flex-shrink-0">
                                                             <button
                                                                 onClick={(e) => {
                                                                     e.stopPropagation();
                                                                     startEditScorecardSection(section);
                                                                 }}
-                                                                className="text-xs text-blue-600 hover:text-blue-800 px-2 py-1"
+                                                                className="text-sm text-blue-600 hover:text-blue-800 px-2 py-1 whitespace-nowrap"
                                                             >
                                                                 Edit
                                                             </button>
@@ -5892,7 +5892,7 @@ export default function TaxonomyPage() {
                                                                     e.stopPropagation();
                                                                     handleDeleteScorecardSection(section.section_id);
                                                                 }}
-                                                                className="text-xs text-red-600 hover:text-red-800 px-2 py-1"
+                                                                className="text-sm text-red-600 hover:text-red-800 px-2 py-1 whitespace-nowrap"
                                                             >
                                                                 Delete
                                                             </button>
@@ -5943,13 +5943,13 @@ export default function TaxonomyPage() {
                                                                         : 'border-red-200 bg-red-50'
                                                                 }`}
                                                             >
-                                                                <div className="flex justify-between items-start">
-                                                                    <div className="flex-1">
-                                                                        <div className="flex items-center gap-2 mb-2">
-                                                                            <span className="font-mono text-sm bg-gray-100 px-2 py-0.5 rounded">
+                                                                <div className="flex justify-between items-start gap-4">
+                                                                    <div className="flex-1 min-w-0">
+                                                                        <div className="flex items-center gap-2 mb-2 flex-wrap">
+                                                                            <span className="font-mono text-sm bg-gray-100 px-2 py-0.5 rounded flex-shrink-0">
                                                                                 {criterion.code}
                                                                             </span>
-                                                                            <span className="font-medium text-gray-900">
+                                                                            <span className="font-medium text-gray-900 break-words">
                                                                                 {criterion.name}
                                                                             </span>
                                                                             {!criterion.is_active && (
@@ -5976,16 +5976,16 @@ export default function TaxonomyPage() {
                                                                             </p>
                                                                         )}
                                                                     </div>
-                                                                    <div className="flex gap-1 ml-4">
+                                                                    <div className="flex gap-2 flex-shrink-0">
                                                                         <button
                                                                             onClick={() => startEditScorecardCriterion(criterion)}
-                                                                            className="text-xs text-blue-600 hover:text-blue-800 px-2 py-1"
+                                                                            className="text-sm text-blue-600 hover:text-blue-800 px-2 py-1 whitespace-nowrap"
                                                                         >
                                                                             Edit
                                                                         </button>
                                                                         <button
                                                                             onClick={() => handleDeleteScorecardCriterion(criterion.criterion_id)}
-                                                                            className="text-xs text-red-600 hover:text-red-800 px-2 py-1"
+                                                                            className="text-sm text-red-600 hover:text-red-800 px-2 py-1 whitespace-nowrap"
                                                                         >
                                                                             Delete
                                                                         </button>

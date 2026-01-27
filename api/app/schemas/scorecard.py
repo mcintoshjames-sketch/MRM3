@@ -194,6 +194,26 @@ class ScorecardResultResponse(BaseModel):
     computed_at: datetime
 
 
+class ConfigCriterionResponse(BaseModel):
+    """Criterion config for frontend rendering."""
+    code: str
+    name: str
+    description_prompt: Optional[str] = None
+    comments_prompt: Optional[str] = None
+    allow_zero: bool = True
+    weight: float = 1.0
+    sort_order: int = 0
+
+
+class ConfigSectionResponse(BaseModel):
+    """Section config with nested criteria for frontend rendering."""
+    code: str
+    name: str
+    description: Optional[str] = None
+    sort_order: int = 0
+    criteria: List[ConfigCriterionResponse] = []
+
+
 class ScorecardFullResponse(BaseModel):
     """Complete scorecard response with all details."""
     request_id: int
@@ -201,6 +221,7 @@ class ScorecardFullResponse(BaseModel):
     section_summaries: List[SectionSummaryResponse]
     overall_assessment: OverallAssessmentResponse
     computed_at: datetime
+    config_sections: List[ConfigSectionResponse] = []
 
 
 # ============================================================================

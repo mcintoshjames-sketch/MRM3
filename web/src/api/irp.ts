@@ -46,6 +46,7 @@ export interface IRPReviewCreate {
     review_date: string;
     outcome_id: number;
     notes?: string;
+    reviewed_by_user_id?: number;  // Defaults to IRP contact if not provided
 }
 
 // IRP Certification
@@ -54,13 +55,15 @@ export interface IRPCertification {
     irp_id: number;
     certification_date: string;
     certified_by_user_id: number;
-    certified_by?: UserSummary;
+    certified_by_user?: UserSummary;
+    certified_by_email: string;
     conclusion_summary: string;
     created_at: string;
 }
 
 export interface IRPCertificationCreate {
     certification_date: string;
+    certified_by_email: string;
     conclusion_summary: string;
 }
 

@@ -141,6 +141,10 @@ class IRPCertification(Base):
         Integer, ForeignKey("users.user_id"), nullable=False,
         comment="MRM person who performed the certification"
     )
+    certified_by_email: Mapped[str] = mapped_column(
+        String(255), nullable=False,
+        comment="Email address of the individual who performed the certification"
+    )
     conclusion_summary: Mapped[str] = mapped_column(
         Text, nullable=False,
         comment="Narrative summary of the certification conclusion"
@@ -149,4 +153,4 @@ class IRPCertification(Base):
 
     # Relationships
     irp: Mapped["IRP"] = relationship("IRP", back_populates="certifications")
-    certified_by: Mapped["User"] = relationship("User", foreign_keys=[certified_by_user_id])
+    certified_by_user: Mapped["User"] = relationship("User", foreign_keys=[certified_by_user_id])

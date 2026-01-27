@@ -2080,7 +2080,11 @@ def create_validation_request(
 
     If check_warnings=True, returns warnings without creating the request.
     Otherwise, creates the request and returns the created object.
+
+    Only Admins and Validators can create validation requests.
     """
+    check_validator_or_admin(current_user)
+
     # Verify at least one model is specified
     if not request_data.model_ids or len(request_data.model_ids) == 0:
         raise HTTPException(

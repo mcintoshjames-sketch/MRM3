@@ -9,6 +9,8 @@ import VersionBlockerModal, { VersionBlocker } from '../components/VersionBlocke
 import { useTableSort } from '../hooks/useTableSort';
 import { useColumnPreferences, ColumnDefinition } from '../hooks/useColumnPreferences';
 import { ColumnPickerModal, SaveViewModal } from '../components/ColumnPickerModal';
+import { useAuth } from '../contexts/AuthContext';
+import { canManageValidations } from '../utils/roleUtils';
 
 interface ValidationRequest {
     request_id: number;
@@ -80,9 +82,11 @@ interface PendingManualApprovalSummary {
 }
 
 export default function ValidationWorkflowPage() {
+    const { user } = useAuth();
     const [searchParams, setSearchParams] = useSearchParams();
     const location = useLocation();
     const assignedToMe = searchParams.get('assigned_to_me') === 'true';
+    const canCreateValidation = canManageValidations(user);
     const [requests, setRequests] = useState<ValidationRequest[]>([]);
     const [models, setModels] = useState<Model[]>([]);
     const [validationTypes, setValidationTypes] = useState<TaxonomyValue[]>([]);
@@ -963,9 +967,11 @@ export default function ValidationWorkflowPage() {
                     <button onClick={handleExportCSV} className="btn-secondary">
                         Export CSV
                     </button>
-                    <button onClick={() => setShowForm(true)} className="btn-primary">
-                        + New Validation Project
-                    </button>
+                    {canCreateValidation && (
+                        <button onClick={() => setShowForm(true)} className="btn-primary">
+                            + New Validation Project
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -1530,7 +1536,7 @@ export default function ValidationWorkflowPage() {
                             {sortedData.length === 0 ? (
                                 <tr>
                                     <td colSpan={columnPrefs.selectedColumns.length} className="px-4 py-2 text-center text-gray-500">
-                                        No validation projects found. Click "New Validation Project" to create one.
+                                        No validation projects found.{canCreateValidation && ' Click "New Validation Project" to create one.'}
                                     </td>
                                 </tr>
                             ) : (

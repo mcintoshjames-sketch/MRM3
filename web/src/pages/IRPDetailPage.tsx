@@ -12,6 +12,12 @@ interface TaxonomyValue {
     label: string;
 }
 
+interface User {
+    user_id: number;
+    email: string;
+    full_name: string;
+}
+
 type TabType = 'overview' | 'mrsas' | 'reviews' | 'certifications';
 
 export default function IRPDetailPage() {
@@ -23,19 +29,24 @@ export default function IRPDetailPage() {
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState<TabType>('overview');
     const [outcomeOptions, setOutcomeOptions] = useState<TaxonomyValue[]>([]);
+    const [users, setUsers] = useState<User[]>([]);
 
     // Review form state
     const [showReviewForm, setShowReviewForm] = useState(false);
     const [reviewForm, setReviewForm] = useState<IRPReviewCreate>({
         review_date: new Date().toISOString().split('T')[0],
         outcome_id: 0,
-        notes: ''
+        notes: '',
+        reviewed_by_user_id: undefined
     });
+    const [reviewerSearch, setReviewerSearch] = useState('');
+    const [showReviewerDropdown, setShowReviewerDropdown] = useState(false);
 
     // Certification form state
     const [showCertForm, setShowCertForm] = useState(false);
     const [certForm, setCertForm] = useState<IRPCertificationCreate>({
         certification_date: new Date().toISOString().split('T')[0],
+        certified_by_email: '',
         conclusion_summary: ''
     });
 
@@ -51,15 +62,20 @@ export default function IRPDetailPage() {
             setIrp(irpData);
 
             if (canManageIrpsFlag) {
-                const taxonomiesResponse = await api.get('/taxonomies/by-names/?names=IRP%20Review%20Outcome');
+                const [taxonomiesResponse, usersResponse] = await Promise.all([
+                    api.get('/taxonomies/by-names/?names=IRP%20Review%20Outcome'),
+                    api.get('/auth/users')
+                ]);
                 const outcomeTaxonomy = taxonomiesResponse.data.find(
                     (t: any) => t.name === 'IRP Review Outcome'
                 );
                 if (outcomeTaxonomy && outcomeTaxonomy.values) {
                     setOutcomeOptions(outcomeTaxonomy.values.filter((v: TaxonomyValue) => v.code));
                 }
+                setUsers(usersResponse.data);
             } else {
                 setOutcomeOptions([]);
+                setUsers([]);
             }
         } catch (error) {
             console.error('Failed to fetch IRP:', error);
@@ -74,14 +90,21 @@ export default function IRPDetailPage() {
             alert('Please select an outcome');
             return;
         }
+        if (!reviewForm.reviewed_by_user_id) {
+            alert('Please select a reviewer');
+            return;
+        }
         try {
             await irpApi.createReview(parseInt(id), reviewForm);
             setShowReviewForm(false);
             setReviewForm({
                 review_date: new Date().toISOString().split('T')[0],
                 outcome_id: 0,
-                notes: ''
+                notes: '',
+                reviewed_by_user_id: undefined
             });
+            setReviewerSearch('');
+            setShowReviewerDropdown(false);
             fetchData();
         } catch (error: any) {
             console.error('Failed to create review:', error);
@@ -91,8 +114,8 @@ export default function IRPDetailPage() {
 
     const handleCreateCertification = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!id || !certForm.conclusion_summary.trim()) {
-            alert('Please provide a conclusion summary');
+        if (!id || !certForm.certified_by_email.trim() || !certForm.conclusion_summary.trim()) {
+            alert('Please provide the certifier email and conclusion summary');
             return;
         }
         try {
@@ -100,6 +123,7 @@ export default function IRPDetailPage() {
             setShowCertForm(false);
             setCertForm({
                 certification_date: new Date().toISOString().split('T')[0],
+                certified_by_email: '',
                 conclusion_summary: ''
             });
             fetchData();
@@ -361,7 +385,17 @@ export default function IRPDetailPage() {
                                 <h3 className="text-lg font-semibold">Review History</h3>
                                 {canManageIrpsFlag && (
                                     <button
-                                        onClick={() => setShowReviewForm(true)}
+                                        onClick={() => {
+                                            // Initialize reviewed_by with IRP contact as default
+                                            setReviewForm({
+                                                review_date: new Date().toISOString().split('T')[0],
+                                                outcome_id: 0,
+                                                notes: '',
+                                                reviewed_by_user_id: irp?.contact_user_id
+                                            });
+                                            setReviewerSearch(irp?.contact_user?.full_name || '');
+                                            setShowReviewForm(true);
+                                        }}
                                         className="btn-primary"
                                     >
                                         + Add Review
@@ -410,6 +444,63 @@ export default function IRPDetailPage() {
                                                         </option>
                                                     ))}
                                                 </select>
+                                            </div>
+                                            <div className="col-span-2">
+                                                <label className="block text-sm font-medium mb-1">
+                                                    Reviewed By *
+                                                </label>
+                                                <div className="relative">
+                                                    <input
+                                                        type="text"
+                                                        placeholder="Type to search users..."
+                                                        value={reviewerSearch}
+                                                        onChange={(e) => {
+                                                            setReviewerSearch(e.target.value);
+                                                            setShowReviewerDropdown(true);
+                                                            // Clear selection if user is typing new text
+                                                            if (reviewForm.reviewed_by_user_id && e.target.value !== users.find(u => u.user_id === reviewForm.reviewed_by_user_id)?.full_name) {
+                                                                setReviewForm({ ...reviewForm, reviewed_by_user_id: undefined });
+                                                            }
+                                                        }}
+                                                        onFocus={() => setShowReviewerDropdown(true)}
+                                                        className="input-field"
+                                                    />
+                                                    {showReviewerDropdown && reviewerSearch.length > 0 && (
+                                                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                                                            {users
+                                                                .filter((u) =>
+                                                                    u.full_name.toLowerCase().includes(reviewerSearch.toLowerCase()) ||
+                                                                    u.email.toLowerCase().includes(reviewerSearch.toLowerCase())
+                                                                )
+                                                                .slice(0, 50)
+                                                                .map((u) => (
+                                                                    <div
+                                                                        key={u.user_id}
+                                                                        className="px-4 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                                                                        onClick={() => {
+                                                                            setReviewForm({ ...reviewForm, reviewed_by_user_id: u.user_id });
+                                                                            setReviewerSearch(u.full_name);
+                                                                            setShowReviewerDropdown(false);
+                                                                        }}
+                                                                    >
+                                                                        <div className="font-medium">{u.full_name}</div>
+                                                                        <div className="text-gray-500">{u.email}</div>
+                                                                    </div>
+                                                                ))}
+                                                            {users.filter((u) =>
+                                                                u.full_name.toLowerCase().includes(reviewerSearch.toLowerCase()) ||
+                                                                u.email.toLowerCase().includes(reviewerSearch.toLowerCase())
+                                                            ).length === 0 && (
+                                                                <div className="px-4 py-2 text-sm text-gray-500">No users found</div>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                {reviewForm.reviewed_by_user_id && (
+                                                    <p className="mt-1 text-sm text-green-600">
+                                                        Selected: {users.find(u => u.user_id === reviewForm.reviewed_by_user_id)?.full_name}
+                                                    </p>
+                                                )}
                                             </div>
                                             <div className="col-span-2">
                                                 <label className="block text-sm font-medium mb-1">
@@ -533,6 +624,22 @@ export default function IRPDetailPage() {
                                                     required
                                                 />
                                             </div>
+                                            <div>
+                                                <label className="block text-sm font-medium mb-1">
+                                                    Certified By (Email) *
+                                                </label>
+                                                <input
+                                                    type="email"
+                                                    className="input-field"
+                                                    value={certForm.certified_by_email}
+                                                    onChange={(e) => setCertForm({
+                                                        ...certForm,
+                                                        certified_by_email: e.target.value
+                                                    })}
+                                                    placeholder="certifier@example.com"
+                                                    required
+                                                />
+                                            </div>
                                             <div className="col-span-2">
                                                 <label className="block text-sm font-medium mb-1">
                                                     Conclusion Summary *
@@ -595,7 +702,7 @@ export default function IRPDetailPage() {
                                                         {cert.certification_date}
                                                     </td>
                                                     <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
-                                                        {cert.certified_by?.full_name || '-'}
+                                                        {cert.certified_by_email}
                                                     </td>
                                                     <td className="px-4 py-2 text-sm text-gray-500">
                                                         {cert.conclusion_summary}

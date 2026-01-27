@@ -3,8 +3,9 @@ import Layout from '../components/Layout';
 import { VendorsContent } from './VendorsPage';
 import { UsersContent } from './UsersPage';
 import { EntraDirectoryContent } from './EntraDirectoryPage';
+import { ApplicationsContent } from './ApplicationsPage';
 
-type TabType = 'vendors' | 'users' | 'entra';
+type TabType = 'vendors' | 'users' | 'entra' | 'applications';
 
 export default function ReferenceDataPage() {
     const [activeTab, setActiveTab] = useState<TabType>('vendors');
@@ -15,7 +16,7 @@ export default function ReferenceDataPage() {
                 <div>
                     <h2 className="text-2xl font-bold">Reference Data</h2>
                     <p className="text-gray-600 text-sm mt-1">
-                        Manage vendors, users, and directory data for the model inventory
+                        Manage vendors, users, directory data, and applications for the model inventory
                     </p>
                 </div>
             </div>
@@ -53,6 +54,16 @@ export default function ReferenceDataPage() {
                     >
                         Entra Directory
                     </button>
+                    <button
+                        onClick={() => setActiveTab('applications')}
+                        className={`pb-3 px-1 border-b-2 font-medium text-sm ${
+                            activeTab === 'applications'
+                                ? 'border-blue-500 text-blue-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                        }`}
+                    >
+                        Applications
+                    </button>
                 </nav>
             </div>
 
@@ -60,6 +71,7 @@ export default function ReferenceDataPage() {
             {activeTab === 'vendors' && <VendorsContent />}
             {activeTab === 'users' && <UsersContent />}
             {activeTab === 'entra' && <EntraDirectoryContent />}
+            {activeTab === 'applications' && <ApplicationsContent />}
         </Layout>
     );
 }

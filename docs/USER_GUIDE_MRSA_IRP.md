@@ -437,6 +437,7 @@ Certifications are formal attestations that an IRP's design is adequate.
 3. Click **Add Certification**
 4. Complete the form:
    - **Certification Date**: Date of the certification
+   - **Certified By (Email)**: Email address of the individual who performed the certification
    - **Conclusion Summary**: Summary of the certification conclusions
 5. Click **Create Certification**
 
@@ -695,4 +696,4 @@ Administrators can configure custom risk levels and set this flag via the Taxono
 
 ---
 
-*Last Updated: 2026-01-19*
+*Last Updated: 2026-01-21*

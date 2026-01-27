@@ -239,7 +239,7 @@ class TestIRPReviews:
     def test_create_review(
         self, client, admin_headers, sample_irp, irp_outcome_taxonomy
     ):
-        """Test creating a review for an IRP."""
+        """Test creating a review for an IRP - reviewed_by defaults to IRP contact."""
         response = client.post(
             f"/irps/{sample_irp.irp_id}/reviews",
             json={
@@ -254,6 +254,45 @@ class TestIRPReviews:
         assert data["irp_id"] == sample_irp.irp_id
         assert data["outcome"]["code"] == "SATISFACTORY"
         assert data["notes"] == "All MRSAs adequately governed"
+        # Verify reviewed_by defaults to IRP contact
+        assert data["reviewed_by_user_id"] == sample_irp.contact_user_id
+
+    def test_create_review_with_custom_reviewer(
+        self, client, admin_headers, sample_irp, irp_outcome_taxonomy, db_session, lob_hierarchy
+    ):
+        """Test creating a review with a specific reviewed_by_user_id."""
+        from app.models.user import User
+        from app.models.role import Role
+        from app.core.roles import RoleCode
+        from app.core.security import get_password_hash
+
+        # Create a different user to be the reviewer
+        role_id = db_session.query(Role).filter(Role.code == RoleCode.USER.value).first().role_id
+        reviewer = User(
+            email="reviewer@example.com",
+            full_name="IRP Reviewer",
+            password_hash=get_password_hash("test123"),
+            role_id=role_id,
+            lob_id=lob_hierarchy["retail"].lob_id
+        )
+        db_session.add(reviewer)
+        db_session.commit()
+        db_session.refresh(reviewer)
+
+        response = client.post(
+            f"/irps/{sample_irp.irp_id}/reviews",
+            json={
+                "review_date": "2025-12-12",
+                "outcome_id": irp_outcome_taxonomy["satisfactory"].value_id,
+                "notes": "Review by specific reviewer",
+                "reviewed_by_user_id": reviewer.user_id
+            },
+            headers=admin_headers
+        )
+        assert response.status_code == 201
+        data = response.json()
+        assert data["reviewed_by_user_id"] == reviewer.user_id
+        assert data["reviewed_by"]["full_name"] == "IRP Reviewer"
 
     def test_list_reviews_with_data(
         self, client, admin_headers, sample_irp, irp_outcome_taxonomy, db_session
@@ -296,6 +335,7 @@ class TestIRPCertifications:
             f"/irps/{sample_irp.irp_id}/certifications",
             json={
                 "certification_date": "2025-12-11",
+                "certified_by_email": "certifier@example.com",
                 "conclusion_summary": "IRP adequately addresses MRSA risks"
             },
             headers=admin_headers
@@ -303,6 +343,7 @@ class TestIRPCertifications:
         assert response.status_code == 201
         data = response.json()
         assert data["irp_id"] == sample_irp.irp_id
+        assert data["certified_by_email"] == "certifier@example.com"
         assert data["conclusion_summary"] == "IRP adequately addresses MRSA risks"
 
     def test_create_certification_non_admin_forbidden(
@@ -313,6 +354,7 @@ class TestIRPCertifications:
             f"/irps/{sample_irp.irp_id}/certifications",
             json={
                 "certification_date": "2025-12-11",
+                "certified_by_email": "unauthorized@example.com",
                 "conclusion_summary": "Unauthorized certification"
             },
             headers=auth_headers

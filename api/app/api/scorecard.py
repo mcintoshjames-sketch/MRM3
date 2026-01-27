@@ -55,6 +55,9 @@ from app.schemas.scorecard import (
     OverallAssessmentResponse,
     OverallNarrativeUpdate,
     ScorecardResultResponse,
+    # Config for frontend rendering (historical snapshot support)
+    ConfigCriterionResponse,
+    ConfigSectionResponse,
     # Configuration versioning schemas
     ScorecardConfigVersionResponse,
     ScorecardConfigVersionDetailResponse,
@@ -132,7 +135,12 @@ def get_scorecard_config_from_db(db: Session) -> dict:
     # Build config dict matching SCORE_CRITERIA.json format
     config = {
         "sections": [
-            {"code": s.code, "name": s.name, "description": s.description}
+            {
+                "code": s.code,
+                "name": s.name,
+                "description": s.description,
+                "sort_order": s.sort_order,
+            }
             for s in sections
         ],
         "criteria": [
@@ -145,6 +153,7 @@ def get_scorecard_config_from_db(db: Session) -> dict:
                 "include_in_summary": c.include_in_summary,
                 "allow_zero": c.allow_zero,
                 "weight": float(c.weight),
+                "sort_order": c.sort_order,
             }
             for c in criteria
         ]
@@ -186,11 +195,15 @@ def compute_and_store_result(
     result.section_summaries = {
         s["section_code"]: s for s in computed["section_summaries"]
     }
-    result.config_snapshot = {
-        "sections": config["sections"],
-        "criteria": config["criteria"],
-        "snapshot_timestamp": utc_now().isoformat()
-    }
+
+    # CRITICAL: Only set config_snapshot if not already set (preserve historical data)
+    if not result.config_snapshot:
+        result.config_snapshot = {
+            "sections": config["sections"],
+            "criteria": config["criteria"],
+            "snapshot_timestamp": utc_now().isoformat()
+        }
+
     result.computed_at = utc_now()
 
     # Link to active config version (if exists and not already linked)
@@ -198,6 +211,22 @@ def compute_and_store_result(
         result.config_version_id = active_version.version_id
 
     return result
+
+
+def _get_config_for_request(db: Session, validation_request: ValidationRequest) -> dict:
+    """Get the appropriate config for a validation request.
+
+    Returns historical snapshot if available, otherwise current config.
+    This ensures edits to historical scorecards use their original configuration.
+    """
+    if validation_request.scorecard_result and validation_request.scorecard_result.config_snapshot:
+        return validation_request.scorecard_result.config_snapshot
+
+    config = get_scorecard_config_from_db(db)
+    if not config.get("criteria"):
+        config = load_scorecard_config()
+
+    return config
 
 
 # ============================================================================
@@ -287,11 +316,8 @@ def create_or_update_scorecard(
     """
     validation_request = get_request_or_404(db, request_id)
 
-    # Get configuration
-    config = get_scorecard_config_from_db(db)
-    if not config["criteria"]:
-        # Fall back to JSON config if DB is empty
-        config = load_scorecard_config()
+    # Get configuration - prefer historical snapshot for existing scorecards
+    config = _get_config_for_request(db, validation_request)
 
     # Build set of valid criterion codes
     valid_codes = {c["code"] for c in config["criteria"]}
@@ -354,15 +380,14 @@ def get_scorecard(
     Get the scorecard ratings and computed results for a validation request.
 
     Returns per-criterion ratings, section summaries, and overall assessment.
+    Uses historical config snapshot if available to preserve scorecard integrity.
     """
     validation_request = get_request_or_404(db, request_id)
 
-    # Get configuration
-    config = get_scorecard_config_from_db(db)
-    if not config["criteria"]:
-        config = load_scorecard_config()
+    # Get configuration - prefer historical snapshot for existing scorecards
+    config = _get_config_for_request(db, validation_request)
 
-    # If no result exists yet, compute it
+    # If no result exists yet, compute it (will snapshot current config)
     if not validation_request.scorecard_result:
         result = compute_and_store_result(db, validation_request, config)
         db.commit()
@@ -601,12 +626,10 @@ def update_single_rating(
     """
     validation_request = get_request_or_404(db, request_id)
 
-    # Get configuration
-    config = get_scorecard_config_from_db(db)
-    if not config["criteria"]:
-        config = load_scorecard_config()
+    # Get configuration - prefer historical snapshot for existing scorecards
+    config = _get_config_for_request(db, validation_request)
 
-    # Validate criterion code
+    # Validate criterion code against the resolved config (historical or current)
     valid_codes = {c["code"] for c in config["criteria"]}
     if criterion_code not in valid_codes:
         raise HTTPException(
@@ -722,6 +745,42 @@ def update_overall_narrative(
 # Response Builder
 # ============================================================================
 
+def _build_config_sections_from_dict(config: dict) -> List[ConfigSectionResponse]:
+    """Build config sections response from config dict.
+
+    This structures the config for frontend rendering, preserving the
+    historical configuration when displaying existing scorecards.
+    """
+    sections_dict = {}
+    for section in config.get("sections", []):
+        sections_dict[section["code"]] = ConfigSectionResponse(
+            code=section["code"],
+            name=section["name"],
+            description=section.get("description"),
+            sort_order=section.get("sort_order", 0),
+            criteria=[]
+        )
+
+    for criterion in config.get("criteria", []):
+        section_code = criterion.get("section")
+        if section_code in sections_dict:
+            sections_dict[section_code].criteria.append(ConfigCriterionResponse(
+                code=criterion["code"],
+                name=criterion["name"],
+                description_prompt=criterion.get("description_prompt"),
+                comments_prompt=criterion.get("comments_prompt"),
+                allow_zero=criterion.get("allow_zero", True),
+                weight=criterion.get("weight", 1.0),
+                sort_order=criterion.get("sort_order", 0)
+            ))
+
+    # Sort sections and their criteria by sort_order
+    result = sorted(sections_dict.values(), key=lambda s: s.sort_order)
+    for section in result:
+        section.criteria = sorted(section.criteria, key=lambda c: c.sort_order)
+    return result
+
+
 def _build_scorecard_response(
     db: Session,
     validation_request: ValidationRequest,
@@ -770,12 +829,16 @@ def _build_scorecard_response(
     # Get computed_at from result if exists
     computed_at = validation_request.scorecard_result.computed_at if validation_request.scorecard_result else utc_now()
 
+    # Build config_sections from config dict for frontend rendering
+    config_sections = _build_config_sections_from_dict(config)
+
     return ScorecardFullResponse(
         request_id=validation_request.request_id,
         criteria_details=criteria_details,
         section_summaries=section_summaries,
         overall_assessment=overall,
         computed_at=computed_at,
+        config_sections=config_sections,
     )
 
 

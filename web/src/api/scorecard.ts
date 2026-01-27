@@ -131,6 +131,30 @@ export interface OverallAssessmentResponse {
 }
 
 /**
+ * Criterion config for frontend rendering (from historical snapshot or current config).
+ */
+export interface ConfigCriterion {
+    code: string;
+    name: string;
+    description_prompt?: string | null;
+    comments_prompt?: string | null;
+    allow_zero: boolean;
+    weight: number;
+    sort_order: number;
+}
+
+/**
+ * Section config with nested criteria for frontend rendering.
+ */
+export interface ConfigSection {
+    code: string;
+    name: string;
+    description?: string | null;
+    sort_order: number;
+    criteria: ConfigCriterion[];
+}
+
+/**
  * Full scorecard response with all details.
  */
 export interface ScorecardFullResponse {
@@ -139,6 +163,7 @@ export interface ScorecardFullResponse {
     section_summaries: SectionSummaryResponse[];
     overall_assessment: OverallAssessmentResponse;
     computed_at: string;
+    config_sections: ConfigSection[];
 }
 
 // ============================================================================

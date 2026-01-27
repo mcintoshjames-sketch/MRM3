@@ -34,6 +34,7 @@ class IRPReviewCreate(BaseModel):
     review_date: date
     outcome_id: int
     notes: Optional[str] = None
+    reviewed_by_user_id: Optional[int] = None  # Defaults to IRP contact if not provided
 
 
 class IRPReviewResponse(BaseModel):
@@ -58,6 +59,7 @@ class IRPReviewResponse(BaseModel):
 class IRPCertificationCreate(BaseModel):
     """Schema for creating an IRP certification."""
     certification_date: date
+    certified_by_email: str
     conclusion_summary: str
 
 
@@ -67,7 +69,8 @@ class IRPCertificationResponse(BaseModel):
     irp_id: int
     certification_date: date
     certified_by_user_id: int
-    certified_by: Optional[UserResponse] = None
+    certified_by_user: Optional[UserResponse] = None
+    certified_by_email: str
     conclusion_summary: str
     created_at: datetime
 

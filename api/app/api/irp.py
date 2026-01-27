@@ -261,7 +261,7 @@ def create_irp(
         joinedload(IRP.covered_mrsas).joinedload(Model.mrsa_risk_level),
         joinedload(IRP.reviews).joinedload(IRPReview.outcome),
         joinedload(IRP.reviews).joinedload(IRPReview.reviewed_by),
-        joinedload(IRP.certifications).joinedload(IRPCertification.certified_by),
+        joinedload(IRP.certifications).joinedload(IRPCertification.certified_by_user),
     ).filter(IRP.irp_id == irp.irp_id).first()
 
     if not irp:
@@ -288,7 +288,7 @@ def get_irp(
         joinedload(IRP.covered_mrsas).joinedload(Model.mrsa_risk_level),
         joinedload(IRP.reviews).joinedload(IRPReview.outcome),
         joinedload(IRP.reviews).joinedload(IRPReview.reviewed_by),
-        joinedload(IRP.certifications).joinedload(IRPCertification.certified_by),
+        joinedload(IRP.certifications).joinedload(IRPCertification.certified_by_user),
     ).filter(IRP.irp_id == irp_id).first()
 
     if not irp:
@@ -447,7 +447,7 @@ def update_irp(
         joinedload(IRP.covered_mrsas).joinedload(Model.mrsa_risk_level),
         joinedload(IRP.reviews).joinedload(IRPReview.outcome),
         joinedload(IRP.reviews).joinedload(IRPReview.reviewed_by),
-        joinedload(IRP.certifications).joinedload(IRPCertification.certified_by),
+        joinedload(IRP.certifications).joinedload(IRPCertification.certified_by_user),
     ).filter(IRP.irp_id == irp.irp_id).first()
 
     if not irp:
@@ -579,12 +579,23 @@ def create_irp_review(
             detail="Invalid outcome taxonomy value"
         )
 
+    # Determine reviewed_by_user_id: use provided value or default to IRP contact
+    reviewed_by_user_id = review_data.reviewed_by_user_id or irp.contact_user_id
+
+    # Validate the reviewer user exists
+    reviewer = db.query(User).filter(User.user_id == reviewed_by_user_id).first()
+    if not reviewer:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid reviewed_by_user_id: user not found"
+        )
+
     review = IRPReview(
         irp_id=irp_id,
         review_date=review_data.review_date,
         outcome_id=review_data.outcome_id,
         notes=review_data.notes,
-        reviewed_by_user_id=current_user.user_id,
+        reviewed_by_user_id=reviewed_by_user_id,
     )
     db.add(review)
     db.flush()
@@ -601,6 +612,8 @@ def create_irp_review(
             "review_date": str(review_data.review_date),
             "outcome_id": review_data.outcome_id,
             "outcome_label": outcome.label,
+            "reviewed_by_user_id": reviewed_by_user_id,
+            "reviewed_by_name": reviewer.full_name,
             "notes": review_data.notes
         }
     )
@@ -641,7 +654,7 @@ def list_irp_certifications(
         _require_irp_access(irp, accessible_mrsa_ids)
 
     certifications = db.query(IRPCertification).options(
-        joinedload(IRPCertification.certified_by),
+        joinedload(IRPCertification.certified_by_user),
     ).filter(IRPCertification.irp_id == irp_id).order_by(IRPCertification.certification_date.desc()).all()
 
     return certifications
@@ -671,6 +684,7 @@ def create_irp_certification(
     certification = IRPCertification(
         irp_id=irp_id,
         certification_date=certification_data.certification_date,
+        certified_by_email=certification_data.certified_by_email,
         conclusion_summary=certification_data.conclusion_summary,
         certified_by_user_id=current_user.user_id,
     )
@@ -687,6 +701,7 @@ def create_irp_certification(
         changes={
             "certification_id": certification.certification_id,
             "certification_date": str(certification_data.certification_date),
+            "certified_by_email": certification_data.certified_by_email,
             "conclusion_summary": certification_data.conclusion_summary
         }
     )
@@ -695,7 +710,7 @@ def create_irp_certification(
 
     # Reload with relationships
     certification = db.query(IRPCertification).options(
-        joinedload(IRPCertification.certified_by),
+        joinedload(IRPCertification.certified_by_user),
     ).filter(IRPCertification.certification_id == certification.certification_id).first()
 
     return certification

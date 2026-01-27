@@ -12,12 +12,10 @@
  */
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-    getScorecardConfig,
     getScorecard,
     updateSingleRating,
     updateOverallNarrative,
     exportScorecardPDF,
-    ScorecardConfigResponse,
     ScorecardFullResponse,
     ScorecardRating,
     RATING_OPTIONS,
@@ -93,8 +91,7 @@ function ProgressBar({ rated, total }: ProgressBarProps) {
 // ============================================================================
 
 export default function ValidationScorecardTab({ requestId, canEdit, onScorecardChange }: Props) {
-    // State
-    const [config, setConfig] = useState<ScorecardConfigResponse | null>(null);
+    // State - scorecard now includes config_sections (historical snapshot or current config)
     const [scorecard, setScorecard] = useState<ScorecardFullResponse | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -111,23 +108,18 @@ export default function ValidationScorecardTab({ requestId, canEdit, onScorecard
     // PDF export state
     const [exporting, setExporting] = useState(false);
 
-    // Load configuration and scorecard data
+    // Load scorecard data (includes config_sections from historical snapshot or current config)
     useEffect(() => {
         async function loadData() {
             try {
                 setLoading(true);
                 setError(null);
 
-                const [configData, scorecardData] = await Promise.all([
-                    getScorecardConfig(),
-                    getScorecard(requestId),
-                ]);
-
-                setConfig(configData);
+                const scorecardData = await getScorecard(requestId);
                 setScorecard(scorecardData);
 
-                // Expand all sections by default
-                const allSectionCodes = new Set(configData.sections.map(s => s.code));
+                // Expand all sections by default (using config from scorecard response)
+                const allSectionCodes = new Set(scorecardData.config_sections.map(s => s.code));
                 setExpandedSections(allSectionCodes);
 
                 // Initialize local fields from scorecard data
@@ -334,10 +326,10 @@ export default function ValidationScorecardTab({ requestId, canEdit, onScorecard
         );
     }
 
-    if (!config || !scorecard) {
+    if (!scorecard) {
         return (
             <div className="text-gray-500 text-center py-8">
-                No scorecard configuration available.
+                No scorecard data available.
             </div>
         );
     }
@@ -456,8 +448,8 @@ export default function ValidationScorecardTab({ requestId, canEdit, onScorecard
                 </div>
             </div>
 
-            {/* Sections */}
-            {config.sections.map((section) => {
+            {/* Sections - rendered from historical config snapshot */}
+            {scorecard.config_sections.map((section) => {
                 const summary = getSectionSummary(section.code);
                 const isExpanded = expandedSections.has(section.code);
 
