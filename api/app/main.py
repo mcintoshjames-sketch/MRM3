@@ -3,7 +3,7 @@ from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.orm import Session
-from app.api import auth, users, roles, models, vendors, taxonomies, audit_logs, validation_workflow, validation_policies, workflow_sla, regions, model_regions, model_versions, model_delegates, model_change_taxonomy, model_types, methodology, dashboard, export_views, version_deployment_tasks, regional_compliance_report, analytics, saved_queries, model_hierarchy, model_dependencies, approver_roles, conditional_approval_rules, fry, map_applications, model_applications, overdue_commentary, overdue_revalidation_report, decommissioning, kpm, monitoring, recommendations, risk_assessment, qualitative_factors, scorecard, uat_tools, residual_risk_map, limitations, model_overlays, attestations, lob_units, kpi_report, irp, my_portfolio, exceptions, mrsa_review_policy, teams, tags, due_date_override
+from app.api import auth, users, roles, models, vendors, taxonomies, audit_logs, validation_workflow, validation_policies, workflow_sla, regions, model_regions, model_versions, model_delegates, model_change_taxonomy, model_types, methodology, dashboard, export_views, version_deployment_tasks, regional_compliance_report, analytics, saved_queries, model_hierarchy, model_dependencies, approver_roles, conditional_approval_rules, fry, map_applications, model_applications, overdue_commentary, overdue_revalidation_report, decommissioning, kpm, monitoring, recommendations, risk_assessment, qualitative_factors, scorecard, residual_risk_map, limitations, model_overlays, attestations, lob_units, kpi_report, irp, my_portfolio, exceptions, mrsa_review_policy, teams, tags, due_date_override
 from app.core.database import get_db
 from app.core.config import settings
 from app.core.exception_detection import get_missing_closure_reason_codes
@@ -98,9 +98,6 @@ app.include_router(qualitative_factors.router,
 app.include_router(scorecard.router, prefix="/scorecard", tags=["scorecard"])
 # Residual Risk Map Configuration
 app.include_router(residual_risk_map.router, tags=["residual-risk-map"])
-# UAT Tools - only enabled when ENABLE_UAT_TOOLS=true (disabled by default)
-if settings.ENABLE_UAT_TOOLS:
-    app.include_router(uat_tools.router, prefix="/uat", tags=["uat-tools"])
 # Model Limitations
 app.include_router(limitations.router, tags=["limitations"])
 # Model Overlays

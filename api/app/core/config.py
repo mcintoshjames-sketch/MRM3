@@ -18,12 +18,6 @@ class Settings(BaseSettings):
     # CORS configuration - comma-separated origins
     CORS_ORIGINS: str = "http://localhost:5173,http://localhost:5174"
 
-    # UAT tools - MUST be explicitly enabled, disabled by default
-    ENABLE_UAT_TOOLS: bool = False
-    # Production break-glass for UAT tools (must be explicit + audited)
-    ALLOW_UAT_TOOLS_IN_PROD: bool = False
-    UAT_TOOLS_BREAK_GLASS_TICKET: str | None = None
-
     model_config = SettingsConfigDict(env_file=".env")
 
     def get_cors_origins(self) -> list[str]:
@@ -72,16 +66,6 @@ class Settings(BaseSettings):
                 print("FATAL: JWT_ISSUER and JWT_AUDIENCE must be set in production!", file=sys.stderr)
                 print("Set JWT_ISSUER and JWT_AUDIENCE environment variables.", file=sys.stderr)
                 sys.exit(1)
-
-            if self.ENABLE_UAT_TOOLS:
-                if not self.ALLOW_UAT_TOOLS_IN_PROD or not self.UAT_TOOLS_BREAK_GLASS_TICKET or not self.UAT_TOOLS_BREAK_GLASS_TICKET.strip():
-                    print("FATAL: UAT tools cannot be enabled in production without break-glass approval!", file=sys.stderr)
-                    print("Set ALLOW_UAT_TOOLS_IN_PROD=true and UAT_TOOLS_BREAK_GLASS_TICKET=<ticket>", file=sys.stderr)
-                    sys.exit(1)
-                print(
-                    f"WARNING: UAT tools enabled in production under break-glass {self.UAT_TOOLS_BREAK_GLASS_TICKET}.",
-                    file=sys.stderr,
-                )
         elif env != "development":
             print(f"FATAL: Unsupported ENVIRONMENT value: {self.ENVIRONMENT!r}", file=sys.stderr)
             print("Use ENVIRONMENT=development or ENVIRONMENT=production.", file=sys.stderr)

@@ -109,7 +109,8 @@ def get_seed_admin_password() -> str | None:
     if is_production_env():
         if password:
             if password == "admin123":
-                print("FATAL: SEED_ADMIN_PASSWORD cannot be the default in production.", file=sys.stderr)
+                print(
+                    "FATAL: SEED_ADMIN_PASSWORD cannot be the default in production.", file=sys.stderr)
                 sys.exit(1)
             return password
         return None
@@ -407,7 +408,8 @@ def _upsert_taxonomy_with_values(
                     downgrade_notches=entry.get(
                         "downgrade_notches") if taxonomy_type == "bucket" else None,
                     requires_irp=entry.get("requires_irp"),
-                    is_system_protected=entry.get("is_system_protected", False),
+                    is_system_protected=entry.get(
+                        "is_system_protected", False),
                     created_at=utc_now(),
                 )
             )
@@ -1214,7 +1216,8 @@ def seed_database():
             User.email == "admin@example.com").first()
         if not admin:
             if admin_password is None:
-                print("FATAL: SEED_ADMIN_PASSWORD is required to create the admin user in production.", file=sys.stderr)
+                print(
+                    "FATAL: SEED_ADMIN_PASSWORD is required to create the admin user in production.", file=sys.stderr)
                 sys.exit(1)
             admin = User(
                 email="admin@example.com",
@@ -1238,7 +1241,8 @@ def seed_database():
             else:
                 print("✓ Admin user already exists")
             if is_production_env() and verify_password("admin123", admin.password_hash):
-                print("WARNING: admin@example.com still uses the default password in production. Rotate immediately.", file=sys.stderr)
+                print(
+                    "WARNING: admin@example.com still uses the default password in production. Rotate immediately.", file=sys.stderr)
 
         if seed_demo_data:
             # Create validator user for UAT
@@ -1601,7 +1605,8 @@ def seed_database():
         db.commit()
 
         # Ensure all application users link to an Entra record
-        users_missing_entra = db.query(User).filter(User.azure_object_id.is_(None)).all()
+        users_missing_entra = db.query(User).filter(
+            User.azure_object_id.is_(None)).all()
         for user in users_missing_entra:
             entra_user = db.query(EntraUser).filter(
                 (EntraUser.mail == user.email)
@@ -2502,11 +2507,14 @@ def seed_database():
                     db.commit()
                     print("✓ Created default MRSA Review Policy for High-Risk MRSAs")
                 else:
-                    print("✓ MRSA Review Policy already exists for High-Risk MRSAs (skipping update to preserve user changes)")
+                    print(
+                        "✓ MRSA Review Policy already exists for High-Risk MRSAs (skipping update to preserve user changes)")
             else:
-                print("⚠ High-Risk MRSA Risk Level value not found - skipping MRSA Review Policy seeding")
+                print(
+                    "⚠ High-Risk MRSA Risk Level value not found - skipping MRSA Review Policy seeding")
         else:
-            print("⚠ MRSA Risk Level taxonomy not found - skipping MRSA Review Policy seeding")
+            print(
+                "⚠ MRSA Risk Level taxonomy not found - skipping MRSA Review Policy seeding")
 
         # Seed MRSA demo data for Independent Review Tracking feature
         if seed_demo_data:
@@ -2853,7 +2861,8 @@ def seed_database():
 
                         # Step 2: Create CURRENT revalidation request (in PLANNING, waiting for submission)
                         # submission_due_date = prior_val_date + 12 months = 15 months ago (~450 days)
-                        submission_due_f = prior_val_date + timedelta(days=12 * 30)
+                        submission_due_f = prior_val_date + \
+                            timedelta(days=12 * 30)
                         current_req_f = ValidationRequest(
                             requestor_id=admin.user_id,
                             validation_type_id=comprehensive_val_type.value_id,
@@ -2880,7 +2889,8 @@ def seed_database():
                             request_id=current_req_f.request_id,
                             validator_id=validator.user_id,
                             is_primary=True,
-                            assignment_date=submission_due_f - timedelta(days=30),
+                            assignment_date=submission_due_f -
+                            timedelta(days=30),
                             independence_attestation=True
                         ))
 
@@ -2991,7 +3001,8 @@ def seed_database():
                             new_status_id=planning_status.value_id,
                             changed_by_id=admin.user_id,
                             change_reason="Validator assigned, entering planning phase",
-                            changed_at=submission_received_g + timedelta(days=7)
+                            changed_at=submission_received_g +
+                            timedelta(days=7)
                         ))
                         db.add(ValidationStatusHistory(
                             request_id=current_req_g.request_id,
@@ -2999,7 +3010,8 @@ def seed_database():
                             new_status_id=in_progress_status.value_id,
                             changed_by_id=validator.user_id,
                             change_reason="Validation work commenced",
-                            changed_at=submission_received_g + timedelta(days=14)
+                            changed_at=submission_received_g +
+                            timedelta(days=14)
                         ))
 
                         print(
@@ -3927,12 +3939,12 @@ def seed_scorecard_config(db):
 
     # Load configuration from SCORE_CRITERIA.json
     # In Docker, it's mounted at /app/SCORE_CRITERIA.json
-    # Locally (for tests), it's at the repo root
+    # Locally (for tests), it's in the api directory
     config_path = Path("/app/SCORE_CRITERIA.json")
     if not config_path.exists():
         # Fallback for local development/testing
-        repo_root = Path(__file__).parent.parent.parent
-        config_path = repo_root / "SCORE_CRITERIA.json"
+        api_root = Path(__file__).parent.parent
+        config_path = api_root / "SCORE_CRITERIA.json"
 
     with open(config_path, "r") as f:
         config = json.load(f)
@@ -3996,12 +4008,12 @@ def seed_residual_risk_map(db):
 
     # Load configuration from RESIDUAL_RISK_MAP.json
     # In Docker, it's mounted at /app/RESIDUAL_RISK_MAP.json
-    # Locally (for tests), it's at the repo root
+    # Locally (for tests), it's in the api directory
     config_path = Path("/app/RESIDUAL_RISK_MAP.json")
     if not config_path.exists():
         # Fallback for local development/testing
-        repo_root = Path(__file__).parent.parent.parent
-        config_path = repo_root / "RESIDUAL_RISK_MAP.json"
+        api_root = Path(__file__).parent.parent
+        config_path = api_root / "RESIDUAL_RISK_MAP.json"
 
     if not config_path.exists():
         print(f"⚠ RESIDUAL_RISK_MAP.json not found at {config_path}")
@@ -4101,7 +4113,8 @@ ATTESTATION_QUESTIONS = [
         "label": "Use Restrictions Implemented",
         "description": "I confirm any restrictions on model use have been implemented, and the model remains in use in accordance with its approved intended use(s).",
         "sort_order": 10,
-        "is_system_protected": True,  # Used for Type 2 exception detection - cannot be deleted/deactivated
+        # Used for Type 2 exception detection - cannot be deleted/deactivated
+        "is_system_protected": True,
     },
 ]
 
@@ -4730,8 +4743,10 @@ def seed_mrsa_demo_data(db: Session):
         return
 
     # Get users for ownership and reviews
-    admin_user = db.query(User).filter(User.email == "admin@example.com").first()
-    validator_user = db.query(User).filter(User.email == "validator@example.com").first()
+    admin_user = db.query(User).filter(
+        User.email == "admin@example.com").first()
+    validator_user = db.query(User).filter(
+        User.email == "validator@example.com").first()
 
     if not admin_user or not validator_user:
         print("⚠ Required users not found - skipping MRSA demo seeding")
@@ -4918,7 +4933,8 @@ def seed_mrsa_demo_data(db: Session):
             if irp and mrsa_data["outcome"]:
                 review = IRPReview(
                     irp_id=irp.irp_id,
-                    review_date=today - timedelta(days=mrsa_data["review_days_ago"]),
+                    review_date=today -
+                    timedelta(days=mrsa_data["review_days_ago"]),
                     outcome_id=mrsa_data["outcome"].value_id,
                     notes=f"Periodic review of {mrsa.model_name}.",
                     reviewed_by_user_id=validator_user.user_id,

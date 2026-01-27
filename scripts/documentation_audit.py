@@ -8,8 +8,11 @@ from playwright.sync_api import sync_playwright
 
 DOCS_DIR = Path("/Users/jamesmcintosh/Desktop/mrm_inv_3/docs")
 BASE_URL = os.environ.get("AUDIT_BASE_URL", "http://localhost:5174")
-ARTIFACTS_DIR = Path("audit_artifacts")
-REPORT_PATH = Path("audit_results.md")
+
+# Output to project root (parent of scripts dir)
+PROJECT_ROOT = Path(__file__).parent.parent
+ARTIFACTS_DIR = PROJECT_ROOT / "audit_artifacts"
+REPORT_PATH = PROJECT_ROOT / "audit_results.md"
 
 
 class LoginFailedError(RuntimeError):
@@ -200,7 +203,8 @@ def _get_accessible_name(locator) -> str:
 
 def _collect_live_map(page):
     live_map = set()
-    text_roles = ["heading", "link", "button", "tab", "menuitem", "option", "listitem"]
+    text_roles = ["heading", "link", "button",
+                  "tab", "menuitem", "option", "listitem"]
     for role in text_roles:
         locator = page.get_by_role(role)
         for text in locator.all_inner_texts():
@@ -252,8 +256,10 @@ def _open_login_form(page, screenshot_counter):
 
 def _wait_for_logged_in(page, timeout_ms: int = 10000) -> bool:
     start = time.time()
-    dashboard_link = page.get_by_role("link", name=re.compile("dashboard|home", re.I))
-    dashboard_heading = page.get_by_role("heading", name=re.compile("dashboard|home", re.I))
+    dashboard_link = page.get_by_role(
+        "link", name=re.compile("dashboard|home", re.I))
+    dashboard_heading = page.get_by_role(
+        "heading", name=re.compile("dashboard|home", re.I))
 
     while (time.time() - start) * 1000 < timeout_ms:
         if dashboard_link.count() > 0 or dashboard_heading.count() > 0:
@@ -286,7 +292,8 @@ def _discover_navigation(page, screenshot_counter):
         if name:
             link_names.append(name)
 
-    nav_home_evidence = _screenshot(page, "navigation_home", screenshot_counter)
+    nav_home_evidence = _screenshot(
+        page, "navigation_home", screenshot_counter)
     page_items = _collect_live_map(page)
     live_map.update(page_items)
     _update_evidence_map(page_items, evidence_map, nav_home_evidence)
@@ -324,7 +331,7 @@ def _match_expected_item(expected: str, live_items, evidence_map, fallback_evide
     if not expected_norm:
         return "MISSING", "", fallback_evidence
 
-    live_norm_map = { _normalize_text(item): item for item in live_items }
+    live_norm_map = {_normalize_text(item): item for item in live_items}
 
     if expected_norm in live_norm_map:
         return "MATCHED", live_norm_map[expected_norm], evidence_map.get(expected_norm, fallback_evidence)
@@ -337,7 +344,8 @@ def _match_expected_item(expected: str, live_items, evidence_map, fallback_evide
     best_item = ""
     best_score = 0.0
     for item in live_items:
-        score = SequenceMatcher(None, expected_norm, _normalize_text(item)).ratio()
+        score = SequenceMatcher(None, expected_norm,
+                                _normalize_text(item)).ratio()
         if score > best_score:
             best_score = score
             best_item = item
@@ -359,29 +367,34 @@ def _open_model_onboarding_form(page, screenshot_counter):
     if models_link.count() > 0:
         models_link.first.click()
         page.wait_for_load_state("networkidle")
-        evidence["models_page"] = _screenshot(page, "models_page", screenshot_counter)
+        evidence["models_page"] = _screenshot(
+            page, "models_page", screenshot_counter)
         screenshot_counter += 1
     else:
         models_url = f"{BASE_URL}/models"
         page.goto(models_url, wait_until="domcontentloaded")
         page.wait_for_load_state("networkidle")
-        evidence["models_page"] = _screenshot(page, "models_page", screenshot_counter)
+        evidence["models_page"] = _screenshot(
+            page, "models_page", screenshot_counter)
         screenshot_counter += 1
 
-    add_button = page.get_by_role("button", name=re.compile("add model|create new model|new model", re.I))
+    add_button = page.get_by_role("button", name=re.compile(
+        "add model|create new model|new model", re.I))
     if add_button.count() == 0:
         return False, evidence, screenshot_counter
 
     add_button.first.click()
     page.wait_for_load_state("networkidle")
-    model_name_field = page.get_by_role("textbox", name=re.compile("model name", re.I))
+    model_name_field = page.get_by_role(
+        "textbox", name=re.compile("model name", re.I))
     if model_name_field.count() > 0:
         try:
             model_name_field.first.wait_for(state="visible", timeout=5000)
         except Exception:
             pass
 
-    evidence["form_opened"] = _screenshot(page, "model_onboarding", screenshot_counter)
+    evidence["form_opened"] = _screenshot(
+        page, "model_onboarding", screenshot_counter)
     screenshot_counter += 1
 
     return True, evidence, screenshot_counter
@@ -424,7 +437,8 @@ def _preferred_combobox_keywords(field_name: str):
     if "risk rating" in name or "risk level" in name or "risk severity" in name:
         keywords.extend(["high", "medium", "low"])
     if "model type" in name or "model category" in name:
-        keywords.extend(["credit", "market", "operational", "liquidity", "compliance"])
+        keywords.extend(["credit", "market", "operational",
+                        "liquidity", "compliance"])
     if "rating" in name and not keywords:
         keywords.extend(["high", "medium", "low"])
     if "tier" in name:
@@ -433,7 +447,8 @@ def _preferred_combobox_keywords(field_name: str):
         keywords.extend(["active", "pending", "inactive"])
 
     if not keywords:
-        keywords.extend(["high", "medium", "low", "credit", "market", "operational"])
+        keywords.extend(
+            ["high", "medium", "low", "credit", "market", "operational"])
 
     return keywords
 
@@ -492,7 +507,8 @@ def _write_report(results):
         note = results["expected_workflows"][item].get("note", "")
         evidence = results["expected_workflows"][item].get("evidence", "")
         if note:
-            lines.append(f"- [{status}] {item} (UI: {note}) [View Evidence]({evidence})")
+            lines.append(
+                f"- [{status}] {item} (UI: {note}) [View Evidence]({evidence})")
         else:
             lines.append(f"- [{status}] {item} [View Evidence]({evidence})")
 
@@ -503,7 +519,8 @@ def _write_report(results):
         note = results["required_fields"][item].get("note", "")
         evidence = results["required_fields"][item].get("evidence", "")
         if note:
-            lines.append(f"- [{status}] {item} (UI: {note}) [View Evidence]({evidence})")
+            lines.append(
+                f"- [{status}] {item} (UI: {note}) [View Evidence]({evidence})")
         else:
             lines.append(f"- [{status}] {item} [View Evidence]({evidence})")
 
@@ -529,18 +546,22 @@ def run_audit():
         login_evidence = _screenshot(page, "login_page", screenshot_counter)
         screenshot_counter += 1
 
-        login_opened_evidence, screenshot_counter = _open_login_form(page, screenshot_counter)
+        login_opened_evidence, screenshot_counter = _open_login_form(
+            page, screenshot_counter)
 
-        _fill_first(page, "textbox", re.compile("user|email|username", re.I), "admin@example.com")
+        _fill_first(page, "textbox", re.compile(
+            "user|email|username", re.I), "admin@example.com")
         _fill_first(page, "textbox", re.compile("pass", re.I), "user123")
         if not _click_first(page, "button", re.compile("log in|login|sign in", re.I)):
             page.keyboard.press("Enter")
         page.wait_for_load_state("networkidle")
-        post_login_evidence = _screenshot(page, "post_login", screenshot_counter)
+        post_login_evidence = _screenshot(
+            page, "post_login", screenshot_counter)
         screenshot_counter += 1
 
         if not _wait_for_logged_in(page):
-            failure_evidence = _screenshot(page, "login_failed", screenshot_counter)
+            failure_evidence = _screenshot(
+                page, "login_failed", screenshot_counter)
             screenshot_counter += 1
             browser.close()
             raise LoginFailedError(
@@ -566,7 +587,8 @@ def run_audit():
             _update_evidence_map(form_items, evidence_map, onboarding_evidence)
 
             live_fields = _collect_form_field_names(page)
-            live_norm_map = { _normalize_text(item): item for item in live_fields }
+            live_norm_map = {_normalize_text(
+                item): item for item in live_fields}
 
             for field in required_fields:
                 locator, role, status = _locate_field(page, field)
@@ -591,7 +613,8 @@ def run_audit():
                     if note:
                         results["required_fields"][field]["note"] = note
 
-            filled_evidence = _screenshot(page, "model_onboarding_filled", screenshot_counter)
+            filled_evidence = _screenshot(
+                page, "model_onboarding_filled", screenshot_counter)
             screenshot_counter += 1
 
             for field in required_fields:

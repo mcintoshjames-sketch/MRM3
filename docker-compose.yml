@@ -35,9 +35,6 @@ services:
         condition: service_healthy
     volumes:
       - ./api:/app
-      - ./SCORE_CRITERIA.json:/app/SCORE_CRITERIA.json:ro
-      - ./RESIDUAL_RISK_MAP.json:/app/RESIDUAL_RISK_MAP.json:ro
-      - ./CIBC_logo_2021.png:/app/CIBC_logo_2021.png:ro
     command: >
       sh -c "
         echo 'Waiting for database...' &&

@@ -1,0 +1,158 @@
+{
+    "sections": [
+        {
+            "code": "1",
+            "name": "Evaluation of Conceptual Soundness"
+        },
+        {
+            "code": "2",
+            "name": "Ongoing Monitoring/Benchmarking"
+        },
+        {
+            "code": "3",
+            "name": "Outcome Analysis"
+        }
+    ],
+    "criteria": [
+        {
+            "code": "1.1",
+            "section": "1",
+            "name": "Model Development Documentation",
+            "description_prompt": "Please provide a high-level description on the model developer's documentation/submission",
+            "comments_prompt": "Please provide your rationale on their documentation/submission if any.",
+            "include_in_summary": true,
+            "allow_zero": true,
+            "weight": 1
+        },
+        {
+            "code": "1.2",
+            "section": "1",
+            "name": "Model Development Data",
+            "description_prompt": "Please provide a high-level description of the potential model risk arising from modeling data.",
+            "comments_prompt": "Please provide your rationale to support the assessment. If not applicable, provide the rationale.",
+            "include_in_summary": true,
+            "allow_zero": true,
+            "weight": 1
+        },
+        {
+            "code": "1.3",
+            "section": "1",
+            "name": "Model Methodology, Assumptions and Simplifications",
+            "description_prompt": "Please provide a high-level description of the model methodology, assumptions and simplifications submitted by the developer.",
+            "comments_prompt": "Please provide your rationale to support the assessment. If not applicable, provide the rationale.",
+            "include_in_summary": true,
+            "allow_zero": true,
+            "weight": 1
+        },
+        {
+            "code": "1.4",
+            "section": "1",
+            "name": "Model Inputs and Model Outputs",
+            "description_prompt": "Please provide a high-level description on the model inputs and model outputs required by the model",
+            "comments_prompt": "Please provide your rationale to support the assessment. If not applicable, provide the rationale.",
+            "include_in_summary": true,
+            "allow_zero": true,
+            "weight": 1
+        },
+        {
+            "code": "1.5",
+            "section": "1",
+            "name": "Model Limitation and Model Risk",
+            "description_prompt": "Please provide a high-level description on the model limitation and model risk identified by the Model Validator",
+            "comments_prompt": "Please provide the model risk control and mitigation method if any",
+            "include_in_summary": true,
+            "allow_zero": true,
+            "weight": 1
+        },
+        {
+            "code": "2.1",
+            "section": "2",
+            "name": "Benchmarking",
+            "description_prompt": "Please provide a high-level description on the benchmark testing performed by the Model Validator",
+            "comments_prompt": "For High and Medium inherent risk models, please provide the numerical test findings. If testing is not applicable, provide the rationale.",
+            "include_in_summary": true,
+            "allow_zero": true,
+            "weight": 1
+        },
+        {
+            "code": "2.2",
+            "section": "2",
+            "name": "Process Verification",
+            "description_prompt": "Please provide a high-level description on the process verification performed by the Model Validator",
+            "comments_prompt": "For High and Medium inherent risk models, please provide the numerical test findings. If testing is not applicable, provide the rationale.",
+            "include_in_summary": true,
+            "allow_zero": true,
+            "weight": 1
+        },
+        {
+            "code": "2.3",
+            "section": "2",
+            "name": "Sensitivity Analysis",
+            "description_prompt": "Please provide a high-level description on the sensitivity testing performed by the Model Validator",
+            "comments_prompt": "For High and Medium inherent risk models, please provide the numerical test findings. If testing is not applicable, provide the rationale.",
+            "include_in_summary": true,
+            "allow_zero": true,
+            "weight": 1
+        },
+        {
+            "code": "3.1",
+            "section": "3",
+            "name": "Backtesting",
+            "description_prompt": "Please provide a high-level description on the backtesting performed by the Model Validator",
+            "comments_prompt": "For High and Medium inherent risk models, please provide the numerical test findings. If testing is not applicable, provide the rationale.",
+            "include_in_summary": true,
+            "allow_zero": true,
+            "weight": 1
+        },
+        {
+            "code": "3.2",
+            "section": "3",
+            "name": "Stress Testing",
+            "description_prompt": "Please provide a high-level description on the stress testing performed by the Model Validator",
+            "comments_prompt": "For High and Medium inherent risk models, please provide the numerical test findings. If testing is not applicable, provide the rationale.",
+            "include_in_summary": true,
+            "allow_zero": true,
+            "weight": 1
+        },
+        {
+            "code": "3.3",
+            "section": "3",
+            "name": "Boundary Testing",
+            "description_prompt": "Please provide a high-level description on the boundary testing performed by the Model Validator",
+            "comments_prompt": "For High and Medium inherent risk models, please provide the numerical test findings. If testing is not applicable, provide the rationale.",
+            "include_in_summary": true,
+            "allow_zero": true,
+            "weight": 1
+        },
+        {
+            "code": "3.4",
+            "section": "3",
+            "name": "Accuracy Testing",
+            "description_prompt": "Please provide a high-level description on the accuracy testing performed by the Model Validator",
+            "comments_prompt": "For High and Medium inherent risk models, please provide the numerical test findings. If testing is not applicable, provide the rationale.",
+            "include_in_summary": true,
+            "allow_zero": true,
+            "weight": 1
+        },
+        {
+            "code": "3.5",
+            "section": "3",
+            "name": "Impact Analysis",
+            "description_prompt": "Please provide a high-level description on the impact analysis performed by the Model Validator",
+            "comments_prompt": "For High and Medium inherent risk models, please provide the numerical test findings. If testing is not applicable, provide the rationale.",
+            "include_in_summary": true,
+            "allow_zero": true,
+            "weight": 1
+        },
+        {
+            "code": "3.6",
+            "section": "3",
+            "name": "Other Testing",
+            "description_prompt": "Please provide a high-level description on the other testing performed by the Model Validator",
+            "comments_prompt": "For High and Medium inherent risk models, please provide the numerical test findings. If testing is not applicable, provide the rationale.",
+            "include_in_summary": true,
+            "allow_zero": true,
+            "weight": 1
+        }
+    ]
+}

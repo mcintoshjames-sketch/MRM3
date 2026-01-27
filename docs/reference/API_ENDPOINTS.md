@@ -527,15 +527,6 @@
 - DELETE /teams/{team_id}/lobs/{lob_id}
 - GET /teams/{team_id}/models
 
-### uat_tools (prefixes: /uat)
-- POST /uat/backup
-- GET /uat/backups
-- DELETE /uat/backups/{backup_id}
-- GET /uat/data-summary
-- DELETE /uat/reset-transactional-data
-- POST /uat/restore/{backup_id}
-- POST /uat/seed-uat-data
-
 ### validation_policies (prefixes: /validation-workflow/policies)
 - GET /validation-workflow/policies/
 - POST /validation-workflow/policies/

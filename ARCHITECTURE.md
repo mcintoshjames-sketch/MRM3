@@ -11,7 +11,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
 ## Runtime & Deployment
 - Local/dev via `docker compose up --build` (see `docker-compose.yml`). Services: `db` (Postgres on 5433), `api` (Uvicorn on 8001), `web` (Vite dev server on 5174).
 - API entrypoint: `api/app/main.py` with CORS origins from `CORS_ORIGINS` (comma-separated; defaults to `http://localhost:5173,http://localhost:5174`).
-- Env/config: `api/app/core/config.py` (DATABASE_URL, SECRET_KEY, algorithm, token expiry, `JWT_ISSUER`, `JWT_AUDIENCE`) loaded via `.env`; defaults are removed for production and startup fails fast if required values are missing or unsafe; UAT tools require explicit break-glass (`ALLOW_UAT_TOOLS_IN_PROD` + `UAT_TOOLS_BREAK_GLASS_TICKET`); analytics hardening supports `ANALYTICS_DB_ROLE`, `ANALYTICS_SEARCH_PATH`, `ANALYTICS_LOCK_TIMEOUT`, `ANALYTICS_IDLE_IN_TRANSACTION_TIMEOUT`; frontend uses `VITE_API_URL`. See `.env.example` for local defaults.
+- Env/config: `api/app/core/config.py` (DATABASE_URL, SECRET_KEY, algorithm, token expiry, `JWT_ISSUER`, `JWT_AUDIENCE`) loaded via `.env`; defaults are removed for production and startup fails fast if required values are missing or unsafe; analytics hardening supports `ANALYTICS_DB_ROLE`, `ANALYTICS_SEARCH_PATH`, `ANALYTICS_LOCK_TIMEOUT`, `ANALYTICS_IDLE_IN_TRANSACTION_TIMEOUT`; frontend uses `VITE_API_URL`. See `.env.example` for local defaults.
 - Health probes: `/health` + `/healthz` for liveness, `/ready` + `/readyz` for readiness (DB connectivity plus Exception Closure Reason taxonomy check; readiness fails if required closure reason codes are missing).
 - Migrations: Alembic in `api/alembic`; run inside container against hostname `db`. Production deployments via `scripts/deploy.sh` run `alembic upgrade head` and verify the revision matches `alembic heads` before completing.
 - Seeding (dev compose): `docker-compose.yml` runs `python -m app.seed` at container start (after `alembic upgrade head`) to create admin user and seed reference data. Production deploys also bootstrap the analytics read-only role via `scripts/db_init/001_create_analytics_readonly.sql`.
@@ -67,7 +67,6 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - `irp.py`: IRP (Independent Review Process) management - CRUD for IRPs, MRSA coverage relationships, review and certification tracking, coverage compliance checks.
   - `mrsa_review_policy.py`: MRSA review policy and exception CRUD plus review status endpoints for independent review tracking.
   - `roles.py`: Role definition and retrieval.
-  - `uat_tools.py`: **(Dev/Test Only)** Temporary endpoints for data reset and seeding.
 - Core services:
   - DB session management (`core/database.py`), auth dependency (`core/deps.py`), security utilities (`core/security.py`), row-level security filters (`core/rls.py`).
   - PDF/report helpers live in `core/pdf_reports.py` (monitoring cycle + scorecard) and `core/pdf_generator.py` (risk assessment), with module-local FPDF exports in `validation_workflow.py`, `model_versions.py`, `model_dependencies.py`, and `my_portfolio.py`.

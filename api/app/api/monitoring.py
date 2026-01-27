@@ -139,7 +139,8 @@ class LimitedStream:
         return data
 
     def read1(self, size=-1):
-        data = self.raw.read1(size) if hasattr(self.raw, "read1") else self.raw.read(size)
+        data = self.raw.read1(size) if hasattr(
+            self.raw, "read1") else self.raw.read(size)
         self._track(len(data))
         return data
 
@@ -361,7 +362,8 @@ def _require_plan_view_access(
     accessible_model_ids: Optional[set[int]]
 ) -> None:
     if not _can_view_plan(plan, current_user, accessible_model_ids):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plan not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Plan not found")
 
 
 def _can_view_cycle_as_approver(
@@ -430,7 +432,8 @@ def _require_cycle_view_access(
     accessible_model_ids: Optional[set[int]]
 ) -> None:
     if not _can_view_cycle(db, cycle, current_user, accessible_model_ids):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cycle not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Cycle not found")
 
 
 def set_plan_dirty(db: Session, plan_id: int) -> None:
@@ -843,7 +846,8 @@ def list_monitoring_plans(
 
     accessible_model_ids = _get_accessible_model_ids(db, current_user)
     if accessible_model_ids is not None:
-        plans = [p for p in plans if _can_view_plan(p, current_user, accessible_model_ids)]
+        plans = [p for p in plans if _can_view_plan(
+            p, current_user, accessible_model_ids)]
 
     # Filter by model if specified
     if model_id:
@@ -867,7 +871,8 @@ def list_monitoring_plans(
             .group_by(MonitoringCycle.plan_id)
             .all()
         }
-        non_terminal_status_ids = get_non_terminal_recommendation_status_ids(db)
+        non_terminal_status_ids = get_non_terminal_recommendation_status_ids(
+            db)
         if non_terminal_status_ids:
             open_recommendation_counts = {
                 plan_id: count
@@ -881,7 +886,8 @@ def list_monitoring_plans(
                 )
                 .filter(
                     MonitoringCycle.plan_id.in_(plan_ids),
-                    Recommendation.current_status_id.in_(non_terminal_status_ids)
+                    Recommendation.current_status_id.in_(
+                        non_terminal_status_ids)
                 )
                 .group_by(MonitoringCycle.plan_id)
                 .all()
@@ -1036,7 +1042,8 @@ def deactivate_monitoring_plan(
                     )
 
     if deactivate_data.cancel_open_recommendations:
-        non_terminal_status_ids = get_non_terminal_recommendation_status_ids(db)
+        non_terminal_status_ids = get_non_terminal_recommendation_status_ids(
+            db)
         dropped_status = get_recommendation_status_by_code(db, "REC_DROPPED")
         if non_terminal_status_ids and not dropped_status:
             raise HTTPException(
@@ -1859,7 +1866,8 @@ def get_plan_version(
 
     model_snapshots = list(version.model_snapshots)
     if not has_plan_access:
-        snapshot_model_ids = {snapshot.model_id for snapshot in model_snapshots}
+        snapshot_model_ids = {
+            snapshot.model_id for snapshot in model_snapshots}
         if not accessible_model_ids or not (snapshot_model_ids & accessible_model_ids):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -2065,8 +2073,10 @@ def export_version_metrics(
 
     version = db.query(MonitoringPlanVersion).options(
         joinedload(MonitoringPlanVersion.metric_snapshots),
-        joinedload(MonitoringPlanVersion.plan).joinedload(MonitoringPlan.team).joinedload(MonitoringTeam.members),
-        joinedload(MonitoringPlanVersion.plan).joinedload(MonitoringPlan.models)
+        joinedload(MonitoringPlanVersion.plan).joinedload(
+            MonitoringPlan.team).joinedload(MonitoringTeam.members),
+        joinedload(MonitoringPlanVersion.plan).joinedload(
+            MonitoringPlan.models)
     ).filter(
         MonitoringPlanVersion.version_id == version_id,
         MonitoringPlanVersion.plan_id == plan_id
@@ -2080,7 +2090,8 @@ def export_version_metrics(
 
     accessible_model_ids = _get_accessible_model_ids(db, current_user)
     if version.plan:
-        _require_plan_view_access(version.plan, current_user, accessible_model_ids)
+        _require_plan_view_access(
+            version.plan, current_user, accessible_model_ids)
 
     # Create CSV in memory
     output = io.StringIO()
@@ -2560,7 +2571,8 @@ def get_my_monitoring_tasks(
         MonitoringCycleStatus.APPROVED.value,
         MonitoringCycleStatus.CANCELLED.value,
     ]
-    cycle_statuses = active_statuses + closed_statuses if include_closed else active_statuses
+    cycle_statuses = active_statuses + \
+        closed_statuses if include_closed else active_statuses
 
     # Query 1: Cycles where user is the data provider for the plan
     data_provider_cycles = db.query(MonitoringCycle).options(
@@ -3255,7 +3267,8 @@ def validate_results_completeness(db: Session, cycle: MonitoringCycle) -> None:
         )
 
     has_plan_level_results = any(r.model_id is None for r in existing_results)
-    has_model_specific_results = any(r.model_id is not None for r in existing_results)
+    has_model_specific_results = any(
+        r.model_id is not None for r in existing_results)
 
     if has_plan_level_results and has_model_specific_results:
         raise HTTPException(
@@ -3270,7 +3283,8 @@ def validate_results_completeness(db: Session, cycle: MonitoringCycle) -> None:
     if has_model_specific_results:
         model_scope = get_cycle_scope_models(db, cycle)
         model_names = {
-            entry["model_id"]: entry.get("model_name") or f"Model {entry['model_id']}"
+            entry["model_id"]: entry.get(
+                "model_name") or f"Model {entry['model_id']}"
             for entry in model_scope
         }
         if not model_names:
@@ -3290,7 +3304,8 @@ def validate_results_completeness(db: Session, cycle: MonitoringCycle) -> None:
                 continue
 
             for model_id, model_name in model_names.items():
-                result = results_by_metric_model.get((snapshot.original_metric_id, model_id))
+                result = results_by_metric_model.get(
+                    (snapshot.original_metric_id, model_id))
                 label = f"{snapshot.kpm_name} ({model_name})"
                 if not result:
                     metrics_missing_entirely.append(label)
@@ -3371,7 +3386,8 @@ def create_monitoring_cycle(
 
     # Calculate due dates
     # Default: plan-specific lead days after period end
-    submission_due = period_end + timedelta(days=plan.data_submission_lead_days)
+    submission_due = period_end + \
+        timedelta(days=plan.data_submission_lead_days)
     report_due = calculate_report_due_date(
         submission_due, plan.reporting_lead_days)
 
@@ -3516,12 +3532,17 @@ def get_monitoring_cycle(
         joinedload(MonitoringCycle.submitted_by),
         joinedload(MonitoringCycle.completed_by),
         joinedload(MonitoringCycle.results),
-        joinedload(MonitoringCycle.plan).joinedload(MonitoringPlan.team).joinedload(MonitoringTeam.members),
+        joinedload(MonitoringCycle.plan).joinedload(
+            MonitoringPlan.team).joinedload(MonitoringTeam.members),
         joinedload(MonitoringCycle.plan).joinedload(MonitoringPlan.models),
-        joinedload(MonitoringCycle.approvals).joinedload(MonitoringCycleApproval.approver),
-        joinedload(MonitoringCycle.approvals).joinedload(MonitoringCycleApproval.region),
-        joinedload(MonitoringCycle.approvals).joinedload(MonitoringCycleApproval.represented_region),
-        joinedload(MonitoringCycle.approvals).joinedload(MonitoringCycleApproval.voided_by),
+        joinedload(MonitoringCycle.approvals).joinedload(
+            MonitoringCycleApproval.approver),
+        joinedload(MonitoringCycle.approvals).joinedload(
+            MonitoringCycleApproval.region),
+        joinedload(MonitoringCycle.approvals).joinedload(
+            MonitoringCycleApproval.represented_region),
+        joinedload(MonitoringCycle.approvals).joinedload(
+            MonitoringCycleApproval.voided_by),
         joinedload(MonitoringCycle.plan_version),
         joinedload(MonitoringCycle.version_locked_by)
     ).filter(MonitoringCycle.cycle_id == cycle_id).first()
@@ -3561,11 +3582,13 @@ def get_monitoring_cycle(
     if cycle.approvals:
         # Only calculate can_approve if cycle is in PENDING_APPROVAL status
         if cycle.status != MonitoringCycleStatus.PENDING_APPROVAL.value:
-            approvals_list = [_build_approval_response(a, can_approve=False) for a in cycle.approvals]
+            approvals_list = [_build_approval_response(
+                a, can_approve=False) for a in cycle.approvals]
         else:
             # Get team member IDs for Global approval permission check
             plan = db.query(MonitoringPlan).options(
-                joinedload(MonitoringPlan.team).joinedload(MonitoringTeam.members)
+                joinedload(MonitoringPlan.team).joinedload(
+                    MonitoringTeam.members)
             ).filter(MonitoringPlan.plan_id == cycle.plan_id).first()
 
             team_member_ids = []
@@ -3800,13 +3823,15 @@ def create_monitoring_result(
 
     # Calculate outcome for quantitative metrics and resolve outcome_value_id
     calculated_outcome = None
-    resolved_outcome_value_id = result_data.outcome_value_id  # Default: use provided value
+    # Default: use provided value
+    resolved_outcome_value_id = result_data.outcome_value_id
     if metric.kpm.evaluation_type == "Quantitative" and result_data.numeric_value is not None:
         threshold_source, _ = resolve_threshold_source(db, cycle, metric)
         calculated_outcome = calculate_outcome(
             result_data.numeric_value, threshold_source)
         # Auto-resolve outcome_value_id from calculated outcome (links to taxonomy)
-        resolved_outcome_value_id = resolve_outcome_value_id(db, calculated_outcome)
+        resolved_outcome_value_id = resolve_outcome_value_id(
+            db, calculated_outcome)
     elif result_data.outcome_value_id:
         # For qualitative/outcome-only, use the selected outcome
         outcome_value = db.query(TaxonomyValue).filter(
@@ -3827,7 +3852,8 @@ def create_monitoring_result(
         plan_metric_id=result_data.plan_metric_id,
         model_id=result_data.model_id,
         numeric_value=result_data.numeric_value,
-        outcome_value_id=resolved_outcome_value_id,  # Use resolved value for quantitative
+        # Use resolved value for quantitative
+        outcome_value_id=resolved_outcome_value_id,
         calculated_outcome=calculated_outcome,
         narrative=result_data.narrative,
         supporting_data=result_data.supporting_data,
@@ -3930,7 +3956,8 @@ def list_cycle_results(
 ):
     """Get all results for a cycle."""
     cycle = db.query(MonitoringCycle).options(
-        joinedload(MonitoringCycle.plan).joinedload(MonitoringPlan.team).joinedload(MonitoringTeam.members),
+        joinedload(MonitoringCycle.plan).joinedload(
+            MonitoringPlan.team).joinedload(MonitoringTeam.members),
         joinedload(MonitoringCycle.plan).joinedload(MonitoringPlan.models),
     ).filter(MonitoringCycle.cycle_id == cycle_id).first()
     if not cycle:
@@ -4020,7 +4047,8 @@ def update_monitoring_result(
         # Recalculate outcome AND outcome_value_id (or clear if value is now null)
         if is_quantitative:
             if update_data.numeric_value is not None:
-                threshold_source, _ = resolve_threshold_source(db, result.cycle, result.plan_metric)
+                threshold_source, _ = resolve_threshold_source(
+                    db, result.cycle, result.plan_metric)
                 calculated_outcome = calculate_outcome(
                     update_data.numeric_value, threshold_source)
                 result.calculated_outcome = calculated_outcome
@@ -4167,7 +4195,8 @@ def import_cycle_results_csv(
     ).filter(MonitoringCycle.cycle_id == cycle_id).first()
 
     if not cycle:
-        raise HTTPException(status_code=404, detail="Monitoring cycle not found")
+        raise HTTPException(
+            status_code=404, detail="Monitoring cycle not found")
 
     # Check edit permission
     check_cycle_edit_permission(db, cycle_id, current_user)
@@ -4219,7 +4248,8 @@ def import_cycle_results_csv(
         ).all()
         for metric in metrics:
             valid_metric_ids.add(metric.metric_id)
-            metric_names[metric.metric_id] = metric.kpm.name if metric.kpm else f"Metric {metric.metric_id}"
+            metric_names[
+                metric.metric_id] = metric.kpm.name if metric.kpm else f"Metric {metric.metric_id}"
 
     # Build metrics lookup for threshold calculation
     metrics_by_id: dict[int, MonitoringPlanMetric] = {}
@@ -4262,7 +4292,8 @@ def import_cycle_results_csv(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to parse CSV: {str(e)}")
+        raise HTTPException(
+            status_code=400, detail=f"Failed to parse CSV: {str(e)}")
 
     valid_rows = []
     error_rows = []
@@ -4441,12 +4472,14 @@ def import_cycle_results_csv(
 
                 # Also set outcome_value_id for quantitative metrics (taxonomy linkage)
                 if calculated_outcome:
-                    outcome_value_id = outcome_code_to_value_id.get(calculated_outcome)
+                    outcome_value_id = outcome_code_to_value_id.get(
+                        calculated_outcome)
             elif row.outcome:
                 # CSV outcome override for qualitative metrics
                 calculated_outcome = row.outcome.upper()
                 # Look up the taxonomy value_id for this outcome code
-                outcome_value_id = outcome_code_to_value_id.get(calculated_outcome)
+                outcome_value_id = outcome_code_to_value_id.get(
+                    calculated_outcome)
 
             if key in existing_map:
                 # Update existing result
@@ -4797,7 +4830,8 @@ def resume_cycle(
         entity_id=cycle_id,
         action="RESUME",
         user_id=current_user.user_id,
-        changes={"status": {"old": MonitoringCycleStatus.ON_HOLD.value, "new": MonitoringCycleStatus.DATA_COLLECTION.value}}
+        changes={"status": {"old": MonitoringCycleStatus.ON_HOLD.value,
+                            "new": MonitoringCycleStatus.DATA_COLLECTION.value}}
     )
 
     db.commit()
@@ -4815,7 +4849,8 @@ def list_my_pending_monitoring_approvals(
 ):
     """List pending monitoring approvals assigned to the current user."""
     if not (
-        is_admin(current_user) or is_global_approver(current_user) or is_regional_approver(current_user)
+        is_admin(current_user) or is_global_approver(
+            current_user) or is_regional_approver(current_user)
     ):
         return []
 
@@ -4826,7 +4861,8 @@ def list_my_pending_monitoring_approvals(
     ).join(
         MonitoringPlan, MonitoringCycle.plan_id == MonitoringPlan.plan_id
     ).options(
-        joinedload(MonitoringCycleApproval.cycle).joinedload(MonitoringCycle.plan),
+        joinedload(MonitoringCycleApproval.cycle).joinedload(
+            MonitoringCycle.plan),
         joinedload(MonitoringCycleApproval.region)
     ).filter(
         MonitoringCycleApproval.is_required == True,
@@ -4847,7 +4883,8 @@ def list_my_pending_monitoring_approvals(
             MonitoringCycleApproval.region_id.in_(user_region_ids)
         )
 
-    approvals = approvals_query.order_by(MonitoringCycleApproval.created_at.asc()).all()
+    approvals = approvals_query.order_by(
+        MonitoringCycleApproval.created_at.asc()).all()
 
     now_date = utc_now().date()
     items: List[MonitoringApprovalQueueItem] = []
@@ -4881,7 +4918,8 @@ def list_my_pending_monitoring_approvals(
             approval_status=approval.approval_status,
             days_pending=days_pending,
             created_at=approval.created_at,
-            can_approve=_can_user_approve_approval(approval, current_user, [], user_region_ids)
+            can_approve=_can_user_approve_approval(
+                approval, current_user, [], user_region_ids)
         ))
 
     return items
@@ -4995,7 +5033,8 @@ def request_cycle_approval(
 
     # Breach protocol enforcement: RED results require justification narrative before approval
     red_results_without_narrative = db.query(MonitoringResult).options(
-        joinedload(MonitoringResult.plan_metric).joinedload(MonitoringPlanMetric.kpm),
+        joinedload(MonitoringResult.plan_metric).joinedload(
+            MonitoringPlanMetric.kpm),
         joinedload(MonitoringResult.model)
     ).filter(
         MonitoringResult.cycle_id == cycle_id,
@@ -5117,7 +5156,8 @@ def list_cycle_approvals(
 ):
     """List all approval requirements for a cycle with can_approve permissions."""
     cycle = db.query(MonitoringCycle).options(
-        joinedload(MonitoringCycle.plan).joinedload(MonitoringPlan.team).joinedload(MonitoringTeam.members),
+        joinedload(MonitoringCycle.plan).joinedload(
+            MonitoringPlan.team).joinedload(MonitoringTeam.members),
         joinedload(MonitoringCycle.plan).joinedload(MonitoringPlan.models),
         joinedload(MonitoringCycle.approvals)
     ).filter(MonitoringCycle.cycle_id == cycle_id).first()
@@ -5233,8 +5273,8 @@ def approve_cycle(
     """
     approval = db.query(MonitoringCycleApproval).options(
         joinedload(MonitoringCycleApproval.cycle)
-            .joinedload(MonitoringCycle.plan)
-            .joinedload(MonitoringPlan.models),
+        .joinedload(MonitoringCycle.plan)
+        .joinedload(MonitoringPlan.models),
         joinedload(MonitoringCycleApproval.region)
     ).filter(
         MonitoringCycleApproval.approval_id == approval_id,
@@ -5581,8 +5621,10 @@ def get_metric_trend(
     # Get the metric with KPM info
     metric = db.query(MonitoringPlanMetric).options(
         joinedload(MonitoringPlanMetric.kpm).joinedload(Kpm.category),
-        joinedload(MonitoringPlanMetric.plan).joinedload(MonitoringPlan.team).joinedload(MonitoringTeam.members),
-        joinedload(MonitoringPlanMetric.plan).joinedload(MonitoringPlan.models),
+        joinedload(MonitoringPlanMetric.plan).joinedload(
+            MonitoringPlan.team).joinedload(MonitoringTeam.members),
+        joinedload(MonitoringPlanMetric.plan).joinedload(
+            MonitoringPlan.models),
     ).filter(MonitoringPlanMetric.metric_id == plan_metric_id).first()
 
     if not metric:
@@ -5591,7 +5633,8 @@ def get_metric_trend(
 
     accessible_model_ids = _get_accessible_model_ids(db, current_user)
     if metric.plan:
-        _require_plan_view_access(metric.plan, current_user, accessible_model_ids)
+        _require_plan_view_access(
+            metric.plan, current_user, accessible_model_ids)
 
     # Build query for results
     query = db.query(MonitoringResult).join(
@@ -5627,7 +5670,8 @@ def get_metric_trend(
             MonitoringPlanMetricSnapshot.version_id.in_(version_ids),
             MonitoringPlanMetricSnapshot.original_metric_id == plan_metric_id
         ).all()
-        snapshot_by_version_id = {snapshot.version_id: snapshot for snapshot in snapshots}
+        snapshot_by_version_id = {
+            snapshot.version_id: snapshot for snapshot in snapshots}
 
     # Build trend data points
     data_points = []
@@ -5716,8 +5760,10 @@ def get_performance_summary(
 
     # Count outcomes
     total = len(results)
-    green_count = sum(1 for r in results if r.calculated_outcome == OUTCOME_GREEN)
-    yellow_count = sum(1 for r in results if r.calculated_outcome == OUTCOME_YELLOW)
+    green_count = sum(
+        1 for r in results if r.calculated_outcome == OUTCOME_GREEN)
+    yellow_count = sum(
+        1 for r in results if r.calculated_outcome == OUTCOME_YELLOW)
     red_count = sum(1 for r in results if r.calculated_outcome == OUTCOME_RED)
     na_count = sum(1 for r in results if r.calculated_outcome ==
                    OUTCOME_NA or r.calculated_outcome is None)
@@ -5787,7 +5833,8 @@ def export_cycle_results(
 
     # Verify cycle belongs to plan
     cycle = db.query(MonitoringCycle).options(
-        joinedload(MonitoringCycle.plan).joinedload(MonitoringPlan.team).joinedload(MonitoringTeam.members),
+        joinedload(MonitoringCycle.plan).joinedload(
+            MonitoringPlan.team).joinedload(MonitoringTeam.members),
         joinedload(MonitoringCycle.plan).joinedload(MonitoringPlan.models),
     ).filter(
         MonitoringCycle.cycle_id == cycle_id,
@@ -5900,11 +5947,14 @@ def generate_cycle_report_pdf(
 
     # Get cycle with all required relationships
     cycle = db.query(MonitoringCycle).options(
-        joinedload(MonitoringCycle.plan).joinedload(MonitoringPlan.team).joinedload(MonitoringTeam.members),
+        joinedload(MonitoringCycle.plan).joinedload(
+            MonitoringPlan.team).joinedload(MonitoringTeam.members),
         joinedload(MonitoringCycle.plan).joinedload(MonitoringPlan.models),
         joinedload(MonitoringCycle.completed_by),
-        joinedload(MonitoringCycle.approvals).joinedload(MonitoringCycleApproval.approver),
-        joinedload(MonitoringCycle.approvals).joinedload(MonitoringCycleApproval.region),
+        joinedload(MonitoringCycle.approvals).joinedload(
+            MonitoringCycleApproval.approver),
+        joinedload(MonitoringCycle.approvals).joinedload(
+            MonitoringCycleApproval.region),
         joinedload(MonitoringCycle.plan_version),
     ).filter(MonitoringCycle.cycle_id == cycle_id).first()
 
@@ -6022,7 +6072,8 @@ def generate_cycle_report_pdf(
                 if tr.numeric_value is not None:
                     threshold_source = None
                     if tr.plan_metric:
-                        threshold_source, _ = resolve_threshold_source(db, tr.cycle, tr.plan_metric)
+                        threshold_source, _ = resolve_threshold_source(
+                            db, tr.cycle, tr.plan_metric)
                     trend_points.append({
                         'cycle_id': tr.cycle_id,
                         'period_end_date': tr.cycle.period_end_date,
@@ -6087,11 +6138,14 @@ def generate_cycle_report_pdf(
     }
 
     # Find logo file
-    # Look in project root directory
+    # Look in project root directory or api directory
     logo_path = None
     possible_paths = [
         '/app/CIBC_logo_2021.png',  # Docker container path
-        os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), 'CIBC_logo_2021.png'),
+        os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
+            __file__))), 'CIBC_logo_2021.png'),  # api directory
+        os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
+            os.path.dirname(__file__)))), 'CIBC_logo_2021.png'),  # root directory
     ]
     for path in possible_paths:
         if os.path.exists(path):

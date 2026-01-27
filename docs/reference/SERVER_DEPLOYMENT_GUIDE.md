@@ -237,7 +237,6 @@ DATABASE_URL=postgresql://...@db:5432/...
 SECRET_KEY=...
 ENVIRONMENT=production
 CORS_ORIGINS=https://app.mrmqmistest.org,https://mrmqmistest.org
-ENABLE_UAT_TOOLS=false
 ```
 
 ### Nginx Configuration

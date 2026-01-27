@@ -720,6 +720,9 @@ class ReportGenerator:
 
 def main():
     """Main entry point."""
+    # Default to repo root (parent of scripts/)
+    default_base = Path(__file__).parent.parent
+
     parser = argparse.ArgumentParser(
         description='Analyze role-based authorization in FastAPI backend'
     )
@@ -738,8 +741,8 @@ def main():
     )
     parser.add_argument(
         '--base-path',
-        default='.',
-        help='Base path to codebase (default: current directory)'
+        default=str(default_base),
+        help=f'Base path to codebase (default: {default_base})'
     )
 
     args = parser.parse_args()
