@@ -49,6 +49,7 @@ mrm-service-token
 *.token
 .cloudflare/
 .claude/
+REMOTE_ACCESS.md
 
 # Screenshots
 screenshots/
