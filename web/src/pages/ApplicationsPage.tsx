@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import api from '../api/client';
 import Layout from '../components/Layout';
 import { useTableSort } from '../hooks/useTableSort';
+import { useDebounce } from '../hooks/useDebounce';
 
 interface MapApplication {
     application_id: number;
@@ -32,6 +33,9 @@ export function ApplicationsContent() {
     const [statusFilter, setStatusFilter] = useState('Active');
     const [criticalityFilter, setCriticalityFilter] = useState('');
 
+    // Debounce search term to avoid firing API calls on every keystroke
+    const debouncedSearchTerm = useDebounce(searchTerm, 300);
+
     // Table sorting
     const { sortedData, requestSort, getSortIcon } = useTableSort<MapApplication>(
         applications,
@@ -44,7 +48,7 @@ export function ApplicationsContent() {
 
     useEffect(() => {
         fetchApplications();
-    }, [searchTerm, departmentFilter, statusFilter, criticalityFilter]);
+    }, [debouncedSearchTerm, departmentFilter, statusFilter, criticalityFilter]);
 
     const fetchDepartments = async () => {
         try {
@@ -60,7 +64,7 @@ export function ApplicationsContent() {
         setError(null);
         try {
             const params: Record<string, string> = {};
-            if (searchTerm) params.search = searchTerm;
+            if (debouncedSearchTerm) params.search = debouncedSearchTerm;
             if (departmentFilter) params.department = departmentFilter;
             if (statusFilter) params.status = statusFilter;
             if (criticalityFilter) params.criticality_tier = criticalityFilter;

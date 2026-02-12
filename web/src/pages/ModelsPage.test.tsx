@@ -34,6 +34,8 @@ vi.mock('../contexts/AuthContext', () => ({
 // Mock window.confirm
 const mockConfirm = vi.fn();
 window.confirm = mockConfirm;
+const mockAlert = vi.fn();
+window.alert = mockAlert;
 
 const sampleUsers = [
     { user_id: 1, email: 'test@example.com', full_name: 'Test User', role: 'user' },
@@ -57,7 +59,10 @@ const sampleTaxonomies = [
     },
     { name: 'Validation Type', values: [] },
     { name: 'Validation Priority', values: [] },
-    { name: 'MRSA Risk Level', values: [] },
+    {
+        name: 'MRSA Risk Level',
+        values: [{ value_id: 99, label: 'High-Risk', code: 'HIGH_RISK', requires_irp: true, is_active: true, sort_order: 1 }],
+    },
     {
         name: 'Model Risk Tier',
         values: [{ value_id: 10, label: 'Tier 1', is_active: true, sort_order: 1 }],
@@ -103,9 +108,30 @@ const sampleModels = [
     },
 ];
 
+const sampleMapApplications = [
+    {
+        application_id: 101,
+        application_code: 'APP-101',
+        application_name: 'Risk Analytics Platform',
+        owner_name: 'Jane Doe',
+        department: 'Risk',
+        criticality_tier: 'High',
+        status: 'Active',
+    },
+    {
+        application_id: 202,
+        application_code: 'APP-202',
+        application_name: 'Legacy Decommissioned Tool',
+        owner_name: 'Legacy Owner',
+        department: 'Finance',
+        criticality_tier: 'Low',
+        status: 'Decommissioned',
+    },
+];
+
 // Helper to setup standard API mocks
 const setupApiMocks = (models = sampleModels) => {
-    mockGet.mockImplementation((url: string) => {
+    mockGet.mockImplementation((url: string, config?: { params?: Record<string, any> }) => {
         if (url.startsWith('/models/')) return Promise.resolve({ data: models });
         if (url === '/auth/users') return Promise.resolve({ data: sampleUsers });
         if (url === '/vendors/') return Promise.resolve({ data: sampleVendors });
@@ -118,7 +144,48 @@ const setupApiMocks = (models = sampleModels) => {
         if (url === '/validation-workflow/my-pending-submissions') return Promise.resolve({ data: [] });
         if (url === '/deployment-tasks/my-tasks') return Promise.resolve({ data: [] });
         if (url === '/irps/mrsa-review-status') return Promise.resolve({ data: [] });
+        if (url === '/map/applications') {
+            const params = config?.params || {};
+            const query = (params.search || '').toString().toLowerCase();
+            const statusFilter = params.status;
+            const filtered = sampleMapApplications.filter((application) => {
+                const matchesSearch = !query
+                    || application.application_name.toLowerCase().includes(query)
+                    || application.application_code.toLowerCase().includes(query);
+                const matchesStatus = !statusFilter || application.status === statusFilter;
+                return matchesSearch && matchesStatus;
+            });
+            return Promise.resolve({ data: filtered });
+        }
         return Promise.reject(new Error('Unknown URL: ' + url));
+    });
+};
+
+const openCreateForm = async () => {
+    fireEvent.click(screen.getByRole('button', { name: /Add Model/i }));
+    await screen.findByLabelText('Model Name');
+};
+
+const fillRequiredCreateFields = async (modelName: string) => {
+    fireEvent.change(screen.getByLabelText('Model Name'), {
+        target: { value: modelName }
+    });
+    fireEvent.change(screen.getByLabelText(/Description and Purpose/), {
+        target: { value: `${modelName} description` }
+    });
+    fireEvent.change(screen.getByLabelText('Owner (Required)'), {
+        target: { value: 'Test User' }
+    });
+    fireEvent.click(await screen.findByText('test@example.com'));
+    fireEvent.change(screen.getByLabelText('Developer (Required for In-House)'), {
+        target: { value: 'Developer' }
+    });
+    fireEvent.click(await screen.findByText('dev@example.com'));
+    fireEvent.change(screen.getByLabelText(/Typical Usage Frequency/), {
+        target: { value: '1' }
+    });
+    fireEvent.change(screen.getByLabelText('Implementation Date (Required)'), {
+        target: { value: '2024-01-01' }
     });
 };
 
@@ -129,6 +196,7 @@ describe('ModelsPage', () => {
         mockDelete.mockReset();
         mockLogout.mockReset();
         mockConfirm.mockReset();
+        mockAlert.mockReset();
     });
 
     it('displays loading state initially', () => {
@@ -267,6 +335,119 @@ describe('ModelsPage', () => {
 
         // Now vendor field should appear
         expect(screen.getByLabelText(/Vendor/)).toBeInTheDocument();
+    });
+
+    it('blocks MRSA create when supporting application is not selected', async () => {
+        setupApiMocks([]);
+        render(<ModelsPage />);
+        await openCreateForm();
+        await fillRequiredCreateFields('MRSA Missing App');
+
+        fireEvent.click(screen.getByLabelText('Non-Model'));
+        fireEvent.click(screen.getByLabelText(/Mark as MRSA/));
+        fireEvent.change(screen.getByLabelText(/MRSA Risk Level/), { target: { value: '99' } });
+        fireEvent.change(screen.getByLabelText(/Risk Rationale/), { target: { value: 'Required rationale' } });
+
+        fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+
+        expect(mockPost).not.toHaveBeenCalled();
+        expect(mockAlert).toHaveBeenCalledWith('Please select a Related Application.');
+    });
+
+    it('includes supporting_application_id when MRSA supporting app is selected', async () => {
+        setupApiMocks([]);
+        mockPost.mockResolvedValueOnce({ data: { model_id: 88, model_name: 'MRSA With App' } });
+        render(<ModelsPage />);
+        await openCreateForm();
+        await fillRequiredCreateFields('MRSA With App');
+
+        fireEvent.click(screen.getByLabelText('Non-Model'));
+        fireEvent.click(screen.getByLabelText(/Mark as MRSA/));
+        fireEvent.change(screen.getByLabelText(/MRSA Risk Level/), { target: { value: '99' } });
+        fireEvent.change(screen.getByLabelText(/Risk Rationale/), { target: { value: 'Required rationale' } });
+        fireEvent.change(screen.getByLabelText(/Related Application/), { target: { value: 'Risk' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+        fireEvent.click(await screen.findByText('Risk Analytics Platform'));
+
+        fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+
+        await waitFor(() => {
+            expect(mockPost).toHaveBeenCalledWith('/models/', expect.objectContaining({
+                is_mrsa: true,
+                supporting_application_id: 101,
+            }));
+        });
+    });
+
+    it('clears selected supporting app when MRSA checkbox is unchecked', async () => {
+        setupApiMocks([]);
+        render(<ModelsPage />);
+        await openCreateForm();
+        await fillRequiredCreateFields('MRSA Clear On Uncheck');
+
+        fireEvent.click(screen.getByLabelText('Non-Model'));
+        fireEvent.click(screen.getByLabelText(/Mark as MRSA/));
+        fireEvent.change(screen.getByLabelText(/MRSA Risk Level/), { target: { value: '99' } });
+        fireEvent.change(screen.getByLabelText(/Risk Rationale/), { target: { value: 'Required rationale' } });
+        fireEvent.change(screen.getByLabelText(/Related Application/), { target: { value: 'Risk' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+        fireEvent.click(await screen.findByText('Risk Analytics Platform'));
+
+        fireEvent.click(screen.getByLabelText(/Mark as MRSA/)); // uncheck
+        fireEvent.click(screen.getByLabelText(/Mark as MRSA/)); // re-check
+        fireEvent.change(screen.getByLabelText(/MRSA Risk Level/), { target: { value: '99' } });
+        fireEvent.change(screen.getByLabelText(/Risk Rationale/), { target: { value: 'Rationale after re-check' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+
+        expect(mockPost).not.toHaveBeenCalled();
+        expect(mockAlert).toHaveBeenCalledWith('Please select a Related Application.');
+    });
+
+    it('clears MRSA supporting app when classification is switched back to Model', async () => {
+        setupApiMocks([]);
+        render(<ModelsPage />);
+        await openCreateForm();
+        await fillRequiredCreateFields('MRSA Clear On Classification Switch');
+
+        fireEvent.click(screen.getByLabelText('Non-Model'));
+        fireEvent.click(screen.getByLabelText(/Mark as MRSA/));
+        fireEvent.change(screen.getByLabelText(/MRSA Risk Level/), { target: { value: '99' } });
+        fireEvent.change(screen.getByLabelText(/Risk Rationale/), { target: { value: 'Required rationale' } });
+        fireEvent.change(screen.getByLabelText(/Related Application/), { target: { value: 'Risk' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+        fireEvent.click(await screen.findByText('Risk Analytics Platform'));
+
+        fireEvent.click(screen.getByLabelText('Model'));
+        fireEvent.click(screen.getByLabelText('Non-Model'));
+        fireEvent.click(screen.getByLabelText(/Mark as MRSA/));
+        fireEvent.change(screen.getByLabelText(/MRSA Risk Level/), { target: { value: '99' } });
+        fireEvent.change(screen.getByLabelText(/Risk Rationale/), { target: { value: 'Rationale after switching back' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+
+        expect(mockPost).not.toHaveBeenCalled();
+        expect(mockAlert).toHaveBeenCalledWith('Please select a Related Application.');
+    });
+
+    it('searches MAP applications with status Active filter', async () => {
+        setupApiMocks([]);
+        render(<ModelsPage />);
+        await openCreateForm();
+        await fillRequiredCreateFields('MRSA Search Filter');
+
+        fireEvent.click(screen.getByLabelText('Non-Model'));
+        fireEvent.click(screen.getByLabelText(/Mark as MRSA/));
+        fireEvent.change(screen.getByLabelText(/Related Application/), { target: { value: 'Risk' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+
+        await waitFor(() => {
+            expect(mockGet).toHaveBeenCalledWith('/map/applications', expect.objectContaining({
+                params: expect.objectContaining({
+                    search: 'Risk',
+                    status: 'Active',
+                    limit: 20,
+                })
+            }));
+        });
     });
 
     it('shows delete button for each model', async () => {

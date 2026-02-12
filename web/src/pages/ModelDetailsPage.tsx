@@ -703,6 +703,7 @@ export default function ModelDetailsPage() {
             const modelData = modelRes.data;
             const modelRegionsData: ModelRegionItem[] = modelRegionsRes.data || [];
             setModel(modelData);
+            setHasGlobalAssessment(!!modelData.has_global_risk_assessment);
             const baseUsers = buildScopedUsers(assigneesRes.data || [], modelData);
             const regionOwners = modelRegionsData
                 .map((item) => item.shared_model_owner)
@@ -822,14 +823,7 @@ export default function ModelDetailsPage() {
                 setFinalRiskRanking(null);
             }
 
-            // Check if model has a global risk assessment (disables direct risk tier editing)
-            try {
-                const assessmentStatusRes = await api.get(`/models/${id}/risk-assessments/status`);
-                setHasGlobalAssessment(assessmentStatusRes.data.has_assessment);
-            } catch (assessmentError) {
-                console.error('Failed to fetch assessment status:', assessmentError);
-                setHasGlobalAssessment(false);
-            }
+            // has_global_risk_assessment is now included in the model response (no separate API call needed)
         } catch (error) {
             console.error('Failed to fetch model:', error);
         } finally {
@@ -2986,7 +2980,14 @@ export default function ModelDetailsPage() {
                                     </select>
                                     {hasGlobalAssessment && (
                                         <p className="mt-1 text-xs text-gray-500">
-                                            Risk tier is determined by the Risk Assessment. Go to the Risk Assessment tab to update.
+                                            Risk tier is determined by the Risk Assessment.{' '}
+                                            <button
+                                                type="button"
+                                                className="text-blue-600 hover:text-blue-800 underline focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 rounded"
+                                                onClick={() => { setEditing(false); setActiveTab('risk-assessment'); }}
+                                            >
+                                                Go to Risk Assessment tab
+                                            </button>
                                         </p>
                                     )}
                                 </div>
@@ -3415,7 +3416,12 @@ export default function ModelDetailsPage() {
                             )}
                         </div>
                         <div>
-                            <h4 className="text-sm font-medium text-gray-500 mb-1">Risk Tier</h4>
+                            <h4 className="text-sm font-medium text-gray-500 mb-1">
+                                Risk Tier
+                                {hasGlobalAssessment && (
+                                    <span className="ml-1 text-xs text-blue-600 font-normal">(from Assessment)</span>
+                                )}
+                            </h4>
                             {model.risk_tier ? (
                                 <span className="px-2 py-1 text-sm rounded bg-orange-100 text-orange-800">
                                     {model.risk_tier.label}
@@ -3763,7 +3769,12 @@ export default function ModelDetailsPage() {
                                 {/* Row 1: Inherent Risk + Original Scorecard + Base Residual Risk */}
                                 <div className="grid grid-cols-3 gap-4">
                                     <div className="bg-white p-4 rounded border border-gray-200">
-                                        <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Inherent Risk Tier</p>
+                                        <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">
+                                            Inherent Risk Tier
+                                            {hasGlobalAssessment && (
+                                                <span className="ml-1 normal-case tracking-normal text-blue-600">(from Assessment)</span>
+                                            )}
+                                        </p>
                                         {model.risk_tier ? (
                                             <span className="px-2 py-1 text-sm rounded bg-orange-100 text-orange-800 font-medium">
                                                 {model.risk_tier.label}

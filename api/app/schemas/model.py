@@ -1,5 +1,5 @@
 """Model schemas."""
-from pydantic import BaseModel, ConfigDict, field_serializer, field_validator
+from pydantic import BaseModel, ConfigDict, field_serializer, field_validator, model_validator
 from datetime import datetime, date
 from typing import Optional, List, Any, TYPE_CHECKING
 from app.schemas.user import UserResponse
@@ -75,8 +75,9 @@ class ModelRegionCreatePayload(BaseModel):
     """Lightweight model-region payload for create/update."""
     region_id: int
     shared_model_owner_id: Optional[int] = None
+
+
 class ModelCreate(ModelBase):
-    description: str
     owner_id: int
     usage_frequency_id: int  # Required field
     developer_id: Optional[int] = None
@@ -102,6 +103,7 @@ class ModelCreate(ModelBase):
     is_mrsa: bool = False  # True for MRSAs requiring IRP oversight
     mrsa_risk_level_id: Optional[int] = None  # MRSA Risk Level taxonomy value
     mrsa_risk_rationale: Optional[str] = None  # Narrative explaining risk classification
+    supporting_application_id: Optional[int] = None  # Required when is_mrsa=True
     irp_ids: Optional[List[int]] = None  # IRPs covering this MRSA
     # Auto-create validation request fields
     auto_create_validation: bool = False
@@ -110,12 +112,11 @@ class ModelCreate(ModelBase):
     validation_request_target_date: Optional[date] = None
     validation_request_trigger_reason: Optional[str] = None
 
-    @field_validator('description')
-    @classmethod
-    def validate_description_required(cls, v):
-        if not v or not v.strip():
+    @model_validator(mode='after')
+    def validate_description_required(self) -> "ModelCreate":
+        if not self.description or not self.description.strip():
             raise ValueError('Description is required')
-        return v
+        return self
 
     @field_validator('developer_id')
     @classmethod
@@ -202,6 +203,8 @@ class ModelResponse(ModelBase):
     team: Optional[TeamBasic] = None
     # Computed field: Production date of latest ACTIVE version
     model_last_updated: Optional[date] = None
+    # Whether a global (non-regional) risk assessment exists for this model
+    has_global_risk_assessment: bool = False
 
     model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
@@ -354,6 +357,9 @@ class ModelListResponse(BaseModel):
     days_overdue: Optional[int] = None
     penalty_notches: Optional[int] = None
     adjusted_scorecard_outcome: Optional[str] = None
+
+    # Whether a global (non-regional) risk assessment exists for this model
+    has_global_risk_assessment: bool = False
 
     model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 

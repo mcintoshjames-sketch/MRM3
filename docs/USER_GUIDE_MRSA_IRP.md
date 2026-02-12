@@ -150,7 +150,10 @@ To register a new MRSA:
    - **Is MRSA**: Set to **Yes**
    - **MRSA Risk Level**: Select High-Risk or Low-Risk
    - **Risk Rationale**: Explain the risk classification decision
+   - **Supporting Application**: Select one **Active** MAP application (required)
 3. Click **Save**
+
+The create form enforces this requirement only at MRSA creation time. After creation, supporting-application links are managed from the model detail page under **Supporting Applications**.
 
 ### Editing MRSA Details
 

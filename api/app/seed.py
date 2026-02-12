@@ -1180,6 +1180,32 @@ def seed_teams(db) -> None:
     db.commit()
 
 
+def _sync_assessment_tiers(db):
+    """Sync model.risk_tier_id with global assessment final_tier_id.
+
+    Local development safety net — the authoritative fix is the Alembic
+    data migration (bf001_backfill_risk_tiers_from_assessments).
+    """
+    from app.models.risk_assessment import ModelRiskAssessment
+
+    assessments = (
+        db.query(ModelRiskAssessment)
+        .filter(ModelRiskAssessment.region_id.is_(None))
+        .all()
+    )
+    synced = 0
+    for assessment in assessments:
+        model = db.query(Model).filter(
+            Model.model_id == assessment.model_id
+        ).first()
+        if model and model.risk_tier_id != assessment.final_tier_id:
+            model.risk_tier_id = assessment.final_tier_id
+            synced += 1
+    if synced:
+        db.commit()
+        print(f"  Synced {synced} model risk tier(s) from global assessments")
+
+
 def seed_database():
     """Seed essential data."""
     db = SessionLocal()
@@ -3056,6 +3082,9 @@ def seed_database():
 
         # Seed Tag Categories for Model Tagging
         seed_tag_categories(db)
+
+        # Sync model risk tiers from global assessments (local safety net)
+        _sync_assessment_tiers(db)
 
         print("Seeding completed successfully!")
 

@@ -94,13 +94,17 @@ MRSAs are non-model tools that, while not meeting the formal definition of a mod
 | **Is MRSA** | Boolean flag indicating this is an MRSA requiring oversight |
 | **MRSA Risk Level** ⚙ | Risk classification (High-Risk or Low-Risk) |
 | **MRSA Risk Rationale** | Narrative explaining the risk level assignment |
+| **Supporting Application** | Exactly one **Active** MAP application is required when creating a new MRSA |
 | **Associated IRPs** | Independent Review Processes (IRPs) covering this MRSA |
 
 When creating or editing a record:
 1. Set **Is Model** to "No" for non-model entries
 2. If the non-model requires oversight, set **Is MRSA** to "Yes"
 3. Assign an **MRSA Risk Level** and provide a **Risk Rationale**
-4. Link to relevant **IRPs** that provide oversight
+4. Select one **Supporting Application** from Active MAP applications
+5. Link to relevant **IRPs** that provide oversight
+
+> **Note**: Supporting-application selection is enforced at MRSA creation time. Updates after creation are managed from the model detail page under **Supporting Applications**.
 
 > **Note**: Non-models with `is_mrsa = false` are tracked for inventory completeness but do not require the same governance as models or MRSAs.
 

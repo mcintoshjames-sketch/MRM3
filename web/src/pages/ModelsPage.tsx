@@ -31,6 +31,16 @@ interface Vendor {
     contact_info: string;
 }
 
+interface MapApplication {
+    application_id: number;
+    application_code: string;
+    application_name: string;
+    owner_name: string | null;
+    department: string | null;
+    criticality_tier: string | null;
+    status: string;
+}
+
 interface WhollyOwnedRegion {
     region_id: number;
     code: string;
@@ -285,6 +295,7 @@ export default function ModelsPage() {
         is_mrsa: false,
         mrsa_risk_level_id: null as number | null,
         mrsa_risk_rationale: '' as string,
+        supporting_application_id: null as number | null,
         auto_create_validation: false,
         validation_request_type_id: 0,
         validation_request_priority_id: 0,
@@ -325,6 +336,10 @@ export default function ModelsPage() {
     const [riskTiers, setRiskTiers] = useState<TaxonomyValue[]>([]);
     const [regulatoryCategories, setRegulatoryCategories] = useState<TaxonomyValue[]>([]);
     const [methodologyCategories, setMethodologyCategories] = useState<MethodologyCategory[]>([]);
+    const [mrsaSupportingAppSearchTerm, setMrsaSupportingAppSearchTerm] = useState('');
+    const [mrsaSupportingAppResults, setMrsaSupportingAppResults] = useState<MapApplication[]>([]);
+    const [mrsaSupportingAppSearching, setMrsaSupportingAppSearching] = useState(false);
+    const [selectedMrsaSupportingApplication, setSelectedMrsaSupportingApplication] = useState<MapApplication | null>(null);
 
     useEffect(() => {
         if (userLookupError) {
@@ -459,6 +474,7 @@ export default function ModelsPage() {
             is_mrsa: false,
             mrsa_risk_level_id: null,
             mrsa_risk_rationale: '',
+            supporting_application_id: null,
             auto_create_validation: false,
             validation_request_type_id: 0,
             validation_request_priority_id: 0,
@@ -483,6 +499,9 @@ export default function ModelsPage() {
         setSharedOwnerLookupError(null);
         setSharedDeveloperLookupError(null);
         setMonitoringManagerLookupError(null);
+        setMrsaSupportingAppSearchTerm('');
+        setMrsaSupportingAppResults([]);
+        setSelectedMrsaSupportingApplication(null);
     };
     const [showExportModal, setShowExportModal] = useState(false);
     const [showColumnsModal, setShowColumnsModal] = useState(false);
@@ -1069,6 +1088,44 @@ export default function ModelsPage() {
         setTimeout(() => setBulkSuccessMessage(null), 5000);
     };
 
+    const clearMrsaSupportingApplicationSelection = () => {
+        setMrsaSupportingAppSearchTerm('');
+        setMrsaSupportingAppResults([]);
+        setSelectedMrsaSupportingApplication(null);
+        setFormData((prev) => ({ ...prev, supporting_application_id: null }));
+    };
+
+    const searchMrsaSupportingApplications = async () => {
+        const query = mrsaSupportingAppSearchTerm.trim();
+        if (!query) {
+            setMrsaSupportingAppResults([]);
+            return;
+        }
+
+        setMrsaSupportingAppSearching(true);
+        try {
+            const response = await api.get('/map/applications', {
+                params: { search: query, status: 'Active', limit: 20 }
+            });
+            setMrsaSupportingAppResults(response.data || []);
+        } catch (error) {
+            console.error('Failed to search MRSA supporting applications:', error);
+            setMrsaSupportingAppResults([]);
+        } finally {
+            setMrsaSupportingAppSearching(false);
+        }
+    };
+
+    const selectMrsaSupportingApplication = (application: MapApplication) => {
+        setSelectedMrsaSupportingApplication(application);
+        setMrsaSupportingAppResults([]);
+        setMrsaSupportingAppSearchTerm(application.application_name);
+        setFormData((prev) => ({
+            ...prev,
+            supporting_application_id: application.application_id
+        }));
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
 
@@ -1102,6 +1159,10 @@ export default function ModelsPage() {
             }
             if (!formData.mrsa_risk_rationale || formData.mrsa_risk_rationale.trim() === '') {
                 alert('Please provide an MRSA Risk Rationale.');
+                return;
+            }
+            if (!formData.supporting_application_id) {
+                alert('Please select a Related Application.');
                 return;
             }
         }
@@ -1151,7 +1212,8 @@ export default function ModelsPage() {
                 // MRSA fields - only include if is_mrsa is true
                 is_mrsa: formData.is_mrsa,
                 mrsa_risk_level_id: formData.is_mrsa ? formData.mrsa_risk_level_id : null,
-                mrsa_risk_rationale: formData.is_mrsa ? (formData.mrsa_risk_rationale || null) : null
+                mrsa_risk_rationale: formData.is_mrsa ? (formData.mrsa_risk_rationale || null) : null,
+                supporting_application_id: formData.is_mrsa ? formData.supporting_application_id : null
             };
             if (modelRegionsPayload.length > 0) {
                 payload.model_regions = modelRegionsPayload;
@@ -1210,6 +1272,7 @@ export default function ModelsPage() {
                 is_mrsa: false,
                 mrsa_risk_level_id: null,
                 mrsa_risk_rationale: '',
+                supporting_application_id: null,
                 auto_create_validation: false,
                 validation_request_type_id: 0,
                 validation_request_priority_id: 0,
@@ -1234,6 +1297,9 @@ export default function ModelsPage() {
             setSharedOwnerLookupError(null);
             setSharedDeveloperLookupError(null);
             setMonitoringManagerLookupError(null);
+            setMrsaSupportingAppSearchTerm('');
+            setMrsaSupportingAppResults([]);
+            setSelectedMrsaSupportingApplication(null);
             fetchData();
         } catch (error: any) {
             console.error('Failed to create model:', error);
@@ -2350,7 +2416,19 @@ export default function ModelsPage() {
                                                 type="radio"
                                                 name="is_model"
                                                 checked={formData.is_model === true}
-                                                onChange={() => setFormData({ ...formData, is_model: true })}
+                                                onChange={() => {
+                                                    setFormData({
+                                                        ...formData,
+                                                        is_model: true,
+                                                        is_mrsa: false,
+                                                        mrsa_risk_level_id: null,
+                                                        mrsa_risk_rationale: '',
+                                                        supporting_application_id: null
+                                                    });
+                                                    setMrsaSupportingAppSearchTerm('');
+                                                    setMrsaSupportingAppResults([]);
+                                                    setSelectedMrsaSupportingApplication(null);
+                                                }}
                                                 className="w-4 h-4 text-blue-600"
                                             />
                                             <span className="text-sm">Model</span>
@@ -2379,13 +2457,22 @@ export default function ModelsPage() {
                                                 <input
                                                     type="checkbox"
                                                     checked={formData.is_mrsa}
-                                                    onChange={(e) => setFormData({
-                                                        ...formData,
-                                                        is_mrsa: e.target.checked,
-                                                        // Clear MRSA fields when unchecked
-                                                        mrsa_risk_level_id: e.target.checked ? formData.mrsa_risk_level_id : null,
-                                                        mrsa_risk_rationale: e.target.checked ? formData.mrsa_risk_rationale : ''
-                                                    })}
+                                                    onChange={(e) => {
+                                                        const checked = e.target.checked;
+                                                        setFormData({
+                                                            ...formData,
+                                                            is_mrsa: checked,
+                                                            // Clear MRSA fields when unchecked
+                                                            mrsa_risk_level_id: checked ? formData.mrsa_risk_level_id : null,
+                                                            mrsa_risk_rationale: checked ? formData.mrsa_risk_rationale : '',
+                                                            supporting_application_id: checked ? formData.supporting_application_id : null
+                                                        });
+                                                        if (!checked) {
+                                                            setMrsaSupportingAppSearchTerm('');
+                                                            setMrsaSupportingAppResults([]);
+                                                            setSelectedMrsaSupportingApplication(null);
+                                                        }
+                                                    }}
                                                     className="w-4 h-4 text-purple-600 rounded"
                                                 />
                                                 <span className="text-sm font-medium">Mark as MRSA (Model Risk-Sensitive Application)</span>
@@ -2452,6 +2539,81 @@ export default function ModelsPage() {
                                                     <p className="text-xs text-gray-500 mt-1">
                                                         Explain why this application is classified at this risk level
                                                     </p>
+                                                </div>
+
+                                                <div className="mb-3">
+                                                    <label htmlFor="mrsa_supporting_application_search" className="block text-sm font-medium mb-1">
+                                                        Related Application <span className="text-red-500">*</span>
+                                                    </label>
+                                                    <div className="flex gap-2">
+                                                        <input
+                                                            id="mrsa_supporting_application_search"
+                                                            type="text"
+                                                            className="input-field flex-1"
+                                                            placeholder="Search Active MAP applications by name, code, or description..."
+                                                            value={mrsaSupportingAppSearchTerm}
+                                                            onChange={(e) => setMrsaSupportingAppSearchTerm(e.target.value)}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Enter') {
+                                                                    e.preventDefault();
+                                                                    searchMrsaSupportingApplications();
+                                                                }
+                                                            }}
+                                                        />
+                                                        <button
+                                                            type="button"
+                                                            onClick={searchMrsaSupportingApplications}
+                                                            disabled={mrsaSupportingAppSearching}
+                                                            className="btn-secondary"
+                                                        >
+                                                            {mrsaSupportingAppSearching ? 'Searching...' : 'Search'}
+                                                        </button>
+                                                    </div>
+                                                    <p className="text-xs text-gray-500 mt-1">
+                                                        Select exactly one Active MAP application. Relationship direction is set to Not Applicable at creation.
+                                                    </p>
+
+                                                    {mrsaSupportingAppResults.length > 0 && !selectedMrsaSupportingApplication && (
+                                                        <div className="mt-2 max-h-44 overflow-y-auto border rounded bg-white">
+                                                            {mrsaSupportingAppResults.map((application) => (
+                                                                <button
+                                                                    key={application.application_id}
+                                                                    type="button"
+                                                                    className="w-full text-left p-3 border-b last:border-b-0 hover:bg-gray-50"
+                                                                    onClick={() => selectMrsaSupportingApplication(application)}
+                                                                >
+                                                                    <div className="font-medium text-sm">{application.application_name}</div>
+                                                                    <div className="text-xs text-gray-500">
+                                                                        {application.application_code}
+                                                                        {application.department ? ` | ${application.department}` : ''}
+                                                                    </div>
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    )}
+
+                                                    {selectedMrsaSupportingApplication && (
+                                                        <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded">
+                                                            <div className="flex justify-between items-start gap-4">
+                                                                <div>
+                                                                    <p className="text-sm font-medium text-blue-900">
+                                                                        {selectedMrsaSupportingApplication.application_name}
+                                                                    </p>
+                                                                    <p className="text-xs text-blue-700">
+                                                                        {selectedMrsaSupportingApplication.application_code}
+                                                                        {selectedMrsaSupportingApplication.department ? ` | ${selectedMrsaSupportingApplication.department}` : ''}
+                                                                    </p>
+                                                                </div>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={clearMrsaSupportingApplicationSelection}
+                                                                    className="text-xs text-blue-700 hover:text-blue-900 underline"
+                                                                >
+                                                                    Clear
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </>
                                         )}

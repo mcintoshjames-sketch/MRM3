@@ -1,8 +1,47 @@
 """Tests for models CRUD endpoints."""
 from datetime import date
 import pytest
+from app.models.map_application import MapApplication
+from app.models.model_application import ModelApplication
 from app.models.model_region import ModelRegion
 from app.models.region import Region
+from app.models.taxonomy import Taxonomy, TaxonomyValue
+
+
+def _create_relationship_type_other(db_session):
+    """Create Application Relationship Type taxonomy with OTHER code."""
+    taxonomy = Taxonomy(
+        name="Application Relationship Type",
+        description="Types of model-application relationships",
+        is_system=True
+    )
+    db_session.add(taxonomy)
+    db_session.flush()
+
+    value = TaxonomyValue(
+        taxonomy_id=taxonomy.taxonomy_id,
+        code="OTHER",
+        label="Other",
+        sort_order=1
+    )
+    db_session.add(value)
+    db_session.commit()
+    db_session.refresh(value)
+    return value
+
+
+def _create_map_application(db_session, status="Active"):
+    """Create a MAP application with configurable status."""
+    app = MapApplication(
+        application_code="APP-MRSA-001",
+        application_name="MRSA Supporting App",
+        department="Risk",
+        status=status
+    )
+    db_session.add(app)
+    db_session.commit()
+    db_session.refresh(app)
+    return app
 
 
 class TestListModels:
@@ -148,6 +187,282 @@ class TestCreateModel:
             }
         )
         assert response.status_code == 400
+
+    def test_create_mrsa_requires_supporting_application(
+        self,
+        client,
+        auth_headers,
+        test_user,
+        usage_frequency,
+        mrsa_risk_level_taxonomy
+    ):
+        """Test creating an MRSA without supporting application fails."""
+        response = client.post(
+            "/models/",
+            headers=auth_headers,
+            json={
+                "model_name": "MRSA Missing App",
+                "description": "MRSA create test",
+                "development_type": "In-House",
+                "status": "In Development",
+                "owner_id": test_user.user_id,
+                "developer_id": test_user.user_id,
+                "usage_frequency_id": usage_frequency["daily"].value_id,
+                "initial_implementation_date": date.today().isoformat(),
+                "user_ids": [test_user.user_id],
+                "is_model": False,
+                "is_mrsa": True,
+                "mrsa_risk_level_id": mrsa_risk_level_taxonomy["high_risk"].value_id,
+                "mrsa_risk_rationale": "High-risk MRSA rationale"
+            }
+        )
+        assert response.status_code == 400
+        assert "Supporting application is required" in response.json()["detail"]
+
+    def test_create_mrsa_with_nonexistent_supporting_application_fails(
+        self,
+        client,
+        auth_headers,
+        test_user,
+        usage_frequency,
+        mrsa_risk_level_taxonomy
+    ):
+        """Test creating an MRSA with missing MAP app fails."""
+        response = client.post(
+            "/models/",
+            headers=auth_headers,
+            json={
+                "model_name": "MRSA Missing MAP App",
+                "description": "MRSA create test",
+                "development_type": "In-House",
+                "status": "In Development",
+                "owner_id": test_user.user_id,
+                "developer_id": test_user.user_id,
+                "usage_frequency_id": usage_frequency["daily"].value_id,
+                "initial_implementation_date": date.today().isoformat(),
+                "user_ids": [test_user.user_id],
+                "is_model": False,
+                "is_mrsa": True,
+                "mrsa_risk_level_id": mrsa_risk_level_taxonomy["high_risk"].value_id,
+                "mrsa_risk_rationale": "High-risk MRSA rationale",
+                "supporting_application_id": 99999
+            }
+        )
+        assert response.status_code == 400
+        assert "not found in MAP" in response.json()["detail"]
+
+    def test_create_mrsa_with_inactive_supporting_application_fails(
+        self,
+        client,
+        auth_headers,
+        test_user,
+        usage_frequency,
+        mrsa_risk_level_taxonomy,
+        db_session
+    ):
+        """Test creating an MRSA with inactive app fails."""
+        supporting_app = _create_map_application(db_session, status="Decommissioned")
+        response = client.post(
+            "/models/",
+            headers=auth_headers,
+            json={
+                "model_name": "MRSA Inactive App",
+                "description": "MRSA create test",
+                "development_type": "In-House",
+                "status": "In Development",
+                "owner_id": test_user.user_id,
+                "developer_id": test_user.user_id,
+                "usage_frequency_id": usage_frequency["daily"].value_id,
+                "initial_implementation_date": date.today().isoformat(),
+                "user_ids": [test_user.user_id],
+                "is_model": False,
+                "is_mrsa": True,
+                "mrsa_risk_level_id": mrsa_risk_level_taxonomy["high_risk"].value_id,
+                "mrsa_risk_rationale": "High-risk MRSA rationale",
+                "supporting_application_id": supporting_app.application_id
+            }
+        )
+        assert response.status_code == 400
+        assert "must be Active" in response.json()["detail"]
+
+    def test_create_mrsa_with_supporting_application_creates_link(
+        self,
+        client,
+        auth_headers,
+        test_user,
+        usage_frequency,
+        mrsa_risk_level_taxonomy,
+        db_session
+    ):
+        """Test creating an MRSA auto-creates model_application row."""
+        supporting_app = _create_map_application(db_session, status="Active")
+        other_relationship_type = _create_relationship_type_other(db_session)
+
+        response = client.post(
+            "/models/",
+            headers=auth_headers,
+            json={
+                "model_name": "MRSA With App",
+                "description": "MRSA create test",
+                "development_type": "In-House",
+                "status": "In Development",
+                "owner_id": test_user.user_id,
+                "developer_id": test_user.user_id,
+                "usage_frequency_id": usage_frequency["daily"].value_id,
+                "initial_implementation_date": date.today().isoformat(),
+                "user_ids": [test_user.user_id],
+                "is_model": False,
+                "is_mrsa": True,
+                "mrsa_risk_level_id": mrsa_risk_level_taxonomy["high_risk"].value_id,
+                "mrsa_risk_rationale": "High-risk MRSA rationale",
+                "supporting_application_id": supporting_app.application_id
+            }
+        )
+        assert response.status_code == 201
+
+        model_id = response.json()["model_id"]
+        relationship = db_session.query(ModelApplication).filter(
+            ModelApplication.model_id == model_id,
+            ModelApplication.application_id == supporting_app.application_id
+        ).first()
+        assert relationship is not None
+        assert relationship.relationship_type_id == other_relationship_type.value_id
+        assert relationship.relationship_direction == "UNKNOWN"
+        assert relationship.effective_date == date.today()
+
+    def test_create_non_mrsa_without_supporting_application_still_succeeds(
+        self,
+        client,
+        auth_headers,
+        test_user,
+        usage_frequency
+    ):
+        """Test non-MRSA create remains backward compatible."""
+        response = client.post(
+            "/models/",
+            headers=auth_headers,
+            json={
+                "model_name": "Non-MRSA Regression",
+                "description": "Regular model create",
+                "development_type": "In-House",
+                "status": "In Development",
+                "owner_id": test_user.user_id,
+                "developer_id": test_user.user_id,
+                "usage_frequency_id": usage_frequency["daily"].value_id,
+                "initial_implementation_date": date.today().isoformat(),
+                "user_ids": [test_user.user_id],
+                "is_model": True,
+                "is_mrsa": False
+            }
+        )
+        assert response.status_code == 201
+
+    def test_create_non_mrsa_with_supporting_application_is_ignored(
+        self,
+        client,
+        auth_headers,
+        test_user,
+        usage_frequency,
+        db_session
+    ):
+        """Test supporting_application_id is ignored for non-MRSA create."""
+        supporting_app = _create_map_application(db_session, status="Active")
+        response = client.post(
+            "/models/",
+            headers=auth_headers,
+            json={
+                "model_name": "Non-MRSA With App",
+                "description": "Regular model create",
+                "development_type": "In-House",
+                "status": "In Development",
+                "owner_id": test_user.user_id,
+                "developer_id": test_user.user_id,
+                "usage_frequency_id": usage_frequency["daily"].value_id,
+                "initial_implementation_date": date.today().isoformat(),
+                "user_ids": [test_user.user_id],
+                "is_model": True,
+                "is_mrsa": False,
+                "supporting_application_id": supporting_app.application_id
+            }
+        )
+        assert response.status_code == 201
+
+        model_id = response.json()["model_id"]
+        relationship = db_session.query(ModelApplication).filter(
+            ModelApplication.model_id == model_id
+        ).first()
+        assert relationship is None
+
+    def test_create_mrsa_requires_non_model_classification(
+        self,
+        client,
+        auth_headers,
+        test_user,
+        usage_frequency,
+        mrsa_risk_level_taxonomy,
+        db_session
+    ):
+        """Test is_mrsa=true with is_model=true fails."""
+        supporting_app = _create_map_application(db_session, status="Active")
+        _create_relationship_type_other(db_session)
+        response = client.post(
+            "/models/",
+            headers=auth_headers,
+            json={
+                "model_name": "Invalid MRSA Classification",
+                "description": "MRSA create test",
+                "development_type": "In-House",
+                "status": "In Development",
+                "owner_id": test_user.user_id,
+                "developer_id": test_user.user_id,
+                "usage_frequency_id": usage_frequency["daily"].value_id,
+                "initial_implementation_date": date.today().isoformat(),
+                "user_ids": [test_user.user_id],
+                "is_model": True,
+                "is_mrsa": True,
+                "mrsa_risk_level_id": mrsa_risk_level_taxonomy["high_risk"].value_id,
+                "mrsa_risk_rationale": "High-risk MRSA rationale",
+                "supporting_application_id": supporting_app.application_id
+            }
+        )
+        assert response.status_code == 400
+        assert "is_model=false" in response.json()["detail"]
+
+    def test_create_mrsa_missing_other_relationship_taxonomy_returns_500(
+        self,
+        client,
+        auth_headers,
+        test_user,
+        usage_frequency,
+        mrsa_risk_level_taxonomy,
+        db_session
+    ):
+        """Test create fails with explicit config error when OTHER is missing."""
+        supporting_app = _create_map_application(db_session, status="Active")
+        response = client.post(
+            "/models/",
+            headers=auth_headers,
+            json={
+                "model_name": "MRSA Missing OTHER Taxonomy",
+                "description": "MRSA create test",
+                "development_type": "In-House",
+                "status": "In Development",
+                "owner_id": test_user.user_id,
+                "developer_id": test_user.user_id,
+                "usage_frequency_id": usage_frequency["daily"].value_id,
+                "initial_implementation_date": date.today().isoformat(),
+                "user_ids": [test_user.user_id],
+                "is_model": False,
+                "is_mrsa": True,
+                "mrsa_risk_level_id": mrsa_risk_level_taxonomy["high_risk"].value_id,
+                "mrsa_risk_rationale": "High-risk MRSA rationale",
+                "supporting_application_id": supporting_app.application_id
+            }
+        )
+        assert response.status_code == 500
+        assert response.json()["detail"] == (
+            "Server configuration error: Application Relationship Type taxonomy with code OTHER not found"
+        )
 
     def test_create_model_with_region_owner(
         self,
@@ -774,3 +1089,130 @@ class TestModelLastUpdated:
         data = response.json()
         # Should return the ACTIVE version's date, not SUPERSEDED or DRAFT
         assert data["model_last_updated"] == "2025-06-01"
+
+
+class TestHasGlobalRiskAssessment:
+    """Test has_global_risk_assessment flag on model responses."""
+
+    def test_detail_false_when_no_assessment(self, client, auth_headers, sample_model):
+        """GET /models/{id} returns has_global_risk_assessment=false when none exists."""
+        response = client.get(f"/models/{sample_model.model_id}", headers=auth_headers)
+        assert response.status_code == 200
+        assert response.json()["has_global_risk_assessment"] is False
+
+    def test_detail_true_when_global_assessment_exists(
+        self, client, auth_headers, sample_model, db_session
+    ):
+        """GET /models/{id} returns has_global_risk_assessment=true when a global assessment exists."""
+        from app.models.risk_assessment import ModelRiskAssessment
+        from app.core.time import utc_now
+
+        assessment = ModelRiskAssessment(
+            model_id=sample_model.model_id,
+            region_id=None,  # Global assessment
+            quantitative_rating="MEDIUM",
+            assessed_at=utc_now(),
+            created_at=utc_now(),
+            updated_at=utc_now(),
+        )
+        db_session.add(assessment)
+        db_session.commit()
+
+        response = client.get(f"/models/{sample_model.model_id}", headers=auth_headers)
+        assert response.status_code == 200
+        assert response.json()["has_global_risk_assessment"] is True
+
+    def test_detail_false_when_only_regional_assessment(
+        self, client, auth_headers, sample_model, db_session
+    ):
+        """Regional-only assessments do NOT set has_global_risk_assessment to true."""
+        from app.models.risk_assessment import ModelRiskAssessment
+        from app.models.region import Region
+        from app.core.time import utc_now
+
+        region = Region(code="US", name="United States")
+        db_session.add(region)
+        db_session.flush()
+
+        assessment = ModelRiskAssessment(
+            model_id=sample_model.model_id,
+            region_id=region.region_id,  # Regional, not global
+            quantitative_rating="HIGH",
+            assessed_at=utc_now(),
+            created_at=utc_now(),
+            updated_at=utc_now(),
+        )
+        db_session.add(assessment)
+        db_session.commit()
+
+        response = client.get(f"/models/{sample_model.model_id}", headers=auth_headers)
+        assert response.status_code == 200
+        assert response.json()["has_global_risk_assessment"] is False
+
+    def test_list_includes_flag(self, client, auth_headers, sample_model, db_session):
+        """GET /models/ includes has_global_risk_assessment on each item."""
+        response = client.get("/models/", headers=auth_headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) >= 1
+        assert data[0]["has_global_risk_assessment"] is False
+
+        # Add a global assessment
+        from app.models.risk_assessment import ModelRiskAssessment
+        from app.core.time import utc_now
+
+        assessment = ModelRiskAssessment(
+            model_id=sample_model.model_id,
+            region_id=None,
+            quantitative_rating="LOW",
+            assessed_at=utc_now(),
+            created_at=utc_now(),
+            updated_at=utc_now(),
+        )
+        db_session.add(assessment)
+        db_session.commit()
+
+        response = client.get("/models/", headers=auth_headers)
+        assert response.status_code == 200
+        data = response.json()
+        model_item = next(m for m in data if m["model_id"] == sample_model.model_id)
+        assert model_item["has_global_risk_assessment"] is True
+
+    def test_get_does_not_write_to_db(
+        self, client, auth_headers, sample_model, db_session
+    ):
+        """GET /models/{id} does NOT modify risk_tier_id — stale data is only fixed by migration."""
+        from app.models.risk_assessment import ModelRiskAssessment
+        from app.core.time import utc_now
+
+        # Create a tier taxonomy value
+        tier_tax = Taxonomy(name="Model Risk Tier", is_system=True)
+        db_session.add(tier_tax)
+        db_session.flush()
+        tier_value = TaxonomyValue(
+            taxonomy_id=tier_tax.taxonomy_id, code="TIER_1", label="Tier 1 (High)", sort_order=1
+        )
+        db_session.add(tier_value)
+        db_session.flush()
+
+        # Set model to a stale risk_tier_id (None) while assessment has a final_tier_id
+        sample_model.risk_tier_id = None
+        assessment = ModelRiskAssessment(
+            model_id=sample_model.model_id,
+            region_id=None,
+            quantitative_rating="HIGH",
+            final_tier_id=tier_value.value_id,
+            assessed_at=utc_now(),
+            created_at=utc_now(),
+            updated_at=utc_now(),
+        )
+        db_session.add(assessment)
+        db_session.commit()
+
+        # GET should not modify the DB
+        response = client.get(f"/models/{sample_model.model_id}", headers=auth_headers)
+        assert response.status_code == 200
+
+        # Verify model's risk_tier_id was NOT changed by GET
+        db_session.refresh(sample_model)
+        assert sample_model.risk_tier_id is None  # Still stale — GET is read-only

@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from pydantic import BaseModel
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session, joinedload, selectinload
-from sqlalchemy import or_
+from sqlalchemy import or_, select
 from app.core.database import get_db
 from app.core.time import utc_now
 from app.core.deps import get_current_user
@@ -19,6 +19,8 @@ from app.core.validation_conflicts import (
 )
 from app.models.user import User, LocalStatus
 from app.models.model import Model
+from app.models.map_application import MapApplication
+from app.models.model_application import ModelApplication
 from app.models.vendor import Vendor
 from app.models.region import Region
 from app.models.lob import LOBUnit
@@ -260,16 +262,23 @@ def _sync_model_regions(db: Session, model_id: int, payload: List[dict[str, Opti
     changed = False
 
     for item in payload:
-        existing = existing_by_region.get(item["region_id"])
+        region_id = item.get("region_id")
+        if region_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Region ID is required for model region entries"
+            )
+        shared_model_owner_id = item.get("shared_model_owner_id")
+        existing = existing_by_region.get(region_id)
         if existing:
-            if existing.shared_model_owner_id != item["shared_model_owner_id"]:
-                existing.shared_model_owner_id = item["shared_model_owner_id"]
+            if existing.shared_model_owner_id != shared_model_owner_id:
+                existing.shared_model_owner_id = shared_model_owner_id
                 changed = True
         else:
             db.add(ModelRegion(
                 model_id=model_id,
-                region_id=item["region_id"],
-                shared_model_owner_id=item["shared_model_owner_id"],
+                region_id=region_id,
+                shared_model_owner_id=shared_model_owner_id,
                 created_at=utc_now()
             ))
             changed = True
@@ -817,6 +826,18 @@ def list_models(
         from app.core.batch_revalidation import compute_batch_revalidation_fields
         compute_batch_revalidation_fields(db, models, results)
 
+    # Batch-populate has_global_risk_assessment flag
+    if models:
+        model_ids_list = [m.model_id for m in models]
+        assessment_model_ids = set(
+            row[0] for row in db.query(ModelRiskAssessment.model_id).filter(
+                ModelRiskAssessment.model_id.in_(model_ids_list),
+                ModelRiskAssessment.region_id.is_(None),
+            ).all()
+        )
+        for r in results:
+            r['has_global_risk_assessment'] = r['model_id'] in assessment_model_ids
+
     return results
 
 
@@ -842,6 +863,9 @@ def create_model(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="You must include yourself as the Owner, Developer, or a Model User when creating a model."
             )
+
+    # Extract supporting application early so it cannot leak into Model(**model_dict)
+    supporting_application_id = model_data.supporting_application_id
 
     # Validate vendor requirement for third-party models
     if model_data.development_type == "Third-Party" and not model_data.vendor_id:
@@ -925,6 +949,47 @@ def create_model(
                 detail="Monitoring manager user not found"
             )
 
+    # Explicit MRSA validation
+    supporting_application: Optional[MapApplication] = None
+    app_relationship_type_other: Optional[TaxonomyValue] = None
+    if model_data.is_mrsa and model_data.is_model:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="MRSA classification requires is_model=false."
+        )
+    if model_data.is_mrsa:
+        if not supporting_application_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Supporting application is required when creating an MRSA."
+            )
+
+        supporting_application = db.query(MapApplication).filter(
+            MapApplication.application_id == supporting_application_id
+        ).first()
+        if not supporting_application:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Supporting application with ID {supporting_application_id} not found in MAP."
+            )
+
+        # Residual TOCTOU risk is accepted: MAP status could still change before commit.
+        if supporting_application.status != "Active":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Supporting application must be Active."
+            )
+
+        app_relationship_type_other = db.query(TaxonomyValue).join(Taxonomy).filter(
+            Taxonomy.name == "Application Relationship Type",
+            TaxonomyValue.code == "OTHER"
+        ).first()
+        if not app_relationship_type_other:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Server configuration error: Application Relationship Type taxonomy with code OTHER not found"
+            )
+
     # Extract user_ids, regulatory_category_ids, region_ids/model_regions, irp_ids,
     # initial_version_number, initial_implementation_date, and validation request fields before creating model
     user_ids = model_data.user_ids or []
@@ -946,7 +1011,7 @@ def create_model(
         'initial_version_number', 'initial_implementation_date',
         'auto_create_validation', 'validation_request_type_id',
         'validation_request_priority_id', 'validation_request_target_date',
-        'validation_request_trigger_reason'
+        'validation_request_trigger_reason', 'supporting_application_id'
     })
 
     model = Model(**model_dict)
@@ -990,6 +1055,19 @@ def create_model(
         model.irps = irps
 
     db.add(model)
+    db.flush()
+
+    if model_data.is_mrsa and supporting_application_id and app_relationship_type_other:
+        # Safe: model was just created, no prior application links exist.
+        db.add(ModelApplication(
+            model_id=model.model_id,
+            application_id=supporting_application_id,
+            relationship_type_id=app_relationship_type_other.value_id,
+            relationship_direction="UNKNOWN",
+            effective_date=date.today(),
+            created_by_user_id=current_user.user_id
+        ))
+
     db.commit()
     db.refresh(model)
 
@@ -1218,6 +1296,7 @@ def create_model(
         model_dict["team"] = {"team_id": team.team_id, "name": team.name} if team else None
     else:
         model_dict["team"] = None
+    model_dict['has_global_risk_assessment'] = False  # New models never have assessments
     if warnings:
         model_dict['warnings'] = warnings
     return model_dict
@@ -1520,9 +1599,9 @@ def get_models_with_disabled_users(
         )
 
     # Find all disabled users
-    disabled_user_ids = db.query(User.user_id).filter(
+    disabled_user_ids = select(User.user_id).where(
         User.local_status == LocalStatus.DISABLED.value
-    ).subquery()
+    )
 
     # Find models where any key role is a disabled user
     models = db.query(Model).options(
@@ -1668,6 +1747,13 @@ def get_model(
         ModelException.status == 'OPEN'
     ).scalar() or 0
     model_dict['open_exception_count'] = open_exception_count
+
+    # Check for global risk assessment
+    has_global = db.query(ModelRiskAssessment.assessment_id).filter(
+        ModelRiskAssessment.model_id == model_id,
+        ModelRiskAssessment.region_id.is_(None),
+    ).first() is not None
+    model_dict['has_global_risk_assessment'] = has_global
 
     # Build tags list for response
     tags_list = []
@@ -3747,29 +3833,36 @@ def get_model_activity_timeline(
     ).all()
 
     for pe in pending_edits:
+        pending_edit_any = cast(Any, pe)
+        requested_at = cast(Optional[datetime], pending_edit_any.requested_at)
+        reviewed_at = cast(Optional[datetime], pending_edit_any.reviewed_at)
+        pending_status = cast(Optional[str], pending_edit_any.status)
+
         # Pending edit submitted
-        if pe.requested_at:
+        if requested_at:
             # Summarize the fields being changed
-            changed_fields = list((pe.proposed_changes or {}).keys())
+            proposed_changes_raw = pending_edit_any.proposed_changes
+            proposed_changes_dict = cast(dict[str, Any], proposed_changes_raw) if isinstance(proposed_changes_raw, dict) else {}
+            changed_fields = [str(field) for field in proposed_changes_dict.keys()]
             field_summary = ", ".join(changed_fields[:3])
             if len(changed_fields) > 3:
                 field_summary += f" (+{len(changed_fields) - 3} more)"
 
             activities.append(ActivityTimelineItem(
-                timestamp=pe.requested_at,
+                timestamp=requested_at,
                 activity_type="pending_edit_submitted",
                 title="Model edit submitted for approval",
                 description=f"Proposed changes to: {field_summary}" if field_summary else None,
-                user_name=pe.requested_by.full_name if pe.requested_by else None,
-                user_id=pe.requested_by.user_id if pe.requested_by else None,
+                user_name=pending_edit_any.requested_by.full_name if pending_edit_any.requested_by else None,
+                user_id=pending_edit_any.requested_by.user_id if pending_edit_any.requested_by else None,
                 entity_type="ModelPendingEdit",
-                entity_id=pe.pending_edit_id,
+                entity_id=cast(int, pending_edit_any.pending_edit_id),
                 icon="📝"
             ))
 
         # Pending edit reviewed (approved or rejected)
-        if pe.reviewed_at and pe.status in ("approved", "rejected"):
-            if pe.status == "approved":
+        if reviewed_at and pending_status in ("approved", "rejected"):
+            if pending_status == "approved":
                 title = "Model edit approved and applied"
                 icon = "✅"
             else:
@@ -3777,14 +3870,14 @@ def get_model_activity_timeline(
                 icon = "❌"
 
             activities.append(ActivityTimelineItem(
-                timestamp=pe.reviewed_at,
-                activity_type=f"pending_edit_{pe.status}",
+                timestamp=reviewed_at,
+                activity_type=f"pending_edit_{pending_status}",
                 title=title,
-                description=pe.review_comment,
-                user_name=pe.reviewed_by.full_name if pe.reviewed_by else None,
-                user_id=pe.reviewed_by.user_id if pe.reviewed_by else None,
+                description=cast(Optional[str], pending_edit_any.review_comment),
+                user_name=pending_edit_any.reviewed_by.full_name if pending_edit_any.reviewed_by else None,
+                user_id=pending_edit_any.reviewed_by.user_id if pending_edit_any.reviewed_by else None,
                 entity_type="ModelPendingEdit",
-                entity_id=pe.pending_edit_id,
+                entity_id=cast(int, pending_edit_any.pending_edit_id),
                 icon=icon
             ))
 
@@ -3897,10 +3990,13 @@ def list_all_pending_edits(
 
     results = []
     for pe in pending_edits:
-        requested_at = cast(Optional[datetime], pe.requested_at)
-        reviewed_at = cast(Optional[datetime], pe.reviewed_at)
-        original_values = pe.original_values or {}
-        proposed_changes = pe.proposed_changes or {}
+        pe_any = cast(Any, pe)
+        requested_at = cast(Optional[datetime], pe_any.requested_at)
+        reviewed_at = cast(Optional[datetime], pe_any.reviewed_at)
+        original_values_raw = pe_any.original_values
+        proposed_changes_raw = pe_any.proposed_changes
+        original_values = cast(Dict[str, Any], original_values_raw) if isinstance(original_values_raw, dict) else {}
+        proposed_changes = cast(Dict[str, Any], proposed_changes_raw) if isinstance(proposed_changes_raw, dict) else {}
         resolved_original = _resolve_pending_edit_values(db, original_values)
         resolved_proposed = _resolve_pending_edit_values(db, proposed_changes)
         results.append({
@@ -3951,19 +4047,23 @@ def _resolve_pending_edit_values(
 
     # Collect all user IDs to fetch in one query
     user_id_fields = ['owner_id', 'developer_id', 'shared_owner_id', 'shared_developer_id', 'monitoring_manager_id']
-    user_ids_to_fetch = set()
+    user_ids_to_fetch: set[int] = set()
     for field in user_id_fields:
-        if field in values and values[field] is not None:
-            user_ids_to_fetch.add(values[field])
-    if 'user_ids' in values and values['user_ids']:
-        user_ids_to_fetch.update(values['user_ids'])
+        raw_user_id = values.get(field)
+        if isinstance(raw_user_id, int):
+            user_ids_to_fetch.add(raw_user_id)
+    raw_user_ids = values.get('user_ids')
+    if isinstance(raw_user_ids, list):
+        for user_id in raw_user_ids:
+            if isinstance(user_id, int):
+                user_ids_to_fetch.add(user_id)
 
     model_regions_payload = values.get('model_regions')
     model_regions_list = model_regions_payload if isinstance(model_regions_payload, list) else []
     for item in model_regions_list:
         if isinstance(item, dict):
             owner_id = item.get('shared_model_owner_id')
-            if owner_id is not None:
+            if isinstance(owner_id, int):
                 user_ids_to_fetch.add(owner_id)
 
     # Fetch users in bulk
@@ -3973,15 +4073,19 @@ def _resolve_pending_edit_values(
         user_map = {u.user_id: u.full_name for u in users}
 
     # Collect region IDs to fetch in one query
-    region_ids_to_fetch = set()
-    if 'wholly_owned_region_id' in values and values['wholly_owned_region_id'] is not None:
-        region_ids_to_fetch.add(values['wholly_owned_region_id'])
-    if 'region_ids' in values and values['region_ids']:
-        region_ids_to_fetch.update(values['region_ids'])
+    region_ids_to_fetch: set[int] = set()
+    wholly_owned_region_id = values.get('wholly_owned_region_id')
+    if isinstance(wholly_owned_region_id, int):
+        region_ids_to_fetch.add(wholly_owned_region_id)
+    raw_region_ids = values.get('region_ids')
+    if isinstance(raw_region_ids, list):
+        for region_id in raw_region_ids:
+            if isinstance(region_id, int):
+                region_ids_to_fetch.add(region_id)
     for item in model_regions_list:
         if isinstance(item, dict):
             region_id = item.get('region_id')
-            if region_id is not None:
+            if isinstance(region_id, int):
                 region_ids_to_fetch.add(region_id)
 
     region_map: Dict[int, str] = {}
@@ -4001,8 +4105,8 @@ def _resolve_pending_edit_values(
     # Resolve user_ids array
     if 'user_ids' in values:
         user_ids = values['user_ids']
-        if user_ids:
-            names = [user_map.get(uid, str(uid)) for uid in user_ids]
+        if isinstance(user_ids, list) and user_ids:
+            names = [user_map.get(uid, str(uid)) for uid in user_ids if isinstance(uid, int)]
             resolved['user_ids'] = ", ".join(names)
         else:
             resolved['user_ids'] = ""
@@ -4026,8 +4130,8 @@ def _resolve_pending_edit_values(
 
     if 'region_ids' in values:
         region_ids = values['region_ids']
-        if region_ids:
-            names = [region_map.get(region_id, str(region_id)) for region_id in region_ids]
+        if isinstance(region_ids, list) and region_ids:
+            names = [region_map.get(region_id, str(region_id)) for region_id in region_ids if isinstance(region_id, int)]
             resolved['region_ids'] = ", ".join(names)
         else:
             resolved['region_ids'] = ""
@@ -4040,9 +4144,19 @@ def _resolve_pending_edit_values(
                     entries.append(str(item))
                     continue
                 region_id = item.get('region_id')
-                region_name = region_map.get(region_id, str(region_id) if region_id is not None else "")
+                if isinstance(region_id, int):
+                    region_name = region_map.get(region_id, str(region_id))
+                elif region_id is None:
+                    region_name = ""
+                else:
+                    region_name = str(region_id)
                 owner_id = item.get('shared_model_owner_id')
-                owner_name = "None" if owner_id is None else user_map.get(owner_id, str(owner_id))
+                if owner_id is None:
+                    owner_name = "None"
+                elif isinstance(owner_id, int):
+                    owner_name = user_map.get(owner_id, str(owner_id))
+                else:
+                    owner_name = str(owner_id)
                 if region_name:
                     entries.append(f"{region_name}: {owner_name}")
                 else:
@@ -4068,12 +4182,16 @@ def _resolve_pending_edit_values(
         'usage_frequency_id': 'Model Usage Frequency',
     }
 
-    taxonomy_ids_to_fetch = set()
+    taxonomy_ids_to_fetch: set[int] = set()
     for field in taxonomy_fields:
-        if field in values and values[field] is not None:
-            taxonomy_ids_to_fetch.add(values[field])
-    if 'regulatory_category_ids' in values and values['regulatory_category_ids']:
-        taxonomy_ids_to_fetch.update(values['regulatory_category_ids'])
+        raw_taxonomy_id = values.get(field)
+        if isinstance(raw_taxonomy_id, int):
+            taxonomy_ids_to_fetch.add(raw_taxonomy_id)
+    regulatory_category_ids = values.get('regulatory_category_ids')
+    if isinstance(regulatory_category_ids, list):
+        for category_id in regulatory_category_ids:
+            if isinstance(category_id, int):
+                taxonomy_ids_to_fetch.add(category_id)
 
     # Fetch taxonomy values in bulk
     tax_value_map: Dict[int, str] = {}
@@ -4092,8 +4210,8 @@ def _resolve_pending_edit_values(
     # Regulatory category IDs array
     if 'regulatory_category_ids' in values:
         cat_ids = values['regulatory_category_ids']
-        if cat_ids:
-            labels = [tax_value_map.get(cid, str(cid)) for cid in cat_ids]
+        if isinstance(cat_ids, list) and cat_ids:
+            labels = [tax_value_map.get(cid, str(cid)) for cid in cat_ids if isinstance(cid, int)]
             resolved['regulatory_category_ids'] = ", ".join(labels)
         else:
             resolved['regulatory_category_ids'] = ""
@@ -4146,12 +4264,15 @@ def list_model_pending_edits(
 
     results = []
     for pe in pending_edits:
-        requested_at = cast(Optional[datetime], pe.requested_at)
-        reviewed_at = cast(Optional[datetime], pe.reviewed_at)
+        pe_any = cast(Any, pe)
+        requested_at = cast(Optional[datetime], pe_any.requested_at)
+        reviewed_at = cast(Optional[datetime], pe_any.reviewed_at)
 
         # Resolve ID values to human-readable labels
-        original_values = pe.original_values or {}
-        proposed_changes = pe.proposed_changes or {}
+        original_values_raw = pe_any.original_values
+        proposed_changes_raw = pe_any.proposed_changes
+        original_values = cast(Dict[str, Any], original_values_raw) if isinstance(original_values_raw, dict) else {}
+        proposed_changes = cast(Dict[str, Any], proposed_changes_raw) if isinstance(proposed_changes_raw, dict) else {}
         resolved_original = _resolve_pending_edit_values(db, original_values)
         resolved_proposed = _resolve_pending_edit_values(db, proposed_changes)
 
@@ -4228,30 +4349,43 @@ def approve_pending_edit(
         )
 
     # Apply the proposed changes to the model
-    proposed_changes = dict(pending_edit.proposed_changes or {})
-    changes_applied = {}
-    version_changes = {}
-    initial_version = None
+    pending_edit_any = cast(Any, pending_edit)
+    proposed_changes_raw = pending_edit_any.proposed_changes
+    if isinstance(proposed_changes_raw, dict):
+        proposed_changes: Dict[str, Any] = {str(key): value for key, value in proposed_changes_raw.items()}
+    else:
+        proposed_changes = {}
+    changes_applied: Dict[str, Any] = {}
+    version_changes: dict[str, dict[str, Optional[str]]] = {}
+    initial_version: Optional[ModelVersion] = None
     initial_version_created = False
     regions_changed = False
     regions_sync_applied = False
 
     if "model_regions" in proposed_changes or "region_ids" in proposed_changes:
-        model_regions_payload = proposed_changes.pop("model_regions", None)
-        region_ids = proposed_changes.pop("region_ids", None)
-        new_wholly_owned_region_id = proposed_changes.get(
+        model_regions_payload_raw = proposed_changes.pop("model_regions", None)
+        region_ids_raw = proposed_changes.pop("region_ids", None)
+        new_wholly_owned_region_raw = proposed_changes.get(
             "wholly_owned_region_id",
             model.wholly_owned_region_id
         )
+        if isinstance(new_wholly_owned_region_raw, int):
+            new_wholly_owned_region_id: Optional[int] = new_wholly_owned_region_raw
+        elif new_wholly_owned_region_raw is None:
+            new_wholly_owned_region_id = None
+        else:
+            new_wholly_owned_region_id = model.wholly_owned_region_id
         region_payload = None
 
-        if model_regions_payload is not None:
+        if model_regions_payload_raw is not None:
+            model_regions_payload = model_regions_payload_raw if isinstance(model_regions_payload_raw, list) else []
             region_payload = _normalize_model_region_payload(
                 None,
                 model_regions_payload,
                 new_wholly_owned_region_id
             )
-        elif region_ids is not None:
+        elif region_ids_raw is not None:
+            region_ids = [region_id for region_id in region_ids_raw if isinstance(region_id, int)] if isinstance(region_ids_raw, list) else []
             existing_owner_map = {
                 mr.region_id: mr.shared_model_owner_id
                 for mr in db.query(ModelRegion).filter(ModelRegion.model_id == model_id).all()
@@ -4276,29 +4410,48 @@ def approve_pending_edit(
             regions_sync_applied = True
 
     for field, value in proposed_changes.items():
+        if not isinstance(field, str):
+            continue
         if field == 'user_ids':
             # Handle user_ids separately - only log if actually changed
-            if value is not None:
+            if isinstance(value, list):
                 old_user_ids = sorted([u.user_id for u in model.users])
-                new_user_ids = sorted(value)
+                new_user_ids = sorted(user_id for user_id in value if isinstance(user_id, int))
                 if old_user_ids != new_user_ids:
-                    users = db.query(User).filter(User.user_id.in_(value)).all()
+                    users = db.query(User).filter(User.user_id.in_(new_user_ids)).all()
                     model.users = users
                     changes_applied[field] = {"old": old_user_ids, "new": new_user_ids}
         elif field == 'regulatory_category_ids':
             # Handle regulatory_category_ids separately - only log if actually changed
-            if value is not None:
+            if isinstance(value, list):
                 old_category_ids = sorted([c.value_id for c in model.regulatory_categories])
-                new_category_ids = sorted(value)
+                new_category_ids = sorted(category_id for category_id in value if isinstance(category_id, int))
                 if old_category_ids != new_category_ids:
                     categories = db.query(TaxonomyValue).filter(
-                        TaxonomyValue.value_id.in_(value)).all()
+                        TaxonomyValue.value_id.in_(new_category_ids)).all()
                     model.regulatory_categories = categories
                     changes_applied[field] = {"old": old_category_ids, "new": new_category_ids}
         elif field == 'initial_implementation_date':
+            parsed_initial_date: Optional[date]
             if isinstance(value, str):
-                value = date.fromisoformat(value)
-            if value is None:
+                try:
+                    parsed_initial_date = date.fromisoformat(value)
+                except ValueError:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Invalid initial implementation date format. Expected YYYY-MM-DD"
+                    )
+            elif isinstance(value, date):
+                parsed_initial_date = value
+            elif value is None:
+                parsed_initial_date = None
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid initial implementation date value"
+                )
+
+            if parsed_initial_date is None:
                 if not initial_version:
                     initial_version = _get_initial_version(db, model_id)
                 current_initial_date = _get_initial_implementation_date(initial_version) if initial_version else None
@@ -4311,7 +4464,7 @@ def approve_pending_edit(
 
             if not initial_version:
                 initial_version, initial_version_created = _get_or_create_initial_version(
-                    db, model, current_user.user_id, value
+                    db, model, current_user.user_id, parsed_initial_date
                 )
             if not initial_version:
                 raise HTTPException(
@@ -4322,13 +4475,13 @@ def approve_pending_edit(
             if initial_version_created:
                 changes_applied[field] = {
                     "old": None,
-                    "new": str(value)
+                    "new": str(parsed_initial_date)
                 }
-            elif current_initial_date != value:
-                version_changes = _apply_initial_implementation_date(model, initial_version, value)
+            elif current_initial_date != parsed_initial_date:
+                version_changes = _apply_initial_implementation_date(model, initial_version, parsed_initial_date)
                 changes_applied[field] = {
                     "old": str(current_initial_date) if current_initial_date else None,
-                    "new": str(value)
+                    "new": str(parsed_initial_date)
                 }
         else:
             old_value = getattr(model, field, None)
@@ -4342,9 +4495,20 @@ def approve_pending_edit(
     if (
         not regions_sync_applied
         and "wholly_owned_region_id" in proposed_changes
-        and proposed_changes["wholly_owned_region_id"] is not None
     ):
-        new_region_id = proposed_changes["wholly_owned_region_id"]
+        new_region_id_value = proposed_changes["wholly_owned_region_id"]
+        if not isinstance(new_region_id_value, int):
+            new_region_id_value = None
+        if new_region_id_value is None:
+            new_region_id = None
+        else:
+            new_region_id = new_region_id_value
+        if new_region_id is None:
+            new_region_id = None
+    else:
+        new_region_id = None
+
+    if new_region_id is not None:
         existing_region = db.query(ModelRegion).filter(
             ModelRegion.model_id == model_id,
             ModelRegion.region_id == new_region_id
