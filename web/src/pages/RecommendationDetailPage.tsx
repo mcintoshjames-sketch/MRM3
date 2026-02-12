@@ -142,7 +142,7 @@ export default function RecommendationDetailPage() {
     // Edit recommendation - validators/admins can edit in certain statuses
     const editableStatuses = [
         'REC_DRAFT', 'REC_PENDING_RESPONSE', 'REC_PENDING_VALIDATOR_REVIEW',
-        'REC_PENDING_ACKNOWLEDGEMENT', 'REC_OPEN', 'REC_REWORK_REQUIRED'
+        'REC_PENDING_ACTION_PLAN', 'REC_PENDING_ACKNOWLEDGEMENT', 'REC_OPEN', 'REC_REWORK_REQUIRED'
     ];
     const canEdit = canManageRecommendationsFlag && editableStatuses.includes(currentStatus);
 

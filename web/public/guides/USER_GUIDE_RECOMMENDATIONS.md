@@ -167,7 +167,7 @@ Use the **Show overdue only** toggle to highlight recommendations that have pass
 
 ## Admin Configuration: Priority Workflow Settings
 
-Administrators can customize how each recommendation priority level behaves through the **Priority Workflow Config** section in the Taxonomy page. This allows your organization to tailor the recommendation workflow to match your specific governance policies.
+Administrators can customize how each recommendation priority level behaves through the **Recommendation Priority Config** section in the Taxonomy page. This allows your organization to tailor the recommendation workflow to match your specific governance policies.
 
 ### Base Priority Configuration
 
@@ -220,7 +220,9 @@ This means the same priority level may have different deadlines depending on the
 
 **How Timeframe Enforcement Works:**
 - When creating or editing a recommendation, the system validates the target date against the configured maximum days for the specific priority + tier + frequency combination
-- If **Enforce Timeframes** is enabled for the priority level, target dates exceeding the maximum are rejected
+- If **Enforce Timeframes** is enabled for the priority level:
+  - At **creation** time, target dates exceeding the maximum are rejected
+  - At **edit** time, users can override the maximum by providing a required reason/explanation when changing the target date
 - If **Enforce Timeframes** is disabled, any target date is accepted (no validation)
 - Timeframes provide guardrails to ensure high-priority issues are remediated within acceptable periods
 
@@ -240,11 +242,11 @@ Your organization implements a tiered timeframe policy:
 
 When a Validator creates a High priority recommendation for a Tier 1 daily-use model with "Enforce Timeframes" enabled, the system will only accept target dates within 30 days. The same High priority finding on a Tier 3 model would allow 90 days.
 
-### Accessing Priority Workflow Config
+### Accessing Recommendation Priority Config
 
 Admins can access these settings at:
 1. Navigate to **Taxonomy** in the main menu
-2. Select **Priority Workflow Config** from the dropdown
+2. Select **Recommendation Priority Config** from the dropdown
 3. Click **Edit** next to any priority level to modify base settings
 4. Expand a priority row (using the arrow icon) to view/add regional overrides
 5. Use **+ Add Regional Override** to create region-specific rules
@@ -273,10 +275,10 @@ A: Yes, but editing permissions vary by status:
 A: You must submit an Action Plan. The system enforces a "one-strike" rule for rebuttals—once a rebuttal has been overridden, you cannot submit another rebuttal for the same recommendation, regardless of current status.
 
 **Q: Who can close a Low priority recommendation?**
-A: By default, Low priority items are closed immediately after the Validator approves the closure request—they do not require Global or Regional sign-off. However, this can be changed by an Admin through the Priority Workflow Config if your organization requires additional oversight.
+A: By default, Low priority items are closed immediately after the Validator approves the closure request—they do not require Global or Regional sign-off. However, this can be changed by an Admin through the Recommendation Priority Config if your organization requires additional oversight.
 
 **Q: Why do I need to provide a reason when changing the target date?**
-A: Target dates are validated against the three-dimensional timeframe matrix (priority × tier × usage frequency) when "Enforce Timeframes" is enabled. Changes require an explanation to preserve an audit trail.
+A: Target dates are validated against the three-dimensional timeframe matrix (priority × tier × usage frequency). A reason is required whenever the target date changes to preserve an audit trail, and it is required to override enforced maximum timeframes during edits.
 
 **Q: Can different regions have different approval requirements?**
 A: Yes! Admins can create Regional Overrides that modify workflow settings for specific regions. When a model is deployed across multiple regions, the "Most Restrictive Wins" logic ensures the strictest requirement applies.

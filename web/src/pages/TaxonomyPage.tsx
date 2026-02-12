@@ -2292,7 +2292,7 @@ export default function TaxonomyPage() {
                         <option value="methodology-library">Methodology Library</option>
                         <option value="kpm">KPM Library</option>
                         <option value="fry">FRY 14 Config</option>
-                        <option value="recommendation-priority">Priority Workflow Config</option>
+                        <option value="recommendation-priority">Recommendation Priority Config</option>
                         <option value="risk-factors">Risk Factors</option>
                         <option value="scorecard">Scorecard Config</option>
                         <option value="residual-risk-map">Residual Risk Map</option>

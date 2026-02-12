@@ -1812,6 +1812,7 @@ def update_recommendation(
             recommendation.current_target_date) if recommendation.current_target_date else None
         new_date = str(rec_update.current_target_date)
         if old_date != new_date:
+            timeframe_override_used = False
             # Validate the new target date against timeframe configuration
             validation_result = validate_target_date(
                 db,
@@ -1823,10 +1824,27 @@ def update_recommendation(
             )
 
             if not validation_result.is_valid:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=validation_result.message
+                exceeds_enforced_max = (
+                    validation_result.is_enforced
+                    and validation_result.max_target_date is not None
+                    and rec_update.current_target_date > validation_result.max_target_date
                 )
+                if exceeds_enforced_max and rec_update.target_date_change_reason:
+                    # Allow explicit override when user provides rationale.
+                    timeframe_override_used = True
+                elif exceeds_enforced_max:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=(
+                            f"{validation_result.message} "
+                            "Provide a reason/explanation to override this enforced timeframe."
+                        )
+                    )
+                else:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=validation_result.message
+                    )
 
             # Require reason when changing target date
             if not rec_update.target_date_change_reason:
@@ -1837,8 +1855,33 @@ def update_recommendation(
 
             old_values["current_target_date"] = old_date
             new_values["current_target_date"] = new_date
+            old_values["target_date_change_reason"] = recommendation.target_date_change_reason
+            new_values["target_date_change_reason"] = rec_update.target_date_change_reason
+            if timeframe_override_used:
+                new_values["timeframe_override_used"] = True
+            status_reason = (
+                f"Target date updated from {old_date} to {new_date}. "
+                f"Reason: {rec_update.target_date_change_reason}"
+            )
+            if timeframe_override_used:
+                status_reason += " (Timeframe override applied)"
+            current_status_for_history = db.query(TaxonomyValue).filter(
+                TaxonomyValue.value_id == recommendation.current_status_id
+            ).first()
+            if not current_status_for_history:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Recommendation status not found"
+                )
             recommendation.current_target_date = rec_update.current_target_date
             recommendation.target_date_change_reason = rec_update.target_date_change_reason
+            create_status_history(
+                db,
+                recommendation,
+                current_status_for_history,
+                current_user,
+                status_reason
+            )
 
     # Only create audit log if there were actual changes
     if new_values:

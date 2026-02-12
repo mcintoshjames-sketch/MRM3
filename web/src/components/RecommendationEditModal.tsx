@@ -19,7 +19,7 @@ interface RecommendationEditModalProps {
 const FULL_EDIT_STATUSES = ['REC_DRAFT', 'REC_PENDING_RESPONSE', 'REC_PENDING_VALIDATOR_REVIEW'];
 
 // Statuses that allow limited editing
-const LIMITED_EDIT_STATUSES = ['REC_PENDING_ACKNOWLEDGEMENT', 'REC_OPEN', 'REC_REWORK_REQUIRED'];
+const LIMITED_EDIT_STATUSES = ['REC_PENDING_ACTION_PLAN', 'REC_PENDING_ACKNOWLEDGEMENT', 'REC_OPEN', 'REC_REWORK_REQUIRED'];
 
 export default function RecommendationEditModal({
     recommendation,

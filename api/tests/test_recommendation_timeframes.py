@@ -2071,11 +2071,20 @@ class TestUpdateRecommendationTargetDate:
         )
         assert response.status_code == 200
         assert response.json()["target_date_change_reason"] == "Extended due to dependency on upstream fix"
+        detail = client.get(
+            f"/recommendations/{existing_recommendation.recommendation_id}",
+            headers={"Authorization": f"Bearer {recommendation_setup['validator_token']}"}
+        )
+        assert detail.status_code == 200
+        status_history = detail.json().get("status_history", [])
+        assert len(status_history) >= 1
+        assert "Target date updated from" in status_history[0]["change_reason"]
+        assert "Extended due to dependency on upstream fix" in status_history[0]["change_reason"]
 
-    def test_update_target_date_cannot_exceed_max_when_enforced(
+    def test_update_target_date_can_override_enforced_max_with_reason(
         self, client, recommendation_setup, existing_recommendation
     ):
-        """RED: Should reject target date exceeding max even on update."""
+        """RED: Should allow overriding enforced max when reason is provided."""
         from datetime import date, timedelta
 
         # Set date way beyond max (MEDIUM + TIER_2 + MONTHLY = 180 days)
@@ -2089,8 +2098,9 @@ class TestUpdateRecommendationTargetDate:
                 "target_date_change_reason": "Trying to extend beyond max"
             }
         )
-        assert response.status_code == 400
-        assert "exceed" in response.json()["detail"].lower() or "max" in response.json()["detail"].lower()
+        assert response.status_code == 200
+        assert response.json()["current_target_date"] == far_future_date.isoformat()
+        assert response.json()["target_date_change_reason"] == "Trying to extend beyond max"
 
 
 # ============================================================================
