@@ -1,6 +1,8 @@
 """FastAPI application entry point."""
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from app.api import auth, users, roles, models, vendors, taxonomies, audit_logs, validation_workflow, validation_policies, workflow_sla, regions, model_regions, model_versions, model_delegates, model_change_taxonomy, model_types, methodology, dashboard, export_views, version_deployment_tasks, regional_compliance_report, analytics, saved_queries, model_hierarchy, model_dependencies, approver_roles, conditional_approval_rules, fry, map_applications, model_applications, overdue_commentary, overdue_revalidation_report, decommissioning, kpm, monitoring, recommendations, risk_assessment, qualitative_factors, scorecard, residual_risk_map, limitations, model_overlays, attestations, lob_units, kpi_report, irp, my_portfolio, exceptions, mrsa_review_policy, teams, tags, due_date_override
@@ -15,9 +17,25 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.get_cors_origins(),
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
+
+
+# Security response headers
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        if request.url.scheme == "https":
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        return response
+
+
+app.add_middleware(SecurityHeadersMiddleware)
 
 # Routes
 app.include_router(auth.router, prefix="/auth", tags=["auth"])

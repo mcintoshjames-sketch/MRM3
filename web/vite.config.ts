@@ -6,6 +6,7 @@ export default defineConfig({
     server: {
         host: true,
         port: 5173,
+        allowedHosts: ['code.mrmqmistest.org', 'mrm.mrmqmistest.org'],
         watch: {
             usePolling: true
         }

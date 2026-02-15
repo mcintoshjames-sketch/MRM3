@@ -129,12 +129,23 @@ def require_admin_user(current_user: User) -> None:
         )
 
 
+# Pre-computed bcrypt hash for timing-attack mitigation on login.
+# Ensures bcrypt always runs even for non-existent users, preventing
+# attackers from enumerating valid emails via response time differences.
+_DUMMY_HASH = get_password_hash("__timing_attack_dummy_value__")
+
+
 @router.post("/login", response_model=Token)
 def login(login_data: LoginRequest, db: Session = Depends(get_db)):
     """Login endpoint."""
     user = db.query(User).filter(User.email == login_data.email).first()
 
-    if not user or not verify_password(login_data.password, user.password_hash):
+    # Always run bcrypt to prevent timing-based user enumeration
+    password_valid = verify_password(
+        login_data.password, user.password_hash if user else _DUMMY_HASH
+    )
+
+    if not user or not password_valid:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password"
@@ -514,8 +525,11 @@ def update_user(
         user.role_id = role.role_id
         update_data.pop("role", None)
 
-    # Track other field changes
+    # Track other field changes (allowlist prevents mass assignment)
+    ALLOWED_FIELDS = {"email", "full_name", "lob_id", "high_fluctuation_flag", "password_hash"}
     for field, value in update_data.items():
+        if field not in ALLOWED_FIELDS:
+            continue
         old_value = getattr(user, field, None)
         if old_value != value:
             if field == "email":
@@ -914,6 +928,7 @@ def export_users_csv(
     current_user: User = Depends(get_current_user)
 ):
     """Export all users to CSV."""
+    require_admin_user(current_user)
     users = db.query(User).options(joinedload(User.lob)).all()
 
     # Create CSV in memory

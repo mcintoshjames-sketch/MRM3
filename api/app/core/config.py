@@ -32,7 +32,7 @@ class Settings(BaseSettings):
         env = self.ENVIRONMENT.strip().lower()
         if env in {"production", "prod"}:
             secret = self.SECRET_KEY.strip()
-            if not secret or secret == "dev-secret-key-change-in-production":
+            if not secret or secret.startswith("dev-secret-key"):
                 print("FATAL: SECRET_KEY must be changed in production!", file=sys.stderr)
                 print("Set a secure random SECRET_KEY environment variable.", file=sys.stderr)
                 sys.exit(1)

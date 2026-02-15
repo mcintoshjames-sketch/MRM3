@@ -303,10 +303,11 @@ def execute_query(
             try:
                 if ANALYTICS_DB_ROLE:
                     role = _validate_role_name(ANALYTICS_DB_ROLE, "analytics role")
-                    analytics_db.execute(text(f"SET LOCAL ROLE {role}"))
+                    analytics_db.execute(text(f'SET LOCAL ROLE "{role}"'))
                 if ANALYTICS_SEARCH_PATH:
                     search_path = _validate_search_path(ANALYTICS_SEARCH_PATH)
-                    analytics_db.execute(text(f"SET LOCAL search_path = {search_path}"))
+                    quoted_parts = ", ".join(f'"{p.strip()}"' for p in search_path.split(","))
+                    analytics_db.execute(text(f"SET LOCAL search_path = {quoted_parts}"))
                 analytics_db.execute(text("SET TRANSACTION READ ONLY"))
                 analytics_db.execute(
                     text("SET LOCAL statement_timeout = :timeout"),
@@ -334,6 +335,7 @@ def execute_query(
                 analytics_db.rollback()
     except Exception as exc:
         outcome = "error"
+        logger.error("Analytics query failed for user %s: %s", current_user.user_id, exc)
         error_detail = str(exc)
 
     duration_ms = int((time.monotonic() - start_time) * 1000)
